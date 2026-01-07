@@ -808,7 +808,7 @@ export function CanvasBoard() {
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
       const boardPoint = screenToBoard(canvasPoint)
       setCameraState((prev) => {
-        const zoomFactor = event.deltaY < 0 ? 1.04 : 0.96
+        const zoomFactor = event.deltaY < 0 ? 1.02 : 0.98
         const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * zoomFactor))
         const offsetX = canvasPoint.x / newZoom - boardPoint.x
         const offsetY = canvasPoint.y / newZoom - boardPoint.y
