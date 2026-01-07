@@ -21,6 +21,23 @@ const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
 const STICKY_WIDTH = 140
 const STICKY_HEIGHT = 100
+type Rect = { left: number; top: number; right: number; bottom: number }
+
+const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
+  left: Math.min(a.x, b.x),
+  top: Math.min(a.y, b.y),
+  right: Math.max(a.x, b.x),
+  bottom: Math.max(a.y, b.y),
+})
+
+const getStickyBounds = (element: StickyNoteElement): Rect => ({
+  left: element.x,
+  top: element.y,
+  right: element.x + STICKY_WIDTH,
+  bottom: element.y + STICKY_HEIGHT,
+})
+
+const rectsIntersect = (a: Rect, b: Rect) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
 const DRAG_THROTTLE_MS = 50
 const MIN_ZOOM = 0.2
 const MAX_ZOOM = 3
@@ -518,25 +535,21 @@ export function CanvasBoard() {
         return
       }
 
-      if (mode === 'marquee' && marquee) {
-        const selectionBox = {
-          x1: Math.min(marquee.start.x, marquee.current.x),
-          y1: Math.min(marquee.start.y, marquee.current.y),
-          x2: Math.max(marquee.start.x, marquee.current.x),
-          y2: Math.max(marquee.start.y, marquee.current.y),
-        }
+      const marqueeState = marqueeRef.current
+      if (mode === 'marquee' && marqueeState) {
+        const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
         const matchingIds = Object.values(elements)
-          .filter((element) => {
-            const ex1 = element.x
-            const ey1 = element.y
-            const ex2 = element.x + STICKY_WIDTH
-            const ey2 = element.y + STICKY_HEIGHT
-            return !(selectionBox.x2 < ex1 || selectionBox.x1 > ex2 || selectionBox.y2 < ey1 || selectionBox.y1 > ey2)
-          })
+          .filter((element) => rectsIntersect(selectionRect, getStickyBounds(element)))
           .map((element) => element.id)
 
+        console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
+        if (matchingIds.length === 0) {
+          const sample = Object.values(elements)[0]
+          if (sample) console.log('[marquee sample]', getStickyBounds(sample))
+        }
+
         if (matchingIds.length > 0) {
-          if (marquee.shift) {
+          if (marqueeState.shift) {
             const next = new Set(selectedIdsRef.current)
             matchingIds.forEach((id) => {
               if (next.has(id)) next.delete(id)
@@ -546,10 +559,10 @@ export function CanvasBoard() {
           } else {
             setSelection(new Set(matchingIds))
           }
-        } else if (!marquee.shift) {
+        } else if (!marqueeState.shift) {
           clearSelection()
         }
-        setMarquee(null)
+        updateMarquee(null)
         marqueeCandidateRef.current = null
         suppressClickRef.current = true
         releaseClickSuppression()
