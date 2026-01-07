@@ -1,6 +1,6 @@
 import { join } from "path";
 
-export const PORT = Number(Bun.env.PORT ?? 3000);
+export const PORT = Number(Bun.env.PORT ?? 3025);
 export const SESSION_COOKIE = "nostr_session";
 export const LOGIN_EVENT_KIND = 27235;
 export const LOGIN_MAX_AGE_SECONDS = 60;

@@ -9,7 +9,7 @@ bun install
 PORT=4000 bun start
 ```
 
-`bun start` runs `src/server.ts`, which boots `Bun.serve` on `PORT` (defaults to `3000`). The app creates `do-the-other-stuff.sqlite` the first time it runs.
+`bun start` runs `src/server.ts`, which boots `Bun.serve` on `PORT` (defaults to `3025`). The app creates `do-the-other-stuff.sqlite` the first time it runs.
 
 ## Features
 
