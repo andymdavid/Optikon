@@ -19,7 +19,9 @@ const initialCameraState: CameraState = {
   zoom: 1,
 }
 
-const BOARD_ID = 'dev-board'
+const BOARD_STORAGE_KEY = 'optikon.devBoardId'
+const BOARD_TITLE = 'Dev Board'
+const API_BASE_URL = 'http://localhost:3025'
 
 function logInbound(message: unknown) {
   console.log('[ws in]', message)
@@ -71,27 +73,32 @@ export function CanvasBoard() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
+  const createBoardInFlightRef = useRef(false)
   const [cameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
+  const [boardId, setBoardId] = useState<string | null>(null)
 
   const upsertSticky = useCallback((element: StickyNoteElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
 
-  const sendElementUpdate = useCallback((element: StickyNoteElement) => {
-    const socket = socketRef.current
-    if (!socket || socket.readyState !== WebSocket.OPEN || !joinedRef.current) return
-    const message = {
-      type: 'elementUpdate',
-      payload: { boardId: BOARD_ID, element } as { boardId: string; element: BoardElement },
-    }
-    logOutbound(message)
-    socket.send(JSON.stringify(message))
-  }, [])
+  const sendElementUpdate = useCallback(
+    (element: StickyNoteElement) => {
+      const socket = socketRef.current
+      if (!socket || socket.readyState !== WebSocket.OPEN || !joinedRef.current || !boardId) return
+      const message = {
+        type: 'elementUpdate',
+        payload: { boardId, element } as { boardId: string; element: BoardElement },
+      }
+      logOutbound(message)
+      socket.send(JSON.stringify(message))
+    },
+    [boardId]
+  )
 
   const handleCanvasClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement>) => {
-      if (!joinedRef.current) return
+      if (!joinedRef.current || !boardId) return
       const rect = event.currentTarget.getBoundingClientRect()
       const element: StickyNoteElement = {
         id: randomId(),
@@ -103,10 +110,47 @@ export function CanvasBoard() {
       upsertSticky(element)
       sendElementUpdate(element)
     },
-    [sendElementUpdate, upsertSticky]
+    [boardId, sendElementUpdate, upsertSticky]
   )
 
   useEffect(() => {
+    let cancelled = false
+
+    const resolveBoardId = async () => {
+      const stored = localStorage.getItem(BOARD_STORAGE_KEY)
+      if (stored) {
+        setBoardId(stored)
+        return
+      }
+      if (createBoardInFlightRef.current) return
+      createBoardInFlightRef.current = true
+      try {
+        const response = await fetch(`${API_BASE_URL}/boards`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: BOARD_TITLE }),
+        })
+        if (!response.ok) throw new Error('Failed to create board')
+        const board = (await response.json()) as { id?: number | string }
+        const newId = board?.id ? String(board.id) : null
+        if (!newId) throw new Error('Invalid board response')
+        localStorage.setItem(BOARD_STORAGE_KEY, newId)
+        if (!cancelled) setBoardId(newId)
+      } catch (error) {
+        console.error('Failed to resolve board id', error)
+      }
+      createBoardInFlightRef.current = false
+    }
+
+    void resolveBoardId()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!boardId) return
     let socket: WebSocket | null = null
     let retryDelay = 250
     let reconnectTimer: number | null = null
@@ -129,7 +173,7 @@ export function CanvasBoard() {
         const joinPayload = {
           type: 'joinBoard',
           payload: {
-            boardId: BOARD_ID,
+            boardId,
             user: { pubkey: 'anon' },
           },
         }
@@ -192,7 +236,7 @@ export function CanvasBoard() {
       }
       socket.close()
     }
-  }, [sendElementUpdate, upsertSticky])
+  }, [boardId, sendElementUpdate, upsertSticky])
 
   useEffect(() => {
     const canvas = canvasRef.current
