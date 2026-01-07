@@ -33,9 +33,7 @@ function logOutbound(message: unknown) {
   console.log('[ws out]', message)
 }
 
-function randomId() {
-  return Math.random().toString(36).slice(2, 10)
-}
+const randomId = () => Math.random().toString(36).slice(2, 10)
 
 function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
@@ -107,6 +105,13 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
   const [elements, setElements] = useState<ElementMap>({})
   const [boardId, setBoardId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [marquee, setMarquee] = useState<{
+    start: { x: number; y: number }
+    current: { x: number; y: number }
+    screenStart: { x: number; y: number }
+    screenCurrent: { x: number; y: number }
+    shift: boolean
+  } | null>(null)
 
   const screenToBoard = useCallback(
     (point: { x: number; y: number }) => {
@@ -171,7 +176,6 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
           body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
         })
         if (!response.ok) throw new Error('Failed to persist element')
-        await response.json()
       } catch (error) {
         console.error('Failed to persist board element', error)
       }
@@ -194,6 +198,30 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       }
     },
     []
+  )
+
+  const handleCanvasClick = useCallback(
+    (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
+      if (!joinedRef.current || !boardId) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const element: StickyNoteElement = {
+        id: randomId(),
+        type: 'sticky',
+        x: boardPoint.x,
+        y: boardPoint.y,
+        text: 'New note',
+      }
+      upsertSticky(element)
+      sendElementUpdate(element)
+      setSelection(new Set([element.id]))
+      void persistElement(boardId, element)
+    },
+    [boardId, persistElement, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
   )
 
   const removeElements = useCallback((ids: string[]) => {
@@ -260,30 +288,6 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
     [boardId, persistElementsDelete, removeElements, sendElementsDelete]
   )
 
-  const handleCanvasClick = useCallback(
-    (event: MouseEvent<HTMLCanvasElement>) => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false
-        return
-      }
-      if (!joinedRef.current || !boardId) return
-      const rect = event.currentTarget.getBoundingClientRect()
-      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
-      const element: StickyNoteElement = {
-        id: randomId(),
-        type: 'sticky',
-        x: boardPoint.x,
-        y: boardPoint.y,
-        text: 'New note',
-      }
-      upsertSticky(element)
-      sendElementUpdate(element)
-      setSelection(new Set([element.id]))
-      void persistElement(boardId, element)
-    },
-    [boardId, persistElement, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
-  )
-
   const hitTestSticky = useCallback(
     (x: number, y: number): StickyNoteElement | null => {
       const values = Object.values(elements)
@@ -328,8 +332,18 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
       if (!sticky) {
         dragStateRef.current = null
-        clearSelection()
-        suppressClickRef.current = false
+        if (!spacePressedRef.current && event.button === 0) {
+          setMarquee({
+            start: boardPoint,
+            current: boardPoint,
+            screenStart: canvasPoint,
+            screenCurrent: canvasPoint,
+            shift: event.shiftKey,
+          })
+        } else {
+          clearSelection()
+          suppressClickRef.current = false
+        }
         return
       }
       event.preventDefault()
@@ -385,10 +399,23 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         }))
         return
       }
-      const dragState = dragStateRef.current
-      if (!dragState) return
       const rect = event.currentTarget.getBoundingClientRect()
-      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      const dragState = dragStateRef.current
+      if (!dragState && marquee) {
+        setMarquee((prev) =>
+          prev
+            ? {
+                ...prev,
+                current: screenToBoard(canvasPoint),
+                screenCurrent: canvasPoint,
+              }
+            : null
+        )
+        return
+      }
+      if (!dragState) return
+      const boardPoint = screenToBoard(canvasPoint)
       const deltaX = boardPoint.x - dragState.startPointer.x
       const deltaY = boardPoint.y - dragState.startPointer.y
       const updatedElements: StickyNoteElement[] = []
@@ -414,7 +441,7 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         }
       }
     },
-    [cameraState.zoom, screenToBoard, sendElementsUpdate]
+    [cameraState.zoom, marquee, screenToBoard, sendElementsUpdate]
   )
 
   const finishDrag = useCallback(
@@ -442,7 +469,51 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
           // ignore
         }
       }
-      if (!dragState) return
+      if (!dragState) {
+        if (marquee) {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+          const distance = Math.hypot(canvasPoint.x - marquee.screenStart.x, canvasPoint.y - marquee.screenStart.y)
+          if (distance >= 5) {
+            const selectionBox = {
+              x1: Math.min(marquee.start.x, marquee.current.x),
+              y1: Math.min(marquee.start.y, marquee.current.y),
+              x2: Math.max(marquee.start.x, marquee.current.x),
+              y2: Math.max(marquee.start.y, marquee.current.y),
+            }
+            const matchingIds = Object.values(elements)
+              .filter((element) => {
+                const ex1 = element.x
+                const ey1 = element.y
+                const ex2 = element.x + STICKY_WIDTH
+                const ey2 = element.y + STICKY_HEIGHT
+                return !(selectionBox.x2 < ex1 || selectionBox.x1 > ex2 || selectionBox.y2 < ey1 || selectionBox.y1 > ey2)
+              })
+              .map((element) => element.id)
+            if (matchingIds.length > 0) {
+              setSelection(() => {
+                if (marquee.shift) {
+                  const next = new Set(selectedIdsRef.current)
+                  matchingIds.forEach((id) => {
+                    if (next.has(id)) next.delete(id)
+                    else next.add(id)
+                  })
+                  if (next.size === 0) return new Set(matchingIds)
+                  return next
+                }
+                return new Set(matchingIds)
+              })
+            } else if (!marquee.shift) {
+              clearSelection()
+            }
+          } else if (!spacePressedRef.current) {
+            handleCanvasClick(event as unknown as MouseEvent<HTMLCanvasElement>)
+          }
+          setMarquee(null)
+        }
+        suppressClickRef.current = false
+        return
+      }
       dragStateRef.current = null
       const finalElements: StickyNoteElement[] = []
       dragState.ids.forEach((id) => {
@@ -751,6 +822,21 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         onPointerCancel={handlePointerLeave}
         onWheel={handleWheel}
       />
+      {marquee && (
+        <div
+          className="marquee-selection"
+          style={{
+            position: 'absolute',
+            border: '1px dashed #38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+            pointerEvents: 'none',
+            left: Math.min(marquee.screenStart.x, marquee.screenCurrent.x),
+            top: Math.min(marquee.screenStart.y, marquee.screenCurrent.y),
+            width: Math.abs(marquee.screenCurrent.x - marquee.screenStart.x),
+            height: Math.abs(marquee.screenCurrent.y - marquee.screenStart.y),
+          }}
+        />
+      )}
     </section>
   )
 }
