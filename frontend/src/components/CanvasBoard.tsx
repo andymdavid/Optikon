@@ -574,7 +574,7 @@ export function CanvasBoard() {
         } else if (!marqueeState.shift) {
           clearSelection()
         }
-        updateMarquee(null)
+        setMarquee(null)
         marqueeCandidateRef.current = null
         suppressClickRef.current = true
         releaseClickSuppression()
