@@ -212,6 +212,15 @@ const insertBoardElementStmt = db.query<BoardElement>(
    VALUES (?, ?, ?)
    RETURNING *`
 );
+const getBoardElementStmt = db.query<BoardElement>(
+  `SELECT * FROM board_elements WHERE id = ? AND board_id = ?`
+);
+const updateBoardElementStmt = db.query<BoardElement>(
+  `UPDATE board_elements
+   SET props_json = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ? AND board_id = ?
+   RETURNING *`
+);
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
   if (!owner) return [];
@@ -346,6 +355,14 @@ export function listBoardElements(boardId: number) {
 
 export function insertBoardElement(boardId: number, type: string, propsJson: string) {
   return insertBoardElementStmt.get(boardId, type, propsJson) ?? null;
+}
+
+export function getBoardElement(boardId: number, elementId: number) {
+  return getBoardElementStmt.get(elementId, boardId) ?? null;
+}
+
+export function updateBoardElement(boardId: number, elementId: number, propsJson: string) {
+  return updateBoardElementStmt.get(propsJson, elementId, boardId) ?? null;
 }
 
 export function resetDatabase() {

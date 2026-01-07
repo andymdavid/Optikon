@@ -3,7 +3,9 @@ import {
   createBoardElementRecord,
   createBoardRecord,
   fetchBoardById,
+  fetchBoardElement,
   fetchBoardElements,
+  updateBoardElementRecord,
 } from "../services/boards";
 
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
@@ -68,4 +70,27 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   }
 
   return jsonResponse({ id: element.id, board_id: element.board_id, type: element.type }, 201);
+}
+
+export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const existing = fetchBoardElement(boardId, elementId);
+  if (!existing) {
+    return jsonResponse({ message: "Element not found." }, 404);
+  }
+
+  const body = (await safeJson(req)) as { element?: SharedBoardElement | null } | null;
+  if (!body?.element) {
+    return jsonResponse({ message: "Invalid element payload." }, 400);
+  }
+
+  const updated = updateBoardElementRecord(boardId, elementId, body.element);
+  if (!updated) {
+    return jsonResponse({ message: "Unable to update element." }, 500);
+  }
+
+  return jsonResponse({ ok: true });
 }

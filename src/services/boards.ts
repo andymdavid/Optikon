@@ -1,4 +1,4 @@
-import { createBoard, getBoardById, insertBoardElement, listBoardElements } from "../db";
+import { createBoard, getBoardById, getBoardElement, insertBoardElement, listBoardElements, updateBoardElement } from "../db";
 
 import type { Board, BoardElement } from "../db";
 
@@ -18,6 +18,15 @@ export function fetchBoardElements(boardId: number) {
 export function createBoardElementRecord(boardId: number, type: string, props: unknown) {
   const propsJson = JSON.stringify(props ?? {});
   return insertBoardElement(boardId, type, propsJson);
+}
+
+export function fetchBoardElement(boardId: number, elementId: number) {
+  return getBoardElement(boardId, elementId);
+}
+
+export function updateBoardElementRecord(boardId: number, elementId: number, element: unknown) {
+  const propsJson = JSON.stringify(element ?? {});
+  return updateBoardElement(boardId, elementId, propsJson);
 }
 
 export type { Board, BoardElement };

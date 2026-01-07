@@ -12,7 +12,13 @@ import { applyCorsHeaders, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { createAuthHandlers } from "./routes/auth";
-import { handleBoardCreate, handleBoardElementCreate, handleBoardElements, handleBoardShow } from "./routes/boards";
+import {
+  handleBoardCreate,
+  handleBoardElementCreate,
+  handleBoardElementUpdate,
+  handleBoardElements,
+  handleBoardShow,
+} from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import { AuthService } from "./services/auth";
@@ -241,6 +247,13 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
 
     const deleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
     if (deleteMatch) return handleTodoDelete(session, Number(deleteMatch[1]));
+  }
+
+  if (req.method === "PUT") {
+    const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/(\d+)$/);
+    if (boardElementUpdateMatch) {
+      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), Number(boardElementUpdateMatch[2]));
+    }
   }
 
   return new Response("Not found", { status: 404 });
