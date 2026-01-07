@@ -25,6 +25,7 @@ export function CanvasBoard() {
     let reconnectTimer: number | null = null
     let stopped = false
     let cancelledPendingOpen = false
+    let keyListenerAttached = false
 
     const logIn = (message: unknown) => {
       console.log('[ws in]', message)
@@ -32,6 +33,38 @@ export function CanvasBoard() {
 
     const logOut = (message: unknown) => {
       console.log('[ws out]', message)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key?.toLowerCase() !== 'e') return
+      if (!socket || socket.readyState !== WebSocket.OPEN) return
+      const payload = {
+        type: 'elementUpdate',
+        payload: {
+          boardId: 'dev-board',
+          element: {
+            id: Math.random().toString(36).slice(2, 10),
+            type: 'test',
+            x: Math.floor(Math.random() * 501),
+            y: Math.floor(Math.random() * 501),
+            ts: Date.now(),
+          },
+        },
+      }
+      logOut(payload)
+      socket.send(JSON.stringify(payload))
+    }
+
+    const attachKeyListener = () => {
+      if (keyListenerAttached) return
+      window.addEventListener('keydown', handleKeyDown)
+      keyListenerAttached = true
+    }
+
+    const detachKeyListener = () => {
+      if (!keyListenerAttached) return
+      window.removeEventListener('keydown', handleKeyDown)
+      keyListenerAttached = false
     }
 
     const connect = () => {
@@ -59,11 +92,22 @@ export function CanvasBoard() {
       })
 
       currentSocket.addEventListener('message', (event) => {
-        logIn(event.data)
+        try {
+          const parsed = JSON.parse(event.data)
+          logIn(parsed)
+          if (parsed?.type === 'joinAck') {
+            attachKeyListener()
+          } else if (parsed?.type === 'elementUpdate') {
+            console.log('[ws in elementUpdate]', parsed.payload)
+          }
+        } catch (error) {
+          console.error('[ws error] failed to parse message', error)
+        }
       })
 
       currentSocket.addEventListener('close', (event) => {
         console.log('[ws] close', { code: event.code, reason: event.reason })
+        detachKeyListener()
         if (stopped) return
         const delay = retryDelay
         retryDelay = Math.min(retryDelay * 2, 5000)
@@ -82,6 +126,7 @@ export function CanvasBoard() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
       }
+      detachKeyListener()
       if (!socket) return
       if (socket.readyState === WebSocket.OPEN) {
         socket.close()
