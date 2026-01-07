@@ -12,6 +12,7 @@ import { withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { createAuthHandlers } from "./routes/auth";
+import { handleBoardCreate, handleBoardElementCreate, handleBoardElements, handleBoardShow } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import { AuthService } from "./services/auth";
@@ -119,15 +120,22 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
     if (aiTasksMatch) return handleAiTasks(url, aiTasksMatch);
     if (pathname === "/ai/summary/latest") return handleLatestSummary(url);
+    const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
+    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+    if (boardMatch) return handleBoardShow(Number(boardMatch[1]));
     if (pathname === "/") return handleHome(url, session);
   }
 
   if (req.method === "POST") {
+    if (pathname === "/boards") return handleBoardCreate(req);
     if (pathname === "/auth/login") return login(req);
     if (pathname === "/auth/logout") return logout(req);
     if (pathname === "/ai/summary") return handleSummaryPost(req);
     if (pathname === "/ai/tasks") return handleAiTasksPost(req);
     if (pathname === "/todos") return handleTodoCreate(req, session);
+    const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]));
 
     const updateMatch = pathname.match(/^\/todos\/(\d+)\/update$/);
     if (updateMatch) return handleTodoUpdate(req, session, Number(updateMatch[1]));

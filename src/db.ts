@@ -196,6 +196,22 @@ const latestWeekSummaryStmt = db.query<Summary>(
    ORDER BY updated_at DESC
    LIMIT 1`
 );
+const insertBoardStmt = db.query<Board>(
+  `INSERT INTO boards (title)
+   VALUES (?)
+   RETURNING *`
+);
+const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
+const listBoardElementsStmt = db.query<BoardElement>(
+  `SELECT * FROM board_elements
+   WHERE board_id = ?
+   ORDER BY created_at ASC`
+);
+const insertBoardElementStmt = db.query<BoardElement>(
+  `INSERT INTO board_elements (board_id, type, props_json)
+   VALUES (?, ?, ?)
+   RETURNING *`
+);
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
   if (!owner) return [];
@@ -314,6 +330,22 @@ export function getLatestSummaries(owner: string, today: string, weekStart: stri
   const day = latestDaySummaryStmt.get(owner, today) as Summary | undefined;
   const week = latestWeekSummaryStmt.get(owner, weekStart, weekEnd) as Summary | undefined;
   return { day: day ?? null, week: week ?? null };
+}
+
+export function createBoard(title: string) {
+  return insertBoardStmt.get(title) ?? null;
+}
+
+export function getBoardById(id: number) {
+  return getBoardStmt.get(id) ?? null;
+}
+
+export function listBoardElements(boardId: number) {
+  return listBoardElementsStmt.all(boardId);
+}
+
+export function insertBoardElement(boardId: number, type: string, propsJson: string) {
+  return insertBoardElementStmt.get(boardId, type, propsJson) ?? null;
 }
 
 export function resetDatabase() {
