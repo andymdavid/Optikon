@@ -24,6 +24,7 @@ export function CanvasBoard() {
     let retryDelay = 250
     let reconnectTimer: number | null = null
     let stopped = false
+    let cancelledPendingOpen = false
 
     const logIn = (message: unknown) => {
       console.log('[ws in]', message)
@@ -34,9 +35,16 @@ export function CanvasBoard() {
     }
 
     const connect = () => {
+      if (stopped) return
+      cancelledPendingOpen = false
       socket = new WebSocket('ws://localhost:3025/ws')
+      const currentSocket = socket
 
-      socket.addEventListener('open', () => {
+      currentSocket.addEventListener('open', () => {
+        if (stopped || cancelledPendingOpen) {
+          currentSocket.close()
+          return
+        }
         retryDelay = 250
         const joinPayload = {
           type: 'joinBoard',
@@ -46,21 +54,21 @@ export function CanvasBoard() {
           },
         }
         logOut(joinPayload)
-        socket?.send(JSON.stringify(joinPayload))
+        currentSocket.send(JSON.stringify(joinPayload))
       })
 
-      socket.addEventListener('message', (event) => {
+      currentSocket.addEventListener('message', (event) => {
         logIn(event.data)
       })
 
-      socket.addEventListener('close', () => {
+      currentSocket.addEventListener('close', () => {
         if (stopped) return
         const delay = retryDelay
         retryDelay = Math.min(retryDelay * 2, 5000)
         reconnectTimer = window.setTimeout(connect, delay)
       })
 
-      socket.addEventListener('error', (event) => {
+      currentSocket.addEventListener('error', (event) => {
         console.error('[ws error]', event)
       })
     }
@@ -72,7 +80,16 @@ export function CanvasBoard() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
       }
-      socket?.close()
+      if (!socket) return
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close()
+        return
+      }
+      if (socket.readyState === WebSocket.CONNECTING) {
+        cancelledPendingOpen = true
+        return
+      }
+      socket.close()
     }
   }, [])
 
