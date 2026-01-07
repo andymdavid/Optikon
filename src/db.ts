@@ -27,7 +27,31 @@ export type Summary = {
   updated_at: string;
 };
 
+export type Board = {
+  id: number;
+  title: string;
+  created_at: string;
+};
+
+export type BoardElement = {
+  id: number;
+  board_id: number;
+  type: string;
+  props_json: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BoardComment = {
+  id: number;
+  element_id: number;
+  author: string;
+  text: string;
+  created_at: string;
+};
+
 const db = new Database(Bun.env.DB_PATH || "do-the-other-stuff.sqlite");
+db.run("PRAGMA foreign_keys = ON");
 
 db.run(`
   CREATE TABLE IF NOT EXISTS todos (
@@ -67,6 +91,37 @@ db.run(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(owner, summary_date)
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS boards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS board_elements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    props_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+  )
+`);
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS board_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    element_id INTEGER NOT NULL,
+    author TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(element_id) REFERENCES board_elements(id) ON DELETE CASCADE
   )
 `);
 
