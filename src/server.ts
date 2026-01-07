@@ -18,6 +18,7 @@ import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate }
 import { AuthService } from "./services/auth";
 import { serveStatic } from "./static";
 
+import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 
@@ -120,9 +121,15 @@ function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknow
     sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
     return;
   }
-  const payloadBoardId = extractBoardId(payload);
+  const typedPayload = payload as { boardId?: string; element?: BoardElement };
+  const payloadBoardId = typedPayload?.boardId ?? null;
   if (!payloadBoardId || payloadBoardId !== boardId) {
     sendJson(ws, { type: "error", payload: { message: "Board mismatch" } });
+    return;
+  }
+  const element = typedPayload.element;
+  if (!element) {
+    sendJson(ws, { type: "error", payload: { message: "Missing element" } });
     return;
   }
   const sockets = boardSockets.get(boardId);
@@ -130,7 +137,12 @@ function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknow
   let recipients = 0;
   for (const peer of sockets) {
     if (peer === ws) continue;
-    peer.send(JSON.stringify({ type: "elementUpdate", payload }));
+    peer.send(
+      JSON.stringify({
+        type: "elementUpdate",
+        payload: { boardId, element },
+      })
+    );
     recipients += 1;
   }
   console.log(`[ws] elementUpdate board=${boardId} recipients=${recipients}`);

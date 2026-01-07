@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+
+import type { BoardElement, StickyNoteElement } from '@shared/boardElements'
 
 export type Vector2D = {
   x: number
@@ -10,15 +12,7 @@ export type CameraState = {
   zoom: number
 }
 
-type StickyElement = {
-  id: string
-  type: 'sticky'
-  x: number
-  y: number
-  text: string
-}
-
-type ElementMap = Record<string, StickyElement>
+type ElementMap = Record<string, StickyNoteElement>
 
 const initialCameraState: CameraState = {
   position: { x: 0, y: 0 },
@@ -39,9 +33,9 @@ function randomId() {
   return Math.random().toString(36).slice(2, 10)
 }
 
-function parseStickyElement(raw: unknown): StickyElement | null {
+function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
-  const element = raw as Partial<StickyElement>
+  const element = raw as Partial<StickyNoteElement>
   if (element.type !== 'sticky') return null
   if (typeof element.id !== 'string') return null
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
@@ -55,7 +49,7 @@ function parseStickyElement(raw: unknown): StickyElement | null {
   }
 }
 
-function drawSticky(ctx: CanvasRenderingContext2D, element: StickyElement) {
+function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement) {
   const width = 140
   const height = 100
   ctx.save()
@@ -80,26 +74,26 @@ export function CanvasBoard() {
   const [cameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
 
-  const upsertSticky = useCallback((element: StickyElement) => {
+  const upsertSticky = useCallback((element: StickyNoteElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
 
-  const sendElementUpdate = useCallback((element: StickyElement) => {
+  const sendElementUpdate = useCallback((element: StickyNoteElement) => {
     const socket = socketRef.current
     if (!socket || socket.readyState !== WebSocket.OPEN || !joinedRef.current) return
     const message = {
       type: 'elementUpdate',
-      payload: { boardId: BOARD_ID, element },
+      payload: { boardId: BOARD_ID, element } as { boardId: string; element: BoardElement },
     }
     logOutbound(message)
     socket.send(JSON.stringify(message))
   }, [])
 
   const handleCanvasClick = useCallback(
-    (event: React.MouseEvent<HTMLCanvasElement>) => {
+    (event: MouseEvent<HTMLCanvasElement>) => {
       if (!joinedRef.current) return
       const rect = event.currentTarget.getBoundingClientRect()
-      const element: StickyElement = {
+      const element: StickyNoteElement = {
         id: randomId(),
         type: 'sticky',
         x: event.clientX - rect.left,
