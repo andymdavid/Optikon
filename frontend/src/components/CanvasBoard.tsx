@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 
 import type { BoardElement, StickyNoteElement } from '@shared/boardElements'
 
@@ -22,6 +22,9 @@ const initialCameraState: CameraState = {
 const BOARD_STORAGE_KEY = 'optikon.devBoardId'
 const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
+const STICKY_WIDTH = 140
+const STICKY_HEIGHT = 100
+const DRAG_THROTTLE_MS = 50
 
 function logInbound(message: unknown) {
   console.log('[ws in]', message)
@@ -51,13 +54,13 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   }
 }
 
-function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement) {
-  const width = 140
-  const height = 100
+function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, isSelected: boolean) {
+  const width = STICKY_WIDTH
+  const height = STICKY_HEIGHT
   ctx.save()
   ctx.fillStyle = '#fde68a'
-  ctx.strokeStyle = '#f59e0b'
-  ctx.lineWidth = 2
+  ctx.strokeStyle = isSelected ? '#f97316' : '#f59e0b'
+  ctx.lineWidth = isSelected ? 3 : 2
   ctx.fillRect(element.x, element.y, width, height)
   ctx.strokeRect(element.x, element.y, width, height)
   ctx.fillStyle = '#111827'
@@ -74,9 +77,13 @@ export function CanvasBoard() {
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
   const createBoardInFlightRef = useRef(false)
+  const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  const suppressClickRef = useRef(false)
+  const lastBroadcastRef = useRef(0)
   const [cameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
   const [boardId, setBoardId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const upsertSticky = useCallback((element: StickyNoteElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
@@ -114,6 +121,10 @@ export function CanvasBoard() {
 
   const handleCanvasClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
       if (!joinedRef.current || !boardId) return
       const rect = event.currentTarget.getBoundingClientRect()
       const element: StickyNoteElement = {
@@ -128,6 +139,109 @@ export function CanvasBoard() {
       void persistElement(boardId, element)
     },
     [boardId, persistElement, sendElementUpdate, upsertSticky]
+  )
+
+  const hitTestSticky = useCallback(
+    (x: number, y: number): StickyNoteElement | null => {
+      const values = Object.values(elements)
+      for (let i = values.length - 1; i >= 0; i -= 1) {
+        const element = values[i]
+        if (
+          x >= element.x &&
+          x <= element.x + STICKY_WIDTH &&
+          y >= element.y &&
+          y <= element.y + STICKY_HEIGHT
+        ) {
+          return element
+        }
+      }
+      return null
+    },
+    [elements]
+  )
+
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      if (!boardId) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      const sticky = hitTestSticky(x, y)
+      if (!sticky) {
+        dragStateRef.current = null
+        setSelectedId(null)
+        suppressClickRef.current = false
+        return
+      }
+      event.preventDefault()
+      suppressClickRef.current = true
+      dragStateRef.current = { id: sticky.id, offsetX: x - sticky.x, offsetY: y - sticky.y }
+      setSelectedId(sticky.id)
+      if (event.currentTarget.setPointerCapture) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }
+    },
+    [boardId, hitTestSticky]
+  )
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      const dragState = dragStateRef.current
+      if (!dragState) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const newX = event.clientX - rect.left - dragState.offsetX
+      const newY = event.clientY - rect.top - dragState.offsetY
+      let updated: StickyNoteElement | null = null
+      setElements((prev) => {
+        const target = prev[dragState.id]
+        if (!target) return prev
+        updated = { ...target, x: newX, y: newY }
+        return { ...prev, [dragState.id]: updated }
+      })
+      const now = Date.now()
+      if (updated && now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+        sendElementUpdate(updated)
+        lastBroadcastRef.current = now
+      }
+    },
+    [sendElementUpdate]
+  )
+
+  const finishDrag = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      const dragState = dragStateRef.current
+      if (event.currentTarget.releasePointerCapture) {
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        } catch (_error) {
+          // ignore
+        }
+      }
+      if (!dragState) return
+      dragStateRef.current = null
+      const finalElement = elements[dragState.id]
+      if (finalElement) {
+        sendElementUpdate(finalElement)
+      }
+      setTimeout(() => {
+        suppressClickRef.current = false
+      }, 0)
+    },
+    [elements, sendElementUpdate]
+  )
+
+  const handlePointerUp = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      finishDrag(event)
+    },
+    [finishDrag]
+  )
+
+  const handlePointerLeave = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      finishDrag(event)
+    },
+    [finishDrag]
   )
 
   useEffect(() => {
@@ -165,6 +279,10 @@ export function CanvasBoard() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    setSelectedId(null)
+  }, [boardId])
 
   useEffect(() => {
     if (!boardId) return
@@ -312,9 +430,9 @@ export function CanvasBoard() {
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     Object.values(elements).forEach((element) => {
-      drawSticky(ctx, element)
+      drawSticky(ctx, element, element.id === selectedId)
     })
-  }, [elements])
+  }, [elements, selectedId])
 
   return (
     <section
@@ -324,7 +442,16 @@ export function CanvasBoard() {
       data-camera-y={cameraState.position.y}
       data-camera-zoom={cameraState.zoom}
     >
-      <canvas ref={canvasRef} className="canvas-board__surface" onClick={handleCanvasClick} />
+      <canvas
+        ref={canvasRef}
+        className="canvas-board__surface"
+        onClick={handleCanvasClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerLeave}
+      />
     </section>
   )
 }
