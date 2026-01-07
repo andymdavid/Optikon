@@ -151,6 +151,51 @@ export function CanvasBoard() {
 
   useEffect(() => {
     if (!boardId) return
+    let cancelled = false
+
+    const loadPersistedElements = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`)
+        if (!response.ok) throw new Error('Failed to load elements')
+        const data = (await response.json()) as {
+          elements?: Array<{ element?: BoardElement | null; props_json?: string }>
+        }
+        const parsed: StickyNoteElement[] = []
+        data.elements?.forEach((entry) => {
+          let candidate: unknown = entry?.element ?? null
+          if (!candidate && entry?.props_json) {
+            try {
+              candidate = JSON.parse(entry.props_json)
+            } catch (error) {
+              console.error('Failed to parse persisted element JSON', error)
+            }
+          }
+          const sticky = parseStickyElement(candidate)
+          if (sticky) parsed.push(sticky)
+        })
+        if (!cancelled && parsed.length > 0) {
+          setElements((prev) => {
+            const next = { ...prev }
+            parsed.forEach((element) => {
+              next[element.id] = element
+            })
+            return next
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load board elements', error)
+      }
+    }
+
+    void loadPersistedElements()
+
+    return () => {
+      cancelled = true
+    }
+  }, [boardId])
+
+  useEffect(() => {
+    if (!boardId) return
     let socket: WebSocket | null = null
     let retryDelay = 250
     let reconnectTimer: number | null = null

@@ -6,6 +6,8 @@ import {
   fetchBoardElements,
 } from "../services/boards";
 
+import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
+
 export async function handleBoardCreate(req: Request) {
   const body = (await safeJson(req)) as { title?: string } | null;
   const board = createBoardRecord(body?.title ?? null);
@@ -23,12 +25,29 @@ export function handleBoardShow(boardId: number) {
   return jsonResponse(board);
 }
 
+function parseStoredElement(propsJson: string): SharedBoardElement | null {
+  try {
+    return JSON.parse(propsJson) as SharedBoardElement;
+  } catch (error) {
+    console.error("Failed to parse board element payload", error);
+    return null;
+  }
+}
+
 export function handleBoardElements(boardId: number) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
-  const elements = fetchBoardElements(boardId);
+  const rows = fetchBoardElements(boardId);
+  const elements = rows.map((row) => ({
+    id: row.id,
+    boardId: row.board_id,
+    type: row.type,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    element: parseStoredElement(row.props_json),
+  }));
   return jsonResponse({ elements });
 }
 
