@@ -485,7 +485,8 @@ const marqueeCandidateRef = useRef<
 
       if (mode === 'pan') {
         panStateRef.current = null
-        suppressClickRef.current = false
+        suppressClickRef.current = true
+        releaseClickSuppression()
         setMarquee(null)
         marqueeCandidateRef.current = null
         return
@@ -545,7 +546,8 @@ const marqueeCandidateRef = useRef<
         }
         setMarquee(null)
         marqueeCandidateRef.current = null
-        suppressClickRef.current = false
+        suppressClickRef.current = true
+        releaseClickSuppression()
         return
       }
 
@@ -555,13 +557,15 @@ const marqueeCandidateRef = useRef<
         if (reason === 'up') {
           handleCanvasClick(event as unknown as MouseEvent<HTMLCanvasElement>)
         }
-        suppressClickRef.current = false
+        suppressClickRef.current = true
+        releaseClickSuppression()
         return
       }
 
       marqueeCandidateRef.current = null
       setMarquee(null)
-      suppressClickRef.current = false
+      suppressClickRef.current = true
+      releaseClickSuppression()
     },
     [boardId, elements, handleCanvasClick, clearSelection, persistElementsUpdate, sendElementsUpdate, setSelection]
   )
@@ -879,4 +883,9 @@ const marqueeCandidateRef = useRef<
       )}
     </section>
   )
+}
+const releaseClickSuppression = () => {
+  requestAnimationFrame(() => {
+    suppressClickRef.current = false
+  })
 }
