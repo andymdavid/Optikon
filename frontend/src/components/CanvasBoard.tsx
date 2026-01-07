@@ -118,34 +118,6 @@ export function CanvasBoard() {
     let reconnectTimer: number | null = null
     let stopped = false
     let cancelledPendingOpen = false
-    let keyListenerAttached = false
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key?.toLowerCase() !== 'e') return
-      if (!joinedRef.current) return
-      const element: StickyElement = {
-        id: randomId(),
-        type: 'sticky',
-        x: Math.floor(Math.random() * 501),
-        y: Math.floor(Math.random() * 501),
-        text: 'New note',
-      }
-      upsertSticky(element)
-      sendElementUpdate(element)
-    }
-
-    const attachKeyListener = () => {
-      if (keyListenerAttached) return
-      window.addEventListener('keydown', handleKeyDown)
-      keyListenerAttached = true
-    }
-
-    const detachKeyListener = () => {
-      if (!keyListenerAttached) return
-      window.removeEventListener('keydown', handleKeyDown)
-      keyListenerAttached = false
-    }
-
     const connect = () => {
       if (stopped) return
       cancelledPendingOpen = false
@@ -177,7 +149,6 @@ export function CanvasBoard() {
           logInbound(parsed)
           if (parsed?.type === 'joinAck') {
             joinedRef.current = true
-            attachKeyListener()
           } else if (parsed?.type === 'elementUpdate') {
             console.log('[ws in elementUpdate]', parsed.payload)
             const incoming = parseStickyElement((parsed.payload as { element?: unknown })?.element)
@@ -191,7 +162,6 @@ export function CanvasBoard() {
       currentSocket.addEventListener('close', (event) => {
         console.log('[ws] close', { code: event.code, reason: event.reason })
         joinedRef.current = false
-        detachKeyListener()
         if (socketRef.current === currentSocket) {
           socketRef.current = null
         }
@@ -213,7 +183,6 @@ export function CanvasBoard() {
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
       }
-      detachKeyListener()
       joinedRef.current = false
       if (!socket) return
       if (socketRef.current === socket) {
