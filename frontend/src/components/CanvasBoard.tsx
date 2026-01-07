@@ -89,27 +89,32 @@ export function CanvasBoard() {
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
   const createBoardInFlightRef = useRef(false)
-  const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number; pointerId: number; startPointer: { x: number; y: number }; startPositions: Record<string, { x: number; y: number }> } | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
-const panStateRef = useRef<{
-  pointerId: number
-  startX: number
-  startY: number
-  startOffsetX: number
-  startOffsetY: number
-} | null>(null)
-const spacePressedRef = useRef(false)
-const selectedIdsRef = useRef<Set<string>>(new Set())
-const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate'>('none')
-const marqueeCandidateRef = useRef<
-  | null
-  | {
-      startBoard: { x: number; y: number }
-      startScreen: { x: number; y: number }
-      shift: boolean
-    }
->(null)
+  const panStateRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startOffsetX: number
+    startOffsetY: number
+  } | null>(null)
+  const spacePressedRef = useRef(false)
+  const selectedIdsRef = useRef<Set<string>>(new Set())
+  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate'>('none')
+  const marqueeCandidateRef = useRef<
+    | null
+    | {
+        startBoard: { x: number; y: number }
+        startScreen: { x: number; y: number }
+        shift: boolean
+      }
+  >(null)
+  const releaseClickSuppression = useCallback(() => {
+    requestAnimationFrame(() => {
+      suppressClickRef.current = false
+    })
+  }, [])
   const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
   const [boardId, setBoardId] = useState<string | null>(null)
@@ -883,9 +888,4 @@ const marqueeCandidateRef = useRef<
       )}
     </section>
   )
-}
-const releaseClickSuppression = () => {
-  requestAnimationFrame(() => {
-    suppressClickRef.current = false
-  })
 }
