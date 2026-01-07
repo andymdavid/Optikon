@@ -49,10 +49,13 @@ export function sessionFromRequest(req: Request, cookieName: string, sessionStor
   return sessionStore.get(token) ?? null;
 }
 
-export function withErrorHandling(handler: (req: Request) => Promise<Response> | Response, onError?: (error: unknown) => void) {
-  return async (req: Request) => {
+export function withErrorHandling<TArgs extends unknown[]>(
+  handler: (...args: TArgs) => Promise<Response> | Response,
+  onError?: (error: unknown) => void
+) {
+  return async (...args: TArgs) => {
     try {
-      return await handler(req);
+      return await handler(...args);
     } catch (error) {
       onError?.(error);
       return new Response("Internal Server Error", { status: 500 });
