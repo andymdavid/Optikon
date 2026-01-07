@@ -323,6 +323,7 @@ const marqueeCandidateRef = useRef<
       }
 
       if (event.button === 1 || spacePressedRef.current) {
+        suppressClickRef.current = true
         interactionModeRef.current = 'pan'
         panStateRef.current = {
           pointerId: event.pointerId,
@@ -356,6 +357,7 @@ const marqueeCandidateRef = useRef<
         return
       }
       event.preventDefault()
+      suppressClickRef.current = true
       interactionModeRef.current = 'drag'
 
       const currentSelection = selectedIdsRef.current
