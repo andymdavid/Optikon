@@ -145,10 +145,14 @@ export function CanvasBoard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
-  const setMarquee = useCallback((next: MarqueeState | null) => {
-    marqueeRef.current = next
-    setMarqueeState(next)
-  }, [])
+  const setMarquee = useCallback(
+    (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
+      const value = typeof next === 'function' ? (next as (prev: MarqueeState | null) => MarqueeState | null)(marqueeRef.current) : next
+      marqueeRef.current = value
+      setMarqueeState(value)
+    },
+    []
+  )
 
   const screenToBoard = useCallback(
     (point: { x: number; y: number }) => {
