@@ -8,7 +8,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
 } from "./config";
-import { withErrorHandling } from "./http";
+import { applyCorsHeaders, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { createAuthHandlers } from "./routes/auth";
@@ -201,6 +201,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   const { pathname } = url;
   const session = sessionFromRequest(req);
 
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204 });
+  }
+
   if (pathname === "/ws") {
     return handleWebSocketUpgrade(req, serverInstance, session);
   }
@@ -247,7 +251,11 @@ const server = Bun.serve<WebSocketData>({
   websocket: websocketHandler,
   fetch: withErrorHandling(
     (req: Request, serverInstance: Server<WebSocketData>) => routeRequest(req, serverInstance),
-    (error) => logError("Request failed", error)
+    (error) => logError("Request failed", error),
+    (response) => {
+      if (response.status === 101) return response;
+      return applyCorsHeaders(response);
+    }
   ),
 });
 

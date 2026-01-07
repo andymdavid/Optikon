@@ -1,5 +1,7 @@
 import type { Session } from "./types";
 
+const CORS_ORIGIN = "http://localhost:5510";
+
 export function redirect(path: string) {
   return new Response(null, { status: 303, headers: { Location: path } });
 }
@@ -49,16 +51,26 @@ export function sessionFromRequest(req: Request, cookieName: string, sessionStor
   return sessionStore.get(token) ?? null;
 }
 
+export function applyCorsHeaders(response: Response) {
+  response.headers.set("Access-Control-Allow-Origin", CORS_ORIGIN);
+  response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return response;
+}
+
 export function withErrorHandling<TArgs extends unknown[]>(
   handler: (...args: TArgs) => Promise<Response> | Response,
-  onError?: (error: unknown) => void
+  onError?: (error: unknown) => void,
+  decorateResponse?: (response: Response) => Response
 ) {
   return async (...args: TArgs) => {
     try {
-      return await handler(...args);
+      const response = await handler(...args);
+      return decorateResponse ? decorateResponse(response) : response;
     } catch (error) {
       onError?.(error);
-      return new Response("Internal Server Error", { status: 500 });
+      const response = new Response("Internal Server Error", { status: 500 });
+      return decorateResponse ? decorateResponse(response) : response;
     }
   };
 }
