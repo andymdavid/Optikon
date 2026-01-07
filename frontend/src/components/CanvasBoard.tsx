@@ -542,7 +542,7 @@ export function CanvasBoard() {
       }
 
       const marqueeState = marqueeRef.current
-      if (mode === 'marquee' && marqueeState) {
+      if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
         const matchingIds = Object.values(elements)
           .filter((element) => rectsIntersect(selectionRect, getStickyBounds(element)))
