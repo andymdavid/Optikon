@@ -101,6 +101,15 @@ const panStateRef = useRef<{
 } | null>(null)
 const spacePressedRef = useRef(false)
 const selectedIdsRef = useRef<Set<string>>(new Set())
+const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate'>('none')
+const marqueeCandidateRef = useRef<
+  | null
+  | {
+      startBoard: { x: number; y: number }
+      startScreen: { x: number; y: number }
+      shift: boolean
+    }
+>(null)
   const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
   const [boardId, setBoardId] = useState<string | null>(null)
@@ -167,22 +176,6 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
     [boardId]
   )
 
-  const persistElement = useCallback(
-    async (board: string, element: StickyNoteElement) => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
-        })
-        if (!response.ok) throw new Error('Failed to persist element')
-      } catch (error) {
-        console.error('Failed to persist board element', error)
-      }
-    },
-    []
-  )
-
   const persistElementsUpdate = useCallback(
     async (board: string, elementsToPersist: StickyNoteElement[]) => {
       if (elementsToPersist.length === 0) return
@@ -219,9 +212,20 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       upsertSticky(element)
       sendElementUpdate(element)
       setSelection(new Set([element.id]))
-      void persistElement(boardId, element)
+      void (async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
+          })
+          if (!response.ok) throw new Error('Failed to persist element')
+        } catch (error) {
+          console.error('Failed to persist board element', error)
+        }
+      })()
     },
-    [boardId, persistElement, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
+    [boardId, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
   )
 
   const removeElements = useCallback((ids: string[]) => {
@@ -312,7 +316,14 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // ignore
+      }
+
       if (event.button === 1 || spacePressedRef.current) {
+        interactionModeRef.current = 'pan'
         panStateRef.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
@@ -320,34 +331,32 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
           startOffsetX: cameraState.offsetX,
           startOffsetY: cameraState.offsetY,
         }
-        suppressClickRef.current = true
         if (event.currentTarget.setPointerCapture) {
           event.currentTarget.setPointerCapture(event.pointerId)
         }
         return
       }
 
-      if (!boardId) return
+      if (!boardId) {
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        } catch {
+          // ignore
+        }
+        interactionModeRef.current = 'none'
+        return
+      }
       const boardPoint = screenToBoard(canvasPoint)
       const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
       if (!sticky) {
         dragStateRef.current = null
-        if (!spacePressedRef.current && event.button === 0) {
-          setMarquee({
-            start: boardPoint,
-            current: boardPoint,
-            screenStart: canvasPoint,
-            screenCurrent: canvasPoint,
-            shift: event.shiftKey,
-          })
-        } else {
-          clearSelection()
-          suppressClickRef.current = false
-        }
+        marqueeCandidateRef.current = { startBoard: boardPoint, startScreen: canvasPoint, shift: event.shiftKey }
+        setMarquee(null)
+        interactionModeRef.current = 'marqueeCandidate'
         return
       }
       event.preventDefault()
-      suppressClickRef.current = true
+      interactionModeRef.current = 'drag'
 
       const currentSelection = selectedIdsRef.current
       let nextSelection: Set<string>
@@ -379,17 +388,18 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         startPointer: boardPoint,
         startPositions,
       }
-      if (event.currentTarget.setPointerCapture) {
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }
     },
-    [boardId, clearSelection, elements, hitTestSticky, screenToBoard, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestSticky, screenToBoard, setSelection]
   )
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
+      const mode = interactionModeRef.current
+      const rect = event.currentTarget.getBoundingClientRect()
+      const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+
       const panState = panStateRef.current
-      if (panState && event.pointerId === panState.pointerId) {
+      if (mode === 'pan' && panState && event.pointerId === panState.pointerId) {
         const deltaX = (event.clientX - panState.startX) / cameraState.zoom
         const deltaY = (event.clientY - panState.startY) / cameraState.zoom
         setCameraState((prev) => ({
@@ -399,10 +409,24 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         }))
         return
       }
-      const rect = event.currentTarget.getBoundingClientRect()
-      const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-      const dragState = dragStateRef.current
-      if (!dragState && marquee) {
+      if (mode === 'marqueeCandidate') {
+        const candidate = marqueeCandidateRef.current
+        if (!candidate) return
+        const distance = Math.hypot(canvasPoint.x - candidate.startScreen.x, canvasPoint.y - candidate.startScreen.y)
+        if (distance >= 5) {
+          interactionModeRef.current = 'marquee'
+          marqueeCandidateRef.current = null
+          setMarquee({
+            start: candidate.startBoard,
+            current: screenToBoard(canvasPoint),
+            screenStart: candidate.startScreen,
+            screenCurrent: canvasPoint,
+            shift: candidate.shift,
+          })
+        }
+        return
+      }
+      if (mode === 'marquee') {
         setMarquee((prev) =>
           prev
             ? {
@@ -410,11 +434,13 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
                 current: screenToBoard(canvasPoint),
                 screenCurrent: canvasPoint,
               }
-            : null
+            : prev
         )
         return
       }
-      if (!dragState) return
+
+      const dragState = dragStateRef.current
+      if (mode !== 'drag' || !dragState || dragState.pointerId !== event.pointerId) return
       const boardPoint = screenToBoard(canvasPoint)
       const deltaX = boardPoint.x - dragState.startPointer.x
       const deltaY = boardPoint.y - dragState.startPointer.y
@@ -441,108 +467,120 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         }
       }
     },
-    [cameraState.zoom, marquee, screenToBoard, sendElementsUpdate]
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, marquee, screenToBoard, sendElementsUpdate]
   )
 
   const finishDrag = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
-      const panState = panStateRef.current
-      if (panState && event.pointerId === panState.pointerId) {
+    (event: PointerEvent<HTMLCanvasElement>, reason: 'up' | 'cancel') => {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // ignore
+      }
+
+      const mode = interactionModeRef.current
+      interactionModeRef.current = 'none'
+
+      if (mode === 'pan') {
         panStateRef.current = null
-        if (event.currentTarget.releasePointerCapture) {
-          try {
-            event.currentTarget.releasePointerCapture(event.pointerId)
-          } catch (_error) {
-            // ignore
-          }
-        }
-        setTimeout(() => {
-          suppressClickRef.current = false
-        }, 0)
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
         return
       }
-      const dragState = dragStateRef.current
-      if (event.currentTarget.releasePointerCapture) {
-        try {
-          event.currentTarget.releasePointerCapture(event.pointerId)
-        } catch (_error) {
-          // ignore
-        }
-      }
-      if (!dragState) {
-        if (marquee) {
-          const rect = event.currentTarget.getBoundingClientRect()
-          const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-          const distance = Math.hypot(canvasPoint.x - marquee.screenStart.x, canvasPoint.y - marquee.screenStart.y)
-          if (distance >= 5) {
-            const selectionBox = {
-              x1: Math.min(marquee.start.x, marquee.current.x),
-              y1: Math.min(marquee.start.y, marquee.current.y),
-              x2: Math.max(marquee.start.x, marquee.current.x),
-              y2: Math.max(marquee.start.y, marquee.current.y),
-            }
-            const matchingIds = Object.values(elements)
-              .filter((element) => {
-                const ex1 = element.x
-                const ey1 = element.y
-                const ex2 = element.x + STICKY_WIDTH
-                const ey2 = element.y + STICKY_HEIGHT
-                return !(selectionBox.x2 < ex1 || selectionBox.x1 > ex2 || selectionBox.y2 < ey1 || selectionBox.y1 > ey2)
-              })
-              .map((element) => element.id)
-            if (matchingIds.length > 0) {
-              setSelection(() => {
-                if (marquee.shift) {
-                  const next = new Set(selectedIdsRef.current)
-                  matchingIds.forEach((id) => {
-                    if (next.has(id)) next.delete(id)
-                    else next.add(id)
-                  })
-                  if (next.size === 0) return new Set(matchingIds)
-                  return next
-                }
-                return new Set(matchingIds)
-              })
-            } else if (!marquee.shift) {
-              clearSelection()
-            }
-          } else if (!spacePressedRef.current) {
-            handleCanvasClick(event as unknown as MouseEvent<HTMLCanvasElement>)
+
+      if (mode === 'drag') {
+        const dragState = dragStateRef.current
+        dragStateRef.current = null
+        if (!dragState) return
+        const finalElements: StickyNoteElement[] = []
+        dragState.ids.forEach((id) => {
+          const element = elements[id]
+          if (element) finalElements.push(element)
+        })
+        if (finalElements.length > 0) {
+          sendElementsUpdate(finalElements)
+          if (boardId) {
+            void persistElementsUpdate(boardId, finalElements)
           }
-          setMarquee(null)
+        }
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        return
+      }
+
+      if (mode === 'marquee' && marquee) {
+        const selectionBox = {
+          x1: Math.min(marquee.start.x, marquee.current.x),
+          y1: Math.min(marquee.start.y, marquee.current.y),
+          x2: Math.max(marquee.start.x, marquee.current.x),
+          y2: Math.max(marquee.start.y, marquee.current.y),
+        }
+        const matchingIds = Object.values(elements)
+          .filter((element) => {
+            const ex1 = element.x
+            const ey1 = element.y
+            const ex2 = element.x + STICKY_WIDTH
+            const ey2 = element.y + STICKY_HEIGHT
+            return !(selectionBox.x2 < ex1 || selectionBox.x1 > ex2 || selectionBox.y2 < ey1 || selectionBox.y1 > ey2)
+          })
+          .map((element) => element.id)
+
+        if (matchingIds.length > 0) {
+          if (marquee.shift) {
+            const next = new Set(selectedIdsRef.current)
+            matchingIds.forEach((id) => {
+              if (next.has(id)) next.delete(id)
+              else next.add(id)
+            })
+            setSelection(next.size === 0 ? new Set(matchingIds) : next)
+          } else {
+            setSelection(new Set(matchingIds))
+          }
+        } else if (!marquee.shift) {
+          clearSelection()
+        }
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        suppressClickRef.current = false
+        return
+      }
+
+      if (mode === 'marqueeCandidate') {
+        marqueeCandidateRef.current = null
+        setMarquee(null)
+        if (reason === 'up') {
+          handleCanvasClick(event as unknown as MouseEvent<HTMLCanvasElement>)
         }
         suppressClickRef.current = false
         return
       }
-      dragStateRef.current = null
-      const finalElements: StickyNoteElement[] = []
-      dragState.ids.forEach((id) => {
-        const element = elements[id]
-        if (element) finalElements.push(element)
-      })
-      if (finalElements.length > 0) {
-        sendElementsUpdate(finalElements)
-        if (boardId) {
-          void persistElementsUpdate(boardId, finalElements)
-        }
-      }
-      setTimeout(() => {
-        suppressClickRef.current = false
-      }, 0)
+
+      marqueeCandidateRef.current = null
+      setMarquee(null)
+      suppressClickRef.current = false
     },
-    [boardId, elements, persistElementsUpdate, sendElementsUpdate]
+    [boardId, elements, handleCanvasClick, clearSelection, persistElementsUpdate, sendElementsUpdate, setSelection]
   )
 
   const handlePointerUp = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
-      finishDrag(event)
+      finishDrag(event, 'up')
     },
     [finishDrag]
   )
 
   const handlePointerLeave = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
-      finishDrag(event)
+      finishDrag(event, 'cancel')
+    },
+    [finishDrag]
+  )
+
+  const handlePointerCancel = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      finishDrag(event, 'cancel')
     },
     [finishDrag]
   )
@@ -785,7 +823,7 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       }
       socket.close()
     }
-  }, [boardId, sendElementUpdate, upsertSticky])
+  }, [boardId, removeElements, sendElementUpdate, upsertSticky])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -819,7 +857,7 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
-        onPointerCancel={handlePointerLeave}
+        onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
       />
       {marquee && (
