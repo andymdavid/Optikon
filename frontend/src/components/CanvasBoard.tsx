@@ -53,6 +53,14 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   }
 }
 
+function setsEqual(a: Set<string>, b: Set<string>) {
+  if (a.size !== b.size) return false
+  for (const value of a) {
+    if (!b.has(value)) return false
+  }
+  return true
+}
+
 function drawSticky(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -114,21 +122,15 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
 
-  const clearSelection = useCallback(() => {
-    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+  const setSelection = useCallback((next: Set<string>) => {
+    selectedIdsRef.current = next
+    setSelectedIds(next)
   }, [])
 
-  const updateSelection = useCallback((id: string, additive: boolean) => {
-    setSelectedIds((prev) => {
-      if (additive) {
-        const next = new Set(prev)
-        if (next.has(id)) next.delete(id)
-        else next.add(id)
-        return next
-      }
-      if (prev.size === 1 && prev.has(id)) return prev
-      return new Set([id])
-    })
+  const clearSelection = useCallback(() => {
+    const next = new Set<string>()
+    selectedIdsRef.current = next
+    setSelectedIds(next)
   }, [])
 
   const sendElementUpdate = useCallback(
@@ -138,6 +140,21 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       const message = {
         type: 'elementUpdate',
         payload: { boardId, element } as { boardId: string; element: BoardElement },
+      }
+      logOutbound(message)
+      socket.send(JSON.stringify(message))
+    },
+    [boardId]
+  )
+
+  const sendElementsUpdate = useCallback(
+    (updated: StickyNoteElement[]) => {
+      const socket = socketRef.current
+      if (!socket || !joinedRef.current || !boardId) return
+      if (updated.length === 0) return
+      const message = {
+        type: 'elementsUpdate',
+        payload: { boardId, elements: updated } as { boardId: string; elements: BoardElement[] },
       }
       logOutbound(message)
       socket.send(JSON.stringify(message))
@@ -162,20 +179,18 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
     []
   )
 
-  const persistElementUpdate = useCallback(
-    async (board: string, element: StickyNoteElement) => {
+  const persistElementsUpdate = useCallback(
+    async (board: string, elementsToPersist: StickyNoteElement[]) => {
+      if (elementsToPersist.length === 0) return
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/boards/${board}/elements/${encodeURIComponent(element.id)}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ element } satisfies { element: BoardElement }),
-          }
-        )
-        if (!response.ok) throw new Error('Failed to update element')
+        const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ elements: elementsToPersist } satisfies { elements: BoardElement[] }),
+        })
+        if (!response.ok) throw new Error('Failed to update elements')
       } catch (error) {
-        console.error('Failed to update board element', error)
+        console.error('Failed to update board elements', error)
       }
     },
     []
@@ -201,7 +216,9 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       ids.forEach((id) => {
         if (next.delete(id)) changed = true
       })
-      return changed ? next : prev
+      if (!changed) return prev
+      selectedIdsRef.current = next
+      return next
     })
   }, [])
 
@@ -261,10 +278,10 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       }
       upsertSticky(element)
       sendElementUpdate(element)
-      setSelectedIds(new Set([element.id]))
+      setSelection(new Set([element.id]))
       void persistElement(boardId, element)
     },
-    [boardId, persistElement, screenToBoard, sendElementUpdate, upsertSticky]
+    [boardId, persistElement, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
   )
 
   const hitTestSticky = useCallback(
@@ -317,13 +334,42 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       }
       event.preventDefault()
       suppressClickRef.current = true
-      dragStateRef.current = { id: sticky.id, offsetX: boardPoint.x - sticky.x, offsetY: boardPoint.y - sticky.y }
-      updateSelection(sticky.id, event.shiftKey)
+
+      const currentSelection = selectedIdsRef.current
+      let nextSelection: Set<string>
+      if (event.shiftKey) {
+        nextSelection = new Set(currentSelection)
+        if (nextSelection.has(sticky.id)) nextSelection.delete(sticky.id)
+        else nextSelection.add(sticky.id)
+        if (nextSelection.size === 0) nextSelection.add(sticky.id)
+      } else if (currentSelection.has(sticky.id)) {
+        nextSelection = new Set(currentSelection)
+      } else {
+        nextSelection = new Set([sticky.id])
+      }
+      if (!setsEqual(currentSelection, nextSelection)) {
+        setSelection(nextSelection)
+      }
+
+      const dragIds = Array.from(nextSelection)
+      const startPositions: Record<string, { x: number; y: number }> = {}
+      dragIds.forEach((id) => {
+        const element = elements[id]
+        if (element) {
+          startPositions[id] = { x: element.x, y: element.y }
+        }
+      })
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        ids: dragIds,
+        startPointer: boardPoint,
+        startPositions,
+      }
       if (event.currentTarget.setPointerCapture) {
         event.currentTarget.setPointerCapture(event.pointerId)
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, cameraState.zoom, hitTestSticky, screenToBoard]
+    [boardId, clearSelection, elements, hitTestSticky, screenToBoard, setSelection]
   )
 
   const handlePointerMove = useCallback(
@@ -343,22 +389,32 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       if (!dragState) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
-      const newX = boardPoint.x - dragState.offsetX
-      const newY = boardPoint.y - dragState.offsetY
-      let updated: StickyNoteElement | null = null
+      const deltaX = boardPoint.x - dragState.startPointer.x
+      const deltaY = boardPoint.y - dragState.startPointer.y
+      const updatedElements: StickyNoteElement[] = []
       setElements((prev) => {
-        const target = prev[dragState.id]
-        if (!target) return prev
-        updated = { ...target, x: newX, y: newY }
-        return { ...prev, [dragState.id]: updated }
+        const next = { ...prev }
+        let changed = false
+        for (const id of dragState.ids) {
+          const start = dragState.startPositions[id]
+          const existing = next[id]
+          if (!start || !existing) continue
+          const updated = { ...existing, x: start.x + deltaX, y: start.y + deltaY }
+          next[id] = updated
+          updatedElements.push(updated)
+          changed = true
+        }
+        return changed ? next : prev
       })
-      const now = Date.now()
-      if (updated && now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
-        sendElementUpdate(updated)
-        lastBroadcastRef.current = now
+      if (updatedElements.length > 0) {
+        const now = Date.now()
+        if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+          sendElementsUpdate(updatedElements)
+          lastBroadcastRef.current = now
+        }
       }
     },
-    [cameraState.zoom, screenToBoard, sendElementUpdate]
+    [cameraState.zoom, screenToBoard, sendElementsUpdate]
   )
 
   const finishDrag = useCallback(
@@ -388,18 +444,22 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
       }
       if (!dragState) return
       dragStateRef.current = null
-      const finalElement = elements[dragState.id]
-      if (finalElement) {
-        sendElementUpdate(finalElement)
+      const finalElements: StickyNoteElement[] = []
+      dragState.ids.forEach((id) => {
+        const element = elements[id]
+        if (element) finalElements.push(element)
+      })
+      if (finalElements.length > 0) {
+        sendElementsUpdate(finalElements)
         if (boardId) {
-          void persistElementUpdate(boardId, finalElement)
+          void persistElementsUpdate(boardId, finalElements)
         }
       }
       setTimeout(() => {
         suppressClickRef.current = false
       }, 0)
     },
-    [boardId, elements, persistElementUpdate, sendElementUpdate]
+    [boardId, elements, persistElementsUpdate, sendElementsUpdate]
   )
 
   const handlePointerUp = useCallback(
@@ -503,8 +563,8 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
   }, [deleteSelectedElements])
 
   useEffect(() => {
-    setSelectedIds(new Set())
-  }, [boardId])
+    setSelection(new Set())
+  }, [boardId, setSelection])
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds
@@ -591,6 +651,18 @@ const selectedIdsRef = useRef<Set<string>>(new Set())
             console.log('[ws in elementUpdate]', parsed.payload)
             const incoming = parseStickyElement((parsed.payload as { element?: unknown })?.element)
             if (incoming) upsertSticky(incoming)
+          } else if (parsed?.type === 'elementsUpdate') {
+            const payload = parsed.payload as { elements?: BoardElement[] }
+            const updated = payload?.elements?.map((el) => parseStickyElement(el))?.filter(Boolean) as StickyNoteElement[]
+            if (updated.length > 0) {
+              setElements((prev) => {
+                const next = { ...prev }
+                updated.forEach((element) => {
+                  next[element.id] = element
+                })
+                return next
+              })
+            }
           } else if (parsed?.type === 'elementsDelete') {
             const ids = (parsed.payload as { ids?: unknown })?.ids
             if (Array.isArray(ids)) {

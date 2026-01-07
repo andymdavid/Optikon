@@ -14,6 +14,7 @@ import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPos
 import { createAuthHandlers } from "./routes/auth";
 import {
   handleBoardCreate,
+  handleBoardElementsBatchUpdate,
   handleBoardElementsDelete,
   handleBoardElementCreate,
   handleBoardElementUpdate,
@@ -29,7 +30,7 @@ import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 
-type CanvasMessageType = "joinBoard" | "elementUpdate" | "cursorMove" | "elementsDelete";
+type CanvasMessageType = "joinBoard" | "elementUpdate" | "elementsUpdate" | "cursorMove" | "elementsDelete";
 
 type CanvasMessageEnvelope = {
   type: CanvasMessageType;
@@ -44,7 +45,13 @@ type WebSocketData = {
 const boardSockets = new Map<string, Set<ServerWebSocket<WebSocketData>>>();
 
 function isCanvasMessageType(value: string): value is CanvasMessageType {
-  return value === "joinBoard" || value === "elementUpdate" || value === "cursorMove";
+  return (
+    value === "joinBoard" ||
+    value === "elementUpdate" ||
+    value === "elementsUpdate" ||
+    value === "cursorMove" ||
+    value === "elementsDelete"
+  );
 }
 
 function parseCanvasMessage(data: unknown): CanvasMessageEnvelope | null {
@@ -84,6 +91,10 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
     }
     case "elementUpdate": {
       handleElementUpdate(ws, message.payload);
+      break;
+    }
+    case "elementsUpdate": {
+      handleElementsUpdate(ws, message.payload);
       break;
     }
     case "cursorMove": {
@@ -157,6 +168,33 @@ function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknow
     recipients += 1;
   }
   console.log(`[ws] elementUpdate board=${boardId} recipients=${recipients}`);
+}
+
+function handleElementsUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
+  const boardId = ws.data.boardId;
+  if (!boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
+    return;
+  }
+  const typedPayload = payload as { boardId?: string; elements?: BoardElement[] };
+  if (!typedPayload?.boardId || typedPayload.boardId !== boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Board mismatch" } });
+    return;
+  }
+  const elements = Array.isArray(typedPayload.elements)
+    ? typedPayload.elements.filter((element): element is BoardElement => !!element)
+    : [];
+  if (elements.length === 0) return;
+  const sockets = boardSockets.get(boardId);
+  if (!sockets) return;
+  let recipients = 0;
+  const message = JSON.stringify({ type: "elementsUpdate", payload: { boardId, elements } });
+  for (const peer of sockets) {
+    if (peer === ws) continue;
+    peer.send(message);
+    recipients += 1;
+  }
+  console.log(`[ws] elementsUpdate board=${boardId} recipients=${recipients}`);
 }
 
 function handleElementsDelete(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
@@ -289,6 +327,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   }
 
   if (req.method === "PUT") {
+    const boardElementsBatchMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementsBatchMatch) {
+      return handleBoardElementsBatchUpdate(req, Number(boardElementsBatchMatch[1]));
+    }
     const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/([^/]+)$/);
     if (boardElementUpdateMatch) {
       return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2]);

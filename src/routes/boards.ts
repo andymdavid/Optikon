@@ -117,3 +117,21 @@ export async function handleBoardElementsDelete(req: Request, boardId: number) {
   const deletedCount = deleteBoardElementsRecord(boardId, ids);
   return jsonResponse({ ok: true, deletedCount });
 }
+
+export async function handleBoardElementsBatchUpdate(req: Request, boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const body = (await safeJson(req)) as { elements?: SharedBoardElement[] | null } | null;
+  if (!Array.isArray(body?.elements) || body!.elements.length === 0) {
+    return jsonResponse({ message: "No elements provided." }, 400);
+  }
+  let count = 0;
+  for (const element of body!.elements) {
+    if (!element || typeof element.id !== "string") continue;
+    createBoardElementRecord(boardId, element);
+    count += 1;
+  }
+  return jsonResponse({ ok: true, count });
+}
