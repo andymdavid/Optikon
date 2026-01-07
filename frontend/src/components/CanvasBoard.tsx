@@ -22,11 +22,15 @@ const API_BASE_URL = 'http://localhost:3025'
 const STICKY_WIDTH = 140
 const STICKY_HEIGHT = 100
 const BOARD_BACKGROUND = '#f7f7f8'
-const GRID_BASE_SPACING = 50
-const GRID_SCREEN_STEPS = [12, 18, 24, 32, 48, 64, 96, 128]
-const GRID_MINOR_COLOR = 'rgba(15, 23, 42, 0.035)'
-const GRID_MAJOR_COLOR = 'rgba(15, 23, 42, 0.11)'
-const GRID_MAJOR_EVERY = 4
+const GRID_BASE_BOARD_SPACING = 100
+const GRID_PRIMARY_TARGET_PX = 80
+const GRID_SECONDARY_DIVISIONS = 5
+const GRID_SECONDARY_FADE_RANGE = { start: 70, end: 110 }
+const GRID_MAJOR_EVERY = 5
+const GRID_COLOR_RGB = '15, 23, 42'
+const GRID_PRIMARY_ALPHA = 0.08
+const GRID_MAJOR_ALPHA = 0.13
+const GRID_SECONDARY_ALPHA = 0.05
 const STICKY_FILL = '#fef3c7'
 const STICKY_SHADOW = 'rgba(15, 23, 42, 0.18)'
 const STICKY_TEXT_COLOR = '#1f2937'
@@ -61,20 +65,45 @@ function logInbound(message: unknown) {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-function getGridSpacingPx(zoom: number) {
-  if (zoom <= 0) return GRID_SCREEN_STEPS[0]
-  const desired = GRID_BASE_SPACING * zoom
-  let closest = GRID_SCREEN_STEPS[0]
-  let diff = Math.abs(closest - desired)
-  for (let i = 1; i < GRID_SCREEN_STEPS.length; i += 1) {
-    const step = GRID_SCREEN_STEPS[i]
-    const delta = Math.abs(step - desired)
-    if (delta < diff) {
-      closest = step
-      diff = delta
+const modulo = (value: number, mod: number) => {
+  if (mod === 0) return 0
+  return ((value % mod) + mod) % mod
+}
+
+const smoothstep = (edge0: number, edge1: number, x: number) => {
+  if (edge0 === edge1) return x >= edge1 ? 1 : 0
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+type GridSpec = {
+  primaryBoardSpacing: number
+  primarySpacingPx: number
+  secondarySpacingPx: number
+  secondaryAlpha: number
+}
+
+function computeGridSpec(zoom: number): GridSpec {
+  if (zoom <= 0) {
+    return {
+      primaryBoardSpacing: GRID_BASE_BOARD_SPACING,
+      primarySpacingPx: 0,
+      secondarySpacingPx: 0,
+      secondaryAlpha: 0,
     }
   }
-  return closest
+  const basePx = GRID_BASE_BOARD_SPACING * zoom
+  const level = Math.round(Math.log2(basePx / GRID_PRIMARY_TARGET_PX))
+  const primaryBoardSpacing = GRID_BASE_BOARD_SPACING / 2 ** level
+  const primarySpacingPx = primaryBoardSpacing * zoom
+  const secondaryBoardSpacing = primaryBoardSpacing / GRID_SECONDARY_DIVISIONS
+  const secondarySpacingPx = secondaryBoardSpacing * zoom
+  const secondaryAlpha = smoothstep(
+    GRID_SECONDARY_FADE_RANGE.start,
+    GRID_SECONDARY_FADE_RANGE.end,
+    primarySpacingPx
+  )
+  return { primaryBoardSpacing, primarySpacingPx, secondarySpacingPx, secondaryAlpha }
 }
 
 function drawRoundedRectPath(
@@ -99,71 +128,46 @@ function drawRoundedRectPath(
   ctx.closePath()
 }
 
-// Draws a screen-space tiled grid that stays board-anchored by snapping to a
-// fixed set of pixel spacings. This keeps lines crisp and prevents massive
-// boxes when zooming far in or out.
+// Draws a screen-space tiled grid with Miro-like renewal: as cells grow, finer
+// subdivisions fade in so the canvas always feels detailed yet subtle.
 function drawBoardGrid(
   ctx: CanvasRenderingContext2D,
   camera: CameraState,
   width: number,
   height: number
 ) {
-  const spacingPx = getGridSpacingPx(camera.zoom)
-  const boardSpacing = spacingPx / camera.zoom
-  const alignHalfPixel = (value: number) => Math.round(value) + 0.5
-  const boardLeft = -camera.offsetX - boardSpacing
-  const boardTop = -camera.offsetY - boardSpacing
-  const boardRight = boardLeft + width / camera.zoom + boardSpacing * 2
-  const boardBottom = boardTop + height / camera.zoom + boardSpacing * 2
-  const startIndexX = Math.floor(boardLeft / boardSpacing)
-  const endIndexX = Math.ceil(boardRight / boardSpacing)
-  const startIndexY = Math.floor(boardTop / boardSpacing)
-  const endIndexY = Math.ceil(boardBottom / boardSpacing)
-  const minorVertical: number[] = []
-  const majorVertical: number[] = []
-  const minorHorizontal: number[] = []
-  const majorHorizontal: number[] = []
-  for (let index = startIndexX; index <= endIndexX; index += 1) {
-    const boardX = index * boardSpacing
-    const screenX = alignHalfPixel((boardX + camera.offsetX) * camera.zoom)
-    const indexMod = ((index % GRID_MAJOR_EVERY) + GRID_MAJOR_EVERY) % GRID_MAJOR_EVERY
-    const isMajor = indexMod === 0
-    if (isMajor) majorVertical.push(screenX)
-    else minorVertical.push(screenX)
+  const { primarySpacingPx, secondarySpacingPx, secondaryAlpha } = computeGridSpec(camera.zoom)
+  if (primarySpacingPx <= 0) return
+  const color = (alpha: number) => `rgba(${GRID_COLOR_RGB}, ${alpha})`
+
+  const drawLayer = (spacingPx: number, alpha: number) => {
+    if (spacingPx <= 0 || alpha <= 0) return
+    const offsetX = modulo(camera.offsetX * camera.zoom, spacingPx)
+    const offsetY = modulo(camera.offsetY * camera.zoom, spacingPx)
+    const startX = -offsetX
+    const startY = -offsetY
+    const endX = width + spacingPx
+    const endY = height + spacingPx
+    ctx.beginPath()
+    for (let x = startX; x <= endX; x += spacingPx) {
+      const lineX = Math.round(x) + 0.5
+      ctx.moveTo(lineX, 0)
+      ctx.lineTo(lineX, height)
+    }
+    for (let y = startY; y <= endY; y += spacingPx) {
+      const lineY = Math.round(y) + 0.5
+      ctx.moveTo(0, lineY)
+      ctx.lineTo(width, lineY)
+    }
+    ctx.strokeStyle = color(alpha)
+    ctx.lineWidth = 1
+    ctx.stroke()
   }
-  for (let index = startIndexY; index <= endIndexY; index += 1) {
-    const boardY = index * boardSpacing
-    const screenY = alignHalfPixel((boardY + camera.offsetY) * camera.zoom)
-    const indexMod = ((index % GRID_MAJOR_EVERY) + GRID_MAJOR_EVERY) % GRID_MAJOR_EVERY
-    const isMajor = indexMod === 0
-    if (isMajor) majorHorizontal.push(screenY)
-    else minorHorizontal.push(screenY)
-  }
-  ctx.save()
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.strokeStyle = GRID_MINOR_COLOR
-  minorVertical.forEach((screenX) => {
-    ctx.moveTo(screenX, 0)
-    ctx.lineTo(screenX, height)
-  })
-  minorHorizontal.forEach((screenY) => {
-    ctx.moveTo(0, screenY)
-    ctx.lineTo(width, screenY)
-  })
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.strokeStyle = GRID_MAJOR_COLOR
-  majorVertical.forEach((screenX) => {
-    ctx.moveTo(screenX, 0)
-    ctx.lineTo(screenX, height)
-  })
-  majorHorizontal.forEach((screenY) => {
-    ctx.moveTo(0, screenY)
-    ctx.lineTo(width, screenY)
-  })
-  ctx.stroke()
-  ctx.restore()
+
+  const secondaryAlphaScaled = GRID_SECONDARY_ALPHA * secondaryAlpha
+  drawLayer(secondarySpacingPx, secondaryAlphaScaled)
+  drawLayer(primarySpacingPx, GRID_PRIMARY_ALPHA)
+  drawLayer(primarySpacingPx * GRID_MAJOR_EVERY, GRID_MAJOR_ALPHA)
 }
 
 function logOutbound(message: unknown) {
