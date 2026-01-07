@@ -20,8 +20,7 @@ const BOARD_STORAGE_KEY = 'optikon.devBoardId'
 const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
 const STICKY_SIZE = 220
-const STICKY_WIDTH = STICKY_SIZE
-const STICKY_HEIGHT = STICKY_SIZE
+const STICKY_MIN_SIZE = 120
 const BOARD_BACKGROUND = '#f7f7f8'
 const GRID_BASE_BOARD_SPACING = 100
 const GRID_PRIMARY_TARGET_PX = 80
@@ -37,8 +36,10 @@ const STICKY_FILL_TOP = '#fff7a6'
 const STICKY_FILL_BOTTOM = '#fef69e'
 const STICKY_TEXT_COLOR = '#1f2937'
 const STICKY_CORNER_RADIUS = 0
+const SELECTION_FRAME_PADDING = 18
+const RESIZE_HANDLE_RADIUS = 6
+const RESIZE_HANDLE_HIT_RADIUS = 12
 const ACCENT_COLOR = '#0ea5e9'
-const ACCENT_FILL = 'rgba(14, 165, 233, 0.08)'
 const MARQUEE_FILL = 'rgba(14, 165, 233, 0.12)'
 type Rect = { left: number; top: number; right: number; bottom: number }
 
@@ -49,12 +50,20 @@ const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number })
   bottom: Math.max(a.y, b.y),
 })
 
-const getStickyBounds = (element: StickyNoteElement): Rect => ({
-  left: element.x,
-  top: element.y,
-  right: element.x + STICKY_WIDTH,
-  bottom: element.y + STICKY_HEIGHT,
-})
+const getStickySize = (element: StickyNoteElement) => {
+  const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
+  return Math.max(STICKY_MIN_SIZE, size)
+}
+
+const getStickyBounds = (element: StickyNoteElement): Rect => {
+  const size = getStickySize(element)
+  return {
+    left: element.x,
+    top: element.y,
+    right: element.x + size,
+    bottom: element.y + size,
+  }
+}
 
 const rectsIntersect = (a: Rect, b: Rect) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
 const DRAG_THROTTLE_MS = 50
@@ -190,12 +199,14 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (typeof element.id !== 'string') return null
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   if (typeof element.text !== 'string') return null
+  const size = getStickySize({ ...element, size: element.size ?? STICKY_SIZE })
   return {
     id: element.id,
     type: 'sticky',
     x: element.x,
     y: element.y,
     text: element.text,
+    size,
   }
 }
 
@@ -235,6 +246,24 @@ function wrapStickyText(
   return lines.length === 0 ? [''] : lines
 }
 
+const getStickyScreenRect = (element: StickyNoteElement, camera: CameraState) => {
+  const size = getStickySize(element) * camera.zoom
+  return {
+    x: (element.x + camera.offsetX) * camera.zoom,
+    y: (element.y + camera.offsetY) * camera.zoom,
+    size,
+  }
+}
+
+const getSelectionFrameRect = (element: StickyNoteElement, camera: CameraState) => {
+  const rect = getStickyScreenRect(element, camera)
+  return {
+    x: rect.x - SELECTION_FRAME_PADDING,
+    y: rect.y - SELECTION_FRAME_PADDING,
+    size: rect.size + SELECTION_FRAME_PADDING * 2,
+  }
+}
+
 const drawStickyShadow = (
   ctx: CanvasRenderingContext2D,
   rect: { x: number; y: number; width: number; height: number },
@@ -264,10 +293,11 @@ const drawStickyShadow = (
 }
 
 function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
-  const width = STICKY_WIDTH * camera.zoom
-  const height = STICKY_HEIGHT * camera.zoom
-  const screenX = (element.x + camera.offsetX) * camera.zoom
-  const screenY = (element.y + camera.offsetY) * camera.zoom
+  const stickyRect = getStickyScreenRect(element, camera)
+  const width = stickyRect.size
+  const height = stickyRect.size
+  const screenX = stickyRect.x
+  const screenY = stickyRect.y
   const radius = STICKY_CORNER_RADIUS * camera.zoom
   const paddingX = 16 * camera.zoom
   const paddingY = 14 * camera.zoom
@@ -296,19 +326,35 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.restore()
 }
 
-function drawStickySelection(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
-  const width = STICKY_WIDTH * camera.zoom
-  const height = STICKY_HEIGHT * camera.zoom
-  const screenX = (element.x + camera.offsetX) * camera.zoom
-  const screenY = (element.y + camera.offsetY) * camera.zoom
-  const radius = STICKY_CORNER_RADIUS * camera.zoom
+function drawStickySelection(
+  ctx: CanvasRenderingContext2D,
+  element: StickyNoteElement,
+  camera: CameraState,
+  options: { withHandles: boolean }
+) {
+  const frame = getSelectionFrameRect(element, camera)
+  const handleRadius = RESIZE_HANDLE_RADIUS
   ctx.save()
-  ctx.fillStyle = ACCENT_FILL
-  drawRoundedRectPath(ctx, screenX, screenY, width, height, radius)
-  ctx.fill()
-  ctx.lineWidth = Math.max(1.5, 2 * camera.zoom)
   ctx.strokeStyle = ACCENT_COLOR
-  ctx.stroke()
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(frame.x, frame.y, frame.size, frame.size)
+  if (options.withHandles) {
+    const handles: Array<{ x: number; y: number }> = [
+      { x: frame.x, y: frame.y },
+      { x: frame.x + frame.size, y: frame.y },
+      { x: frame.x + frame.size, y: frame.y + frame.size },
+      { x: frame.x, y: frame.y + frame.size },
+    ]
+    handles.forEach((handle) => {
+      ctx.beginPath()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = ACCENT_COLOR
+      ctx.lineWidth = 1
+      ctx.arc(handle.x, handle.y, handleRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    })
+  }
   ctx.restore()
 }
 
@@ -318,6 +364,15 @@ export function CanvasBoard() {
   const joinedRef = useRef(false)
   const createBoardInFlightRef = useRef(false)
   const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number; pointerId: number; startPointer: { x: number; y: number }; startPositions: Record<string, { x: number; y: number }> } | null>(null)
+  const resizeStateRef = useRef<
+    | null
+    | {
+        id: string
+        pointerId: number
+        anchor: { x: number; y: number }
+        handle: 'nw' | 'ne' | 'sw' | 'se'
+      }
+  >(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
   const panStateRef = useRef<{
@@ -329,7 +384,7 @@ export function CanvasBoard() {
   } | null>(null)
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
-  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate'>('none')
+  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize'>('none')
   const marqueeCandidateRef = useRef<
     | null
     | {
@@ -451,6 +506,7 @@ export function CanvasBoard() {
         x: boardPoint.x,
         y: boardPoint.y,
         text: 'New note',
+        size: STICKY_SIZE,
       }
       upsertSticky(element)
       sendElementUpdate(element)
@@ -540,11 +596,12 @@ export function CanvasBoard() {
       const values = Object.values(elements)
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
+        const size = getStickySize(element)
         if (
           x >= element.x &&
-          x <= element.x + STICKY_WIDTH &&
+          x <= element.x + size &&
           y >= element.y &&
-          y <= element.y + STICKY_HEIGHT
+          y <= element.y + size
         ) {
           return element
         }
@@ -552,6 +609,31 @@ export function CanvasBoard() {
       return null
     },
     [elements]
+  )
+
+  const hitTestResizeHandle = useCallback(
+    (point: { x: number; y: number }): { element: StickyNoteElement; handle: 'nw' | 'ne' | 'sw' | 'se' } | null => {
+      const selected = selectedIdsRef.current
+      if (selected.size !== 1) return null
+      const [id] = Array.from(selected)
+      const element = elements[id]
+      if (!element) return null
+      const frame = getSelectionFrameRect(element, cameraState)
+      const handles: Array<{ handle: 'nw' | 'ne' | 'sw' | 'se'; x: number; y: number }> = [
+        { handle: 'nw', x: frame.x, y: frame.y },
+        { handle: 'ne', x: frame.x + frame.size, y: frame.y },
+        { handle: 'se', x: frame.x + frame.size, y: frame.y + frame.size },
+        { handle: 'sw', x: frame.x, y: frame.y + frame.size },
+      ]
+      for (const handle of handles) {
+        const distance = Math.hypot(point.x - handle.x, point.y - handle.y)
+        if (distance <= RESIZE_HANDLE_HIT_RADIUS) {
+          return { element, handle: handle.handle }
+        }
+      }
+      return null
+    },
+    [cameraState, elements]
   )
 
   const handlePointerDown = useCallback(
@@ -590,6 +672,37 @@ export function CanvasBoard() {
         interactionModeRef.current = 'none'
         marqueeCandidateRef.current = null
         setMarquee(null)
+        return
+      }
+      const handleHit = hitTestResizeHandle(canvasPoint)
+      if (handleHit) {
+        event.preventDefault()
+        suppressClickRef.current = true
+        interactionModeRef.current = 'resize'
+        const size = getStickySize(handleHit.element)
+        const startX = handleHit.element.x
+        const startY = handleHit.element.y
+        let anchor: { x: number; y: number }
+        switch (handleHit.handle) {
+          case 'nw':
+            anchor = { x: startX + size, y: startY + size }
+            break
+          case 'ne':
+            anchor = { x: startX, y: startY + size }
+            break
+          case 'sw':
+            anchor = { x: startX + size, y: startY }
+            break
+          default:
+            anchor = { x: startX, y: startY }
+            break
+        }
+        resizeStateRef.current = {
+          id: handleHit.element.id,
+          pointerId: event.pointerId,
+          anchor,
+          handle: handleHit.handle,
+        }
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
@@ -636,7 +749,7 @@ export function CanvasBoard() {
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestSticky, screenToBoard, setMarquee, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestResizeHandle, hitTestSticky, screenToBoard, setMarquee, setSelection]
   )
 
   const handlePointerMove = useCallback(
@@ -683,6 +796,51 @@ export function CanvasBoard() {
               }
             : prev
         )
+        return
+      }
+
+      const resizeState = resizeStateRef.current
+      if (mode === 'resize' && resizeState && resizeState.pointerId === event.pointerId) {
+        const boardPoint = screenToBoard(canvasPoint)
+        let updatedElement: StickyNoteElement | null = null
+        setElements((prev) => {
+          const target = prev[resizeState.id]
+          if (!target) return prev
+          const anchor = resizeState.anchor
+          const deltaX = boardPoint.x - anchor.x
+          const deltaY = boardPoint.y - anchor.y
+          const size = Math.max(STICKY_MIN_SIZE, Math.max(Math.abs(deltaX), Math.abs(deltaY)))
+          let nextX = target.x
+          let nextY = target.y
+          switch (resizeState.handle) {
+            case 'nw':
+              nextX = anchor.x - size
+              nextY = anchor.y - size
+              break
+            case 'ne':
+              nextX = anchor.x
+              nextY = anchor.y - size
+              break
+            case 'sw':
+              nextX = anchor.x - size
+              nextY = anchor.y
+              break
+            default:
+              nextX = anchor.x
+              nextY = anchor.y
+              break
+          }
+          const updated = { ...target, x: nextX, y: nextY, size }
+          updatedElement = updated
+          return { ...prev, [resizeState.id]: updated }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
+            lastBroadcastRef.current = now
+          }
+        }
         return
       }
 
@@ -755,6 +913,23 @@ export function CanvasBoard() {
         suppressClickRef.current = false
         setMarquee(null)
         marqueeCandidateRef.current = null
+        return
+      }
+
+      if (mode === 'resize') {
+        const resizeState = resizeStateRef.current
+        resizeStateRef.current = null
+        const elementId = resizeState?.id
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!elementId) return
+        const element = elements[elementId]
+        if (!element) return
+        sendElementsUpdate([element])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [element])
+        }
         return
       }
 
@@ -1104,9 +1279,12 @@ export function CanvasBoard() {
     values.forEach((element) => {
       drawSticky(ctx, element, cameraState)
     })
-    selectedIds.forEach((id) => {
+    const selectedArray = Array.from(selectedIds)
+    selectedArray.forEach((id) => {
       const element = elements[id]
-      if (element) drawStickySelection(ctx, element, cameraState)
+      if (!element) return
+      const withHandles = selectedArray.length === 1 && selectedArray[0] === id
+      drawStickySelection(ctx, element, cameraState, { withHandles })
     })
   }, [cameraState, elements, selectedIds])
 
