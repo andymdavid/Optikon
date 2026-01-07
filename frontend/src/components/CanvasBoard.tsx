@@ -19,8 +19,9 @@ const initialCameraState: CameraState = {
 const BOARD_STORAGE_KEY = 'optikon.devBoardId'
 const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
-const STICKY_WIDTH = 140
-const STICKY_HEIGHT = 100
+const STICKY_SIZE = 220
+const STICKY_WIDTH = STICKY_SIZE
+const STICKY_HEIGHT = STICKY_SIZE
 const BOARD_BACKGROUND = '#f7f7f8'
 const GRID_BASE_BOARD_SPACING = 100
 const GRID_PRIMARY_TARGET_PX = 80
@@ -32,8 +33,8 @@ const GRID_SECONDARY_ALPHA = 0.04
 const GRID_MAJOR_ALPHA = 0.12
 const GRID_MAJOR_EVERY = 5
 const GRID_COLOR_RGB = '15, 23, 42'
-const STICKY_FILL = '#fef3c7'
-const STICKY_SHADOW = 'rgba(15, 23, 42, 0.18)'
+const STICKY_FILL_TOP = '#fff7be'
+const STICKY_FILL_BOTTOM = '#fde68a'
 const STICKY_TEXT_COLOR = '#1f2937'
 const STICKY_CORNER_RADIUS = 12
 const ACCENT_COLOR = '#0ea5e9'
@@ -234,30 +235,61 @@ function wrapStickyText(
   return lines.length === 0 ? [''] : lines
 }
 
+const drawStickyShadow = (
+  ctx: CanvasRenderingContext2D,
+  rect: { x: number; y: number; width: number; height: number },
+  radius: number
+) => {
+  const passes = [
+    { blur: 12, offsetY: 8, alpha: 0.12 },
+    { blur: 18, offsetY: 16, alpha: 0.08 },
+    { blur: 28, offsetY: 24, alpha: 0.06 },
+  ]
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, rect.y, ctx.canvas.width, ctx.canvas.height - rect.y)
+  ctx.clip()
+  passes.forEach((pass) => {
+    ctx.save()
+    ctx.shadowColor = `rgba(15, 23, 42, ${pass.alpha})`
+    ctx.shadowBlur = pass.blur
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = pass.offsetY
+    ctx.fillStyle = 'rgba(0,0,0,0)'
+    drawRoundedRectPath(ctx, rect.x, rect.y, rect.width, rect.height, radius)
+    ctx.fill()
+    ctx.restore()
+  })
+  ctx.restore()
+}
+
 function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
   const width = STICKY_WIDTH * camera.zoom
   const height = STICKY_HEIGHT * camera.zoom
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
   const radius = STICKY_CORNER_RADIUS * camera.zoom
-  const paddingX = 14 * camera.zoom
-  const paddingY = 12 * camera.zoom
-  const fontSize = Math.max(12, 14 * camera.zoom)
+  const paddingX = 16 * camera.zoom
+  const paddingY = 14 * camera.zoom
+  const fontSize = Math.max(12, 16 * camera.zoom)
   const lineHeight = fontSize * 1.3
+  const rect = { x: screenX, y: screenY, width, height }
+  drawStickyShadow(ctx, rect, radius)
   ctx.save()
-  ctx.fillStyle = STICKY_FILL
-  ctx.shadowColor = STICKY_SHADOW
-  ctx.shadowBlur = 18 * camera.zoom
-  ctx.shadowOffsetY = 2 * camera.zoom
+  const gradient = ctx.createLinearGradient(0, screenY, 0, screenY + height)
+  gradient.addColorStop(0, STICKY_FILL_TOP)
+  gradient.addColorStop(0.8, STICKY_FILL_BOTTOM)
+  ctx.fillStyle = gradient
   drawRoundedRectPath(ctx, screenX, screenY, width, height, radius)
   ctx.fill()
-  ctx.shadowColor = 'transparent'
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+  ctx.fillRect(screenX + radius, screenY + 2 * camera.zoom, width - radius * 2, 6 * camera.zoom)
   ctx.fillStyle = STICKY_TEXT_COLOR
   ctx.font = `${fontSize}px "Inter", "Segoe UI", sans-serif`
   ctx.textBaseline = 'top'
   const maxWidth = width - paddingX * 2
   const lines = wrapStickyText(ctx, element.text, maxWidth)
-  lines.slice(0, 6).forEach((line, index) => {
+  lines.slice(0, 7).forEach((line, index) => {
     const textY = screenY + paddingY + index * lineHeight
     ctx.fillText(line, screenX + paddingX, textY, maxWidth)
   })
