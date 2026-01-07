@@ -377,6 +377,8 @@ export function CanvasBoard() {
           // ignore
         }
         interactionModeRef.current = 'none'
+        marqueeCandidateRef.current = null
+        setMarquee(null)
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
@@ -423,7 +425,7 @@ export function CanvasBoard() {
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestSticky, screenToBoard, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestSticky, screenToBoard, setMarquee, setSelection]
   )
 
   const handlePointerMove = useCallback(
@@ -501,7 +503,7 @@ export function CanvasBoard() {
         }
       }
     },
-    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, marquee, screenToBoard, sendElementsUpdate]
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, screenToBoard, sendElementsUpdate, setMarquee]
   )
 
   const finishDrag = useCallback(
@@ -595,7 +597,7 @@ export function CanvasBoard() {
       suppressClickRef.current = true
       releaseClickSuppression()
     },
-    [boardId, elements, handleCanvasClick, clearSelection, persistElementsUpdate, sendElementsUpdate, setSelection]
+    [boardId, elements, handleCanvasClick, clearSelection, persistElementsUpdate, releaseClickSuppression, sendElementsUpdate, setMarquee, setSelection]
   )
 
   const handlePointerUp = useCallback(
