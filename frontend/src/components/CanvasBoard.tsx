@@ -241,13 +241,13 @@ const drawStickyShadow = (
   radius: number
 ) => {
   const passes = [
-    { blur: 12, offsetY: 8, alpha: 0.12 },
-    { blur: 18, offsetY: 16, alpha: 0.08 },
-    { blur: 28, offsetY: 24, alpha: 0.06 },
+    { blur: 12, offsetY: 8, alpha: 0.18 },
+    { blur: 20, offsetY: 18, alpha: 0.12 },
+    { blur: 32, offsetY: 28, alpha: 0.08 },
   ]
   ctx.save()
   ctx.beginPath()
-  ctx.rect(0, rect.y, ctx.canvas.width, ctx.canvas.height - rect.y)
+  ctx.rect(0, rect.y + 2, ctx.canvas.width, ctx.canvas.height - rect.y)
   ctx.clip()
   passes.forEach((pass) => {
     ctx.save()
@@ -255,7 +255,7 @@ const drawStickyShadow = (
     ctx.shadowBlur = pass.blur
     ctx.shadowOffsetX = 0
     ctx.shadowOffsetY = pass.offsetY
-    ctx.fillStyle = 'rgba(0,0,0,0)'
+    ctx.fillStyle = '#ffffff'
     drawRoundedRectPath(ctx, rect.x, rect.y, rect.width, rect.height, radius)
     ctx.fill()
     ctx.restore()
