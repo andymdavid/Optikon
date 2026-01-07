@@ -623,6 +623,17 @@ export function CanvasBoard() {
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLCanvasElement>) => {
+      // Miro-like: pan on scroll, zoom on Cmd+scroll
+      if (!event.metaKey) {
+        event.preventDefault()
+        setCameraState((prev) => ({
+          offsetX: prev.offsetX - event.deltaX / prev.zoom,
+          offsetY: prev.offsetY - event.deltaY / prev.zoom,
+          zoom: prev.zoom,
+        }))
+        return
+      }
+
       event.preventDefault()
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
