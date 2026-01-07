@@ -57,15 +57,15 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
 
-  const body = (await safeJson(req)) as { type?: string; props?: unknown } | null;
-  if (!body?.type) {
-    return jsonResponse({ message: "Element type is required." }, 400);
+  const body = (await safeJson(req)) as { type?: string; element?: SharedBoardElement } | null;
+  if (!body?.type || body.type !== "sticky" || !body.element) {
+    return jsonResponse({ message: "Invalid element payload." }, 400);
   }
 
-  const element = createBoardElementRecord(boardId, body.type, body.props ?? {});
+  const element = createBoardElementRecord(boardId, body.type, body.element);
   if (!element) {
     return jsonResponse({ message: "Unable to create element." }, 500);
   }
 
-  return jsonResponse(element, 201);
+  return jsonResponse({ id: element.id, board_id: element.board_id, type: element.type }, 201);
 }

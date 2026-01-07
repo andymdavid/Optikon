@@ -96,6 +96,22 @@ export function CanvasBoard() {
     [boardId]
   )
 
+  const persistElement = useCallback(
+    async (board: string, element: StickyNoteElement) => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
+        })
+        if (!response.ok) throw new Error('Failed to persist element')
+      } catch (error) {
+        console.error('Failed to persist board element', error)
+      }
+    },
+    []
+  )
+
   const handleCanvasClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement>) => {
       if (!joinedRef.current || !boardId) return
@@ -109,8 +125,9 @@ export function CanvasBoard() {
       }
       upsertSticky(element)
       sendElementUpdate(element)
+      void persistElement(boardId, element)
     },
-    [boardId, sendElementUpdate, upsertSticky]
+    [boardId, persistElement, sendElementUpdate, upsertSticky]
   )
 
   useEffect(() => {
