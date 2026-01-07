@@ -41,6 +41,7 @@ export function CanvasBoard() {
       const currentSocket = socket
 
       currentSocket.addEventListener('open', () => {
+        console.log('[ws] open')
         if (stopped || cancelledPendingOpen) {
           currentSocket.close()
           return
@@ -61,7 +62,8 @@ export function CanvasBoard() {
         logIn(event.data)
       })
 
-      currentSocket.addEventListener('close', () => {
+      currentSocket.addEventListener('close', (event) => {
+        console.log('[ws] close', { code: event.code, reason: event.reason })
         if (stopped) return
         const delay = retryDelay
         retryDelay = Math.min(retryDelay * 2, 5000)
