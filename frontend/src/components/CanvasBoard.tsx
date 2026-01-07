@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 
 import type { BoardElement, StickyNoteElement } from '@shared/boardElements'
 
@@ -86,18 +86,19 @@ export function CanvasBoard() {
   const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
-  const panStateRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    startOffsetX: number
-    startOffsetY: number
-  } | null>(null)
-  const spacePressedRef = useRef(false)
+const panStateRef = useRef<{
+  pointerId: number
+  startX: number
+  startY: number
+  startOffsetX: number
+  startOffsetY: number
+} | null>(null)
+const spacePressedRef = useRef(false)
+const selectedIdsRef = useRef<Set<string>>(new Set())
   const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
   const [boardId, setBoardId] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const screenToBoard = useCallback(
     (point: { x: number; y: number }) => {
@@ -111,6 +112,23 @@ export function CanvasBoard() {
 
   const upsertSticky = useCallback((element: StickyNoteElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()))
+  }, [])
+
+  const updateSelection = useCallback((id: string, additive: boolean) => {
+    setSelectedIds((prev) => {
+      if (additive) {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      }
+      if (prev.size === 1 && prev.has(id)) return prev
+      return new Set([id])
+    })
   }, [])
 
   const sendElementUpdate = useCallback(
@@ -163,6 +181,68 @@ export function CanvasBoard() {
     []
   )
 
+  const removeElements = useCallback((ids: string[]) => {
+    if (ids.length === 0) return
+    setElements((prev) => {
+      let changed = false
+      const next = { ...prev }
+      ids.forEach((id) => {
+        if (next[id]) {
+          delete next[id]
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set(prev)
+      let changed = false
+      ids.forEach((id) => {
+        if (next.delete(id)) changed = true
+      })
+      return changed ? next : prev
+    })
+  }, [])
+
+  const sendElementsDelete = useCallback(
+    (ids: string[]) => {
+      const socket = socketRef.current
+      if (!socket || !boardId || ids.length === 0) return
+      const message = {
+        type: 'elementsDelete',
+        payload: { boardId, ids },
+      }
+      logOutbound(message)
+      socket.send(JSON.stringify(message))
+    },
+    [boardId]
+  )
+
+  const persistElementsDelete = useCallback(async (board: string, ids: string[]) => {
+    if (ids.length === 0) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!response.ok) throw new Error('Failed to delete elements')
+    } catch (error) {
+      console.error('Failed to delete board elements', error)
+    }
+  }, [])
+
+  const deleteSelectedElements = useCallback(
+    (ids: string[]) => {
+      if (!boardId || ids.length === 0) return
+      removeElements(ids)
+      sendElementsDelete(ids)
+      void persistElementsDelete(boardId, ids)
+    },
+    [boardId, persistElementsDelete, removeElements, sendElementsDelete]
+  )
+
   const handleCanvasClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement>) => {
       if (suppressClickRef.current) {
@@ -181,6 +261,7 @@ export function CanvasBoard() {
       }
       upsertSticky(element)
       sendElementUpdate(element)
+      setSelectedIds(new Set([element.id]))
       void persistElement(boardId, element)
     },
     [boardId, persistElement, screenToBoard, sendElementUpdate, upsertSticky]
@@ -230,14 +311,14 @@ export function CanvasBoard() {
       const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
       if (!sticky) {
         dragStateRef.current = null
-        setSelectedId(null)
+        clearSelection()
         suppressClickRef.current = false
         return
       }
       event.preventDefault()
       suppressClickRef.current = true
       dragStateRef.current = { id: sticky.id, offsetX: boardPoint.x - sticky.x, offsetY: boardPoint.y - sticky.y }
-      setSelectedId(sticky.id)
+      updateSelection(sticky.id, event.shiftKey)
       if (event.currentTarget.setPointerCapture) {
         event.currentTarget.setPointerCapture(event.pointerId)
       }
@@ -395,6 +476,14 @@ export function CanvasBoard() {
           spacePressedRef.current = true
           event.preventDefault()
         }
+        return
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const ids = Array.from(selectedIdsRef.current)
+        if (ids.length === 0) return
+        event.preventDefault()
+        deleteSelectedElements(ids)
       }
     }
 
@@ -411,11 +500,15 @@ export function CanvasBoard() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [])
+  }, [deleteSelectedElements])
 
   useEffect(() => {
-    setSelectedId(null)
+    setSelectedIds(new Set())
   }, [boardId])
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds
+  }, [selectedIds])
 
   useEffect(() => {
     if (!boardId) return
@@ -498,6 +591,12 @@ export function CanvasBoard() {
             console.log('[ws in elementUpdate]', parsed.payload)
             const incoming = parseStickyElement((parsed.payload as { element?: unknown })?.element)
             if (incoming) upsertSticky(incoming)
+          } else if (parsed?.type === 'elementsDelete') {
+            const ids = (parsed.payload as { ids?: unknown })?.ids
+            if (Array.isArray(ids)) {
+              const filtered = ids.filter((id): id is string => typeof id === 'string')
+              if (filtered.length > 0) removeElements(filtered)
+            }
           }
         } catch (error) {
           console.error('[ws error] failed to parse message', error)
@@ -557,9 +656,9 @@ export function CanvasBoard() {
     }
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     Object.values(elements).forEach((element) => {
-      drawSticky(ctx, element, cameraState, element.id === selectedId)
+      drawSticky(ctx, element, cameraState, selectedIds.has(element.id))
     })
-  }, [cameraState, elements, selectedId])
+  }, [cameraState, elements, selectedIds])
 
   return (
     <section

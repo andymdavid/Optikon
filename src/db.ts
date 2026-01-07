@@ -271,6 +271,7 @@ const updateBoardElementStmt = db.query<BoardElement>(
    WHERE id = ? AND board_id = ?
    RETURNING *`
 );
+const deleteBoardElementStmt = db.query(`DELETE FROM board_elements WHERE id = ? AND board_id = ?`);
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
   if (!owner) return [];
@@ -413,6 +414,18 @@ export function getBoardElement(boardId: number, elementId: string) {
 
 export function updateBoardElement(boardId: number, elementId: string, propsJson: string) {
   return updateBoardElementStmt.get(propsJson, elementId, boardId) ?? null;
+}
+
+export function deleteBoardElements(boardId: number, ids: string[]) {
+  let removed = 0;
+  for (const id of ids) {
+    if (!id) continue;
+    const existing = getBoardElementStmt.get(id, boardId) as BoardElement | undefined;
+    if (!existing) continue;
+    deleteBoardElementStmt.run(id, boardId);
+    removed += 1;
+  }
+  return removed;
 }
 
 export function resetDatabase() {

@@ -2,6 +2,7 @@ import { jsonResponse, safeJson } from "../http";
 import {
   createBoardElementRecord,
   createBoardRecord,
+  deleteBoardElementsRecord,
   fetchBoardById,
   fetchBoardElement,
   fetchBoardElements,
@@ -99,4 +100,20 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   }
 
   return jsonResponse({ ok: true });
+}
+
+export async function handleBoardElementsDelete(req: Request, boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const body = (await safeJson(req)) as { ids?: unknown } | null;
+  const ids = Array.isArray(body?.ids)
+    ? body.ids.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
+  if (ids.length === 0) {
+    return jsonResponse({ message: "No valid ids provided." }, 400);
+  }
+  const deletedCount = deleteBoardElementsRecord(boardId, ids);
+  return jsonResponse({ ok: true, deletedCount });
 }

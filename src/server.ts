@@ -14,6 +14,7 @@ import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPos
 import { createAuthHandlers } from "./routes/auth";
 import {
   handleBoardCreate,
+  handleBoardElementsDelete,
   handleBoardElementCreate,
   handleBoardElementUpdate,
   handleBoardElements,
@@ -28,7 +29,7 @@ import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 
-type CanvasMessageType = "joinBoard" | "elementUpdate" | "cursorMove";
+type CanvasMessageType = "joinBoard" | "elementUpdate" | "cursorMove" | "elementsDelete";
 
 type CanvasMessageEnvelope = {
   type: CanvasMessageType;
@@ -87,6 +88,10 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
     }
     case "cursorMove": {
       // TODO: implement realtime handling
+      break;
+    }
+    case "elementsDelete": {
+      handleElementsDelete(ws, message.payload);
       break;
     }
   }
@@ -152,6 +157,40 @@ function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknow
     recipients += 1;
   }
   console.log(`[ws] elementUpdate board=${boardId} recipients=${recipients}`);
+}
+
+function handleElementsDelete(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
+  const boardId = ws.data.boardId;
+  if (!boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
+    return;
+  }
+  const typedPayload = payload as { boardId?: string; ids?: unknown };
+  if (!typedPayload?.boardId || typedPayload.boardId !== boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Board mismatch" } });
+    return;
+  }
+  const ids = Array.isArray(typedPayload.ids)
+    ? typedPayload.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  if (ids.length === 0) {
+    sendJson(ws, { type: "error", payload: { message: "Invalid ids" } });
+    return;
+  }
+  const sockets = boardSockets.get(boardId);
+  if (!sockets) return;
+  let recipients = 0;
+  for (const peer of sockets) {
+    if (peer === ws) continue;
+    peer.send(
+      JSON.stringify({
+        type: "elementsDelete",
+        payload: { boardId, ids },
+      })
+    );
+    recipients += 1;
+  }
+  console.log(`[ws] elementsDelete board=${boardId} recipients=${recipients}`);
 }
 
 const websocketHandler: WebSocketHandler<WebSocketData> = {
@@ -254,6 +293,16 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardElementUpdateMatch) {
       return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2]);
     }
+  }
+
+  if (req.method === "DELETE") {
+    const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementsDeleteMatch) {
+      return handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]));
+    }
+
+    const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
+    if (todoDeleteMatch) return handleTodoDelete(session, Number(todoDeleteMatch[1]));
   }
 
   return new Response("Not found", { status: 404 });

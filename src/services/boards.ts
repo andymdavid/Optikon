@@ -1,5 +1,6 @@
 import {
   createBoard,
+  deleteBoardElements,
   getBoardById,
   getBoardElement,
   insertOrUpdateBoardElement,
@@ -35,6 +36,10 @@ export function fetchBoardElement(boardId: number, elementId: string) {
 export function updateBoardElementRecord(boardId: number, elementId: string, element: SharedBoardElement) {
   const propsJson = JSON.stringify(element ?? {});
   return updateBoardElement(boardId, elementId, propsJson);
+}
+
+export function deleteBoardElementsRecord(boardId: number, ids: string[]) {
+  return deleteBoardElements(boardId, ids);
 }
 
 export type { Board, BoardElement };
