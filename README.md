@@ -38,7 +38,8 @@ Because the app is framework-free HTML, you can also render from a template engi
 
 ## Development helpers
 
-- `bun dev` runs the server with `bun --hot` for quick edits.
+- `bun start` runs the Bun backend only (`bun --hot run src/server.ts`).
+- `bun run dev` from the repo root launches both servers: backend at http://localhost:3025 and the Vite frontend at http://localhost:5510. Visit the Vite URL during development to use the Canvas UI.
 - `bun run reset-db` removes the SQLite file if you want to start fresh.
 
 ## Folder layout

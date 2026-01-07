@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "bun install",
     "start": "bun --hot run src/server.ts",
-    "dev": "concurrently \"bun --hot run src/server.ts\" \"bun --cwd frontend run dev\"",
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"bun --hot run src/server.ts\" \"bun --cwd frontend run dev\"",
     "reset-db": "rm -f do-the-other-stuff.sqlite",
     "lint": "eslint . && node scripts/check-inline-js.js",
     "lint:fix": "eslint . --fix && node scripts/check-inline-js.js"
