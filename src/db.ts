@@ -34,7 +34,7 @@ export type Board = {
 };
 
 export type BoardElement = {
-  id: number;
+  id: string;
   board_id: number;
   type: string;
   props_json: string;
@@ -102,17 +102,62 @@ db.run(`
   )
 `);
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS board_elements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    board_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    props_json TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
-  )
-`);
+function ensureBoardElementsSchema() {
+  const info = db.query<{ name: string; type: string }>(`PRAGMA table_info('board_elements')`).all();
+  const idColumn = info.find((column) => column.name === "id");
+  if (!idColumn) {
+    createBoardElementsTable();
+    return;
+  }
+  if (idColumn.type?.toUpperCase() === "TEXT") return;
+
+  db.run(`ALTER TABLE board_elements RENAME TO board_elements_legacy`);
+  createBoardElementsTable();
+  const legacyRows = db
+    .query<{
+      id: number;
+      board_id: number;
+      type: string;
+      props_json: string;
+      created_at: string;
+      updated_at: string;
+    }>(`SELECT id, board_id, type, props_json, created_at, updated_at FROM board_elements_legacy`)
+    .all();
+  const insertStmt = db.query(
+    `INSERT OR REPLACE INTO board_elements (id, board_id, type, props_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  for (const row of legacyRows) {
+    let elementId: string | null = null;
+    try {
+      const parsed = JSON.parse(row.props_json) as { id?: unknown };
+      if (typeof parsed?.id === "string" && parsed.id.trim()) {
+        elementId = parsed.id;
+      }
+    } catch (_error) {
+      // ignore malformed legacy data
+    }
+    if (!elementId) elementId = String(row.id);
+    insertStmt.run(elementId, row.board_id, row.type, row.props_json, row.created_at, row.updated_at);
+  }
+  db.run(`DROP TABLE board_elements_legacy`);
+}
+
+function createBoardElementsTable() {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS board_elements (
+      id TEXT PRIMARY KEY,
+      board_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      props_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+ensureBoardElementsSchema();
 
 db.run(`
   CREATE TABLE IF NOT EXISTS board_comments (
@@ -207,9 +252,14 @@ const listBoardElementsStmt = db.query<BoardElement>(
    WHERE board_id = ?
    ORDER BY created_at ASC`
 );
-const insertBoardElementStmt = db.query<BoardElement>(
-  `INSERT INTO board_elements (board_id, type, props_json)
-   VALUES (?, ?, ?)
+const upsertBoardElementStmt = db.query<BoardElement>(
+  `INSERT INTO board_elements (id, board_id, type, props_json)
+   VALUES (?, ?, ?, ?)
+   ON CONFLICT(id) DO UPDATE SET
+     board_id = excluded.board_id,
+     type = excluded.type,
+     props_json = excluded.props_json,
+     updated_at = CURRENT_TIMESTAMP
    RETURNING *`
 );
 const getBoardElementStmt = db.query<BoardElement>(
@@ -353,15 +403,15 @@ export function listBoardElements(boardId: number) {
   return listBoardElementsStmt.all(boardId);
 }
 
-export function insertBoardElement(boardId: number, type: string, propsJson: string) {
-  return insertBoardElementStmt.get(boardId, type, propsJson) ?? null;
+export function insertOrUpdateBoardElement(boardId: number, elementId: string, type: string, propsJson: string) {
+  return upsertBoardElementStmt.get(elementId, boardId, type, propsJson) ?? null;
 }
 
-export function getBoardElement(boardId: number, elementId: number) {
+export function getBoardElement(boardId: number, elementId: string) {
   return getBoardElementStmt.get(elementId, boardId) ?? null;
 }
 
-export function updateBoardElement(boardId: number, elementId: number, propsJson: string) {
+export function updateBoardElement(boardId: number, elementId: string, propsJson: string) {
   return updateBoardElementStmt.get(propsJson, elementId, boardId) ?? null;
 }
 

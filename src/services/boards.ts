@@ -1,6 +1,14 @@
-import { createBoard, getBoardById, getBoardElement, insertBoardElement, listBoardElements, updateBoardElement } from "../db";
+import {
+  createBoard,
+  getBoardById,
+  getBoardElement,
+  insertOrUpdateBoardElement,
+  listBoardElements,
+  updateBoardElement,
+} from "../db";
 
 import type { Board, BoardElement } from "../db";
+import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
 
 export function createBoardRecord(title: string | null | undefined) {
   const normalizedTitle = typeof title === "string" && title.trim() ? title.trim() : "Untitled Board";
@@ -15,16 +23,16 @@ export function fetchBoardElements(boardId: number) {
   return listBoardElements(boardId);
 }
 
-export function createBoardElementRecord(boardId: number, type: string, props: unknown) {
-  const propsJson = JSON.stringify(props ?? {});
-  return insertBoardElement(boardId, type, propsJson);
+export function createBoardElementRecord(boardId: number, element: SharedBoardElement) {
+  const propsJson = JSON.stringify(element ?? {});
+  return insertOrUpdateBoardElement(boardId, element.id, element.type, propsJson);
 }
 
-export function fetchBoardElement(boardId: number, elementId: number) {
+export function fetchBoardElement(boardId: number, elementId: string) {
   return getBoardElement(boardId, elementId);
 }
 
-export function updateBoardElementRecord(boardId: number, elementId: number, element: unknown) {
+export function updateBoardElementRecord(boardId: number, elementId: string, element: SharedBoardElement) {
   const propsJson = JSON.stringify(element ?? {});
   return updateBoardElement(boardId, elementId, propsJson);
 }

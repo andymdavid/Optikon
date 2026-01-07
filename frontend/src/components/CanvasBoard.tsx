@@ -84,7 +84,6 @@ export function CanvasBoard() {
   const joinedRef = useRef(false)
   const createBoardInFlightRef = useRef(false)
   const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null)
-  const elementServerIdsRef = useRef<Record<string, number>>({})
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
   const panStateRef = useRef<{
@@ -137,10 +136,7 @@ export function CanvasBoard() {
           body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
         })
         if (!response.ok) throw new Error('Failed to persist element')
-        const data = (await response.json()) as { id?: number }
-        if (typeof data?.id === 'number') {
-          elementServerIdsRef.current[element.id] = data.id
-        }
+        await response.json()
       } catch (error) {
         console.error('Failed to persist board element', error)
       }
@@ -150,14 +146,15 @@ export function CanvasBoard() {
 
   const persistElementUpdate = useCallback(
     async (board: string, element: StickyNoteElement) => {
-      const serverId = elementServerIdsRef.current[element.id]
-      if (!serverId) return
       try {
-        const response = await fetch(`${API_BASE_URL}/boards/${board}/elements/${serverId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ element } satisfies { element: BoardElement }),
-        })
+        const response = await fetch(
+          `${API_BASE_URL}/boards/${board}/elements/${encodeURIComponent(element.id)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ element } satisfies { element: BoardElement }),
+          }
+        )
         if (!response.ok) throw new Error('Failed to update element')
       } catch (error) {
         console.error('Failed to update board element', error)
@@ -418,7 +415,6 @@ export function CanvasBoard() {
 
   useEffect(() => {
     setSelectedId(null)
-    elementServerIdsRef.current = {}
   }, [boardId])
 
   useEffect(() => {
@@ -430,24 +426,13 @@ export function CanvasBoard() {
         const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`)
         if (!response.ok) throw new Error('Failed to load elements')
         const data = (await response.json()) as {
-          elements?: Array<{ id?: number; element?: BoardElement | null; props_json?: string }>
+          elements?: Array<{ id?: string; element?: BoardElement | null }>
         }
         const parsed: StickyNoteElement[] = []
         data.elements?.forEach((entry) => {
-          let candidate: unknown = entry?.element ?? null
-          if (!candidate && entry?.props_json) {
-            try {
-              candidate = JSON.parse(entry.props_json)
-            } catch (error) {
-              console.error('Failed to parse persisted element JSON', error)
-            }
-          }
-          const sticky = parseStickyElement(candidate)
+          const sticky = parseStickyElement(entry?.element)
           if (sticky) {
             parsed.push(sticky)
-            if (typeof entry?.id === 'number') {
-              elementServerIdsRef.current[sticky.id] = entry.id
-            }
           }
         })
         if (!cancelled && parsed.length > 0) {

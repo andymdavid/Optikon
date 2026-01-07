@@ -250,9 +250,9 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   }
 
   if (req.method === "PUT") {
-    const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/(\d+)$/);
+    const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/([^/]+)$/);
     if (boardElementUpdateMatch) {
-      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), Number(boardElementUpdateMatch[2]));
+      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2]);
     }
   }
 

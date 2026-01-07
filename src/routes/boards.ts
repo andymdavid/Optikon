@@ -60,34 +60,40 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   }
 
   const body = (await safeJson(req)) as { type?: string; element?: SharedBoardElement } | null;
-  if (!body?.type || body.type !== "sticky" || !body.element) {
+  if (!body?.type || body.type !== "sticky" || !body.element || typeof body.element.id !== "string") {
     return jsonResponse({ message: "Invalid element payload." }, 400);
   }
 
-  const element = createBoardElementRecord(boardId, body.type, body.element);
+  const element = createBoardElementRecord(boardId, body.element);
   if (!element) {
     return jsonResponse({ message: "Unable to create element." }, 500);
   }
 
-  return jsonResponse({ id: element.id, board_id: element.board_id, type: element.type }, 201);
+  return jsonResponse({ ok: true, id: element.id }, 201);
 }
 
-export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: number) {
+export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: string) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
-  const existing = fetchBoardElement(boardId, elementId);
-  if (!existing) {
-    return jsonResponse({ message: "Element not found." }, 404);
-  }
-
+  const elementIdString = String(elementId);
   const body = (await safeJson(req)) as { element?: SharedBoardElement | null } | null;
   if (!body?.element) {
     return jsonResponse({ message: "Invalid element payload." }, 400);
   }
+  const resolvedId = typeof body.element.id === "string" && body.element.id.trim() ? body.element.id : elementIdString;
+  const payload = { ...body.element, id: resolvedId } as SharedBoardElement;
+  const existing = fetchBoardElement(boardId, payload.id);
+  if (!existing) {
+    const created = createBoardElementRecord(boardId, payload);
+    if (!created) {
+      return jsonResponse({ message: "Unable to upsert element." }, 500);
+    }
+    return jsonResponse({ ok: true });
+  }
 
-  const updated = updateBoardElementRecord(boardId, elementId, body.element);
+  const updated = updateBoardElementRecord(boardId, payload.id, payload);
   if (!updated) {
     return jsonResponse({ message: "Unable to update element." }, 500);
   }
