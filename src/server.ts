@@ -33,6 +33,8 @@ type WebSocketData = {
   boardId: string | null;
 };
 
+const boardSockets = new Map<string, Set<ServerWebSocket<WebSocketData>>>();
+
 function isCanvasMessageType(value: string): value is CanvasMessageType {
   return value === "joinBoard" || value === "elementUpdate" || value === "cursorMove";
 }
@@ -68,11 +70,14 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
         sendJson(ws, { type: "error", payload: { message: "Invalid boardId" } });
         return;
       }
-      ws.data.boardId = boardId;
+      attachSocketToBoard(ws, boardId);
       sendJson(ws, { type: "joinAck", payload: { boardId, ok: true } });
       break;
     }
-    case "elementUpdate":
+    case "elementUpdate": {
+      handleElementUpdate(ws, message.payload);
+      break;
+    }
     case "cursorMove": {
       // TODO: implement realtime handling
       break;
@@ -84,6 +89,51 @@ function ensureJoined(ws: ServerWebSocket<WebSocketData>) {
   if (ws.data.boardId) return true;
   sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
   return false;
+}
+
+function attachSocketToBoard(ws: ServerWebSocket<WebSocketData>, boardId: string) {
+  ws.data.boardId = boardId;
+  let sockets = boardSockets.get(boardId);
+  if (!sockets) {
+    sockets = new Set();
+    boardSockets.set(boardId, sockets);
+  }
+  sockets.add(ws);
+  console.log(`[ws] joined board=${boardId} count=${sockets.size}`);
+}
+
+function detachSocketFromBoard(ws: ServerWebSocket<WebSocketData>) {
+  const boardId = ws.data.boardId;
+  if (!boardId) return;
+  const sockets = boardSockets.get(boardId);
+  if (!sockets) return;
+  sockets.delete(ws);
+  if (sockets.size === 0) {
+    boardSockets.delete(boardId);
+  }
+  ws.data.boardId = null;
+}
+
+function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
+  const boardId = ws.data.boardId;
+  if (!boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
+    return;
+  }
+  const payloadBoardId = extractBoardId(payload);
+  if (!payloadBoardId || payloadBoardId !== boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Board mismatch" } });
+    return;
+  }
+  const sockets = boardSockets.get(boardId);
+  if (!sockets) return;
+  let recipients = 0;
+  for (const peer of sockets) {
+    if (peer === ws) continue;
+    peer.send(JSON.stringify({ type: "elementUpdate", payload }));
+    recipients += 1;
+  }
+  console.log(`[ws] elementUpdate board=${boardId} recipients=${recipients}`);
 }
 
 const websocketHandler: WebSocketHandler<WebSocketData> = {
@@ -102,8 +152,10 @@ const websocketHandler: WebSocketHandler<WebSocketData> = {
     }
     handleCanvasMessage(ws, parsed);
   },
-  close(_ws) {
-    console.log("[ws] close");
+  close(ws) {
+    const boardId = ws.data.boardId;
+    detachSocketFromBoard(ws);
+    console.log(`[ws] close board=${boardId ?? "null"}`);
   },
 };
 
