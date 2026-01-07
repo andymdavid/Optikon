@@ -21,6 +21,19 @@ const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
 const STICKY_WIDTH = 140
 const STICKY_HEIGHT = 100
+const BOARD_BACKGROUND = '#f7f7f8'
+const GRID_BASE_SPACING = 50
+const GRID_SCREEN_STEPS = [12, 18, 24, 32, 48, 64, 96, 128]
+const GRID_MINOR_COLOR = 'rgba(15, 23, 42, 0.035)'
+const GRID_MAJOR_COLOR = 'rgba(15, 23, 42, 0.11)'
+const GRID_MAJOR_EVERY = 4
+const STICKY_FILL = '#fef3c7'
+const STICKY_SHADOW = 'rgba(15, 23, 42, 0.18)'
+const STICKY_TEXT_COLOR = '#1f2937'
+const STICKY_CORNER_RADIUS = 12
+const ACCENT_COLOR = '#0ea5e9'
+const ACCENT_FILL = 'rgba(14, 165, 233, 0.08)'
+const MARQUEE_FILL = 'rgba(14, 165, 233, 0.12)'
 type Rect = { left: number; top: number; right: number; bottom: number }
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
@@ -44,6 +57,113 @@ const MAX_ZOOM = 3
 
 function logInbound(message: unknown) {
   console.log('[ws in]', message)
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+function getGridSpacingPx(zoom: number) {
+  if (zoom <= 0) return GRID_SCREEN_STEPS[0]
+  const desired = GRID_BASE_SPACING * zoom
+  let closest = GRID_SCREEN_STEPS[0]
+  let diff = Math.abs(closest - desired)
+  for (let i = 1; i < GRID_SCREEN_STEPS.length; i += 1) {
+    const step = GRID_SCREEN_STEPS[i]
+    const delta = Math.abs(step - desired)
+    if (delta < diff) {
+      closest = step
+      diff = delta
+    }
+  }
+  return closest
+}
+
+function drawRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const clamped = clamp(radius, 0, Math.min(width, height) / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + clamped, y)
+  ctx.lineTo(x + width - clamped, y)
+  ctx.quadraticCurveTo(x + width, y, x + width, y + clamped)
+  ctx.lineTo(x + width, y + height - clamped)
+  ctx.quadraticCurveTo(x + width, y + height, x + width - clamped, y + height)
+  ctx.lineTo(x + clamped, y + height)
+  ctx.quadraticCurveTo(x, y + height, x, y + height - clamped)
+  ctx.lineTo(x, y + clamped)
+  ctx.quadraticCurveTo(x, y, x + clamped, y)
+  ctx.closePath()
+}
+
+// Draws a screen-space tiled grid that stays board-anchored by snapping to a
+// fixed set of pixel spacings. This keeps lines crisp and prevents massive
+// boxes when zooming far in or out.
+function drawBoardGrid(
+  ctx: CanvasRenderingContext2D,
+  camera: CameraState,
+  width: number,
+  height: number
+) {
+  const spacingPx = getGridSpacingPx(camera.zoom)
+  const boardSpacing = spacingPx / camera.zoom
+  const alignHalfPixel = (value: number) => Math.round(value) + 0.5
+  const boardLeft = -camera.offsetX - boardSpacing
+  const boardTop = -camera.offsetY - boardSpacing
+  const boardRight = boardLeft + width / camera.zoom + boardSpacing * 2
+  const boardBottom = boardTop + height / camera.zoom + boardSpacing * 2
+  const startIndexX = Math.floor(boardLeft / boardSpacing)
+  const endIndexX = Math.ceil(boardRight / boardSpacing)
+  const startIndexY = Math.floor(boardTop / boardSpacing)
+  const endIndexY = Math.ceil(boardBottom / boardSpacing)
+  const minorVertical: number[] = []
+  const majorVertical: number[] = []
+  const minorHorizontal: number[] = []
+  const majorHorizontal: number[] = []
+  for (let index = startIndexX; index <= endIndexX; index += 1) {
+    const boardX = index * boardSpacing
+    const screenX = alignHalfPixel((boardX + camera.offsetX) * camera.zoom)
+    const indexMod = ((index % GRID_MAJOR_EVERY) + GRID_MAJOR_EVERY) % GRID_MAJOR_EVERY
+    const isMajor = indexMod === 0
+    if (isMajor) majorVertical.push(screenX)
+    else minorVertical.push(screenX)
+  }
+  for (let index = startIndexY; index <= endIndexY; index += 1) {
+    const boardY = index * boardSpacing
+    const screenY = alignHalfPixel((boardY + camera.offsetY) * camera.zoom)
+    const indexMod = ((index % GRID_MAJOR_EVERY) + GRID_MAJOR_EVERY) % GRID_MAJOR_EVERY
+    const isMajor = indexMod === 0
+    if (isMajor) majorHorizontal.push(screenY)
+    else minorHorizontal.push(screenY)
+  }
+  ctx.save()
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.strokeStyle = GRID_MINOR_COLOR
+  minorVertical.forEach((screenX) => {
+    ctx.moveTo(screenX, 0)
+    ctx.lineTo(screenX, height)
+  })
+  minorHorizontal.forEach((screenY) => {
+    ctx.moveTo(0, screenY)
+    ctx.lineTo(width, screenY)
+  })
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.strokeStyle = GRID_MAJOR_COLOR
+  majorVertical.forEach((screenX) => {
+    ctx.moveTo(screenX, 0)
+    ctx.lineTo(screenX, height)
+  })
+  majorHorizontal.forEach((screenY) => {
+    ctx.moveTo(0, screenY)
+    ctx.lineTo(width, screenY)
+  })
+  ctx.stroke()
+  ctx.restore()
 }
 
 function logOutbound(message: unknown) {
@@ -76,28 +196,77 @@ function setsEqual(a: Set<string>, b: Set<string>) {
   return true
 }
 
-function drawSticky(
+function wrapStickyText(
   ctx: CanvasRenderingContext2D,
-  element: StickyNoteElement,
-  camera: CameraState,
-  isSelected: boolean
-) {
+  text: string,
+  maxWidth: number
+): string[] {
+  const lines: string[] = []
+  const rawBlocks = text.split(/\n/)
+  rawBlocks.forEach((block, index) => {
+    const words = block.split(/\s+/).filter(Boolean)
+    if (words.length === 0) {
+      if (index < rawBlocks.length - 1) lines.push('')
+      return
+    }
+    let current = ''
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word
+      if (ctx.measureText(next).width <= maxWidth || current === '') {
+        current = next
+      } else {
+        lines.push(current)
+        current = word
+      }
+    })
+    if (current) lines.push(current)
+  })
+  return lines.length === 0 ? [''] : lines
+}
+
+function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
   const width = STICKY_WIDTH * camera.zoom
   const height = STICKY_HEIGHT * camera.zoom
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
+  const radius = STICKY_CORNER_RADIUS * camera.zoom
+  const paddingX = 14 * camera.zoom
+  const paddingY = 12 * camera.zoom
+  const fontSize = Math.max(12, 14 * camera.zoom)
+  const lineHeight = fontSize * 1.3
   ctx.save()
-  ctx.fillStyle = '#fde68a'
-  ctx.strokeStyle = isSelected ? '#f97316' : '#f59e0b'
-  ctx.lineWidth = isSelected ? 3 : 2
-  ctx.fillRect(screenX, screenY, width, height)
-  ctx.strokeRect(screenX, screenY, width, height)
-  ctx.fillStyle = '#111827'
-  ctx.font = '14px "Inter", "Segoe UI", sans-serif'
+  ctx.fillStyle = STICKY_FILL
+  ctx.shadowColor = STICKY_SHADOW
+  ctx.shadowBlur = 18 * camera.zoom
+  ctx.shadowOffsetY = 2 * camera.zoom
+  drawRoundedRectPath(ctx, screenX, screenY, width, height, radius)
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.fillStyle = STICKY_TEXT_COLOR
+  ctx.font = `${fontSize}px "Inter", "Segoe UI", sans-serif`
   ctx.textBaseline = 'top'
-  const padding = 10
-  const maxWidth = width - padding * 2
-  ctx.fillText(element.text, screenX + padding, screenY + padding, maxWidth)
+  const maxWidth = width - paddingX * 2
+  const lines = wrapStickyText(ctx, element.text, maxWidth)
+  lines.slice(0, 6).forEach((line, index) => {
+    const textY = screenY + paddingY + index * lineHeight
+    ctx.fillText(line, screenX + paddingX, textY, maxWidth)
+  })
+  ctx.restore()
+}
+
+function drawStickySelection(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
+  const width = STICKY_WIDTH * camera.zoom
+  const height = STICKY_HEIGHT * camera.zoom
+  const screenX = (element.x + camera.offsetX) * camera.zoom
+  const screenY = (element.y + camera.offsetY) * camera.zoom
+  const radius = STICKY_CORNER_RADIUS * camera.zoom
+  ctx.save()
+  ctx.fillStyle = ACCENT_FILL
+  drawRoundedRectPath(ctx, screenX, screenY, width, height, radius)
+  ctx.fill()
+  ctx.lineWidth = Math.max(1.5, 2 * camera.zoom)
+  ctx.strokeStyle = ACCENT_COLOR
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -639,7 +808,7 @@ export function CanvasBoard() {
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
       const boardPoint = screenToBoard(canvasPoint)
       setCameraState((prev) => {
-        const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9
+        const zoomFactor = event.deltaY < 0 ? 1.04 : 0.96
         const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * zoomFactor))
         const offsetX = canvasPoint.x / newZoom - boardPoint.x
         const offsetY = canvasPoint.y / newZoom - boardPoint.y
@@ -877,14 +1046,25 @@ export function CanvasBoard() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const { width, height } = canvas.getBoundingClientRect()
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width
-      canvas.height = height
+    const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect()
+    const dpr = window.devicePixelRatio || 1
+    const targetWidth = Math.round(cssWidth * dpr)
+    const targetHeight = Math.round(cssHeight * dpr)
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth
+      canvas.height = targetHeight
     }
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    Object.values(elements).forEach((element) => {
-      drawSticky(ctx, element, cameraState, selectedIds.has(element.id))
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.fillStyle = BOARD_BACKGROUND
+    ctx.fillRect(0, 0, cssWidth, cssHeight)
+    drawBoardGrid(ctx, cameraState, cssWidth, cssHeight)
+    const values = Object.values(elements)
+    values.forEach((element) => {
+      drawSticky(ctx, element, cameraState)
+    })
+    selectedIds.forEach((id) => {
+      const element = elements[id]
+      if (element) drawStickySelection(ctx, element, cameraState)
     })
   }, [cameraState, elements, selectedIds])
 
@@ -912,8 +1092,8 @@ export function CanvasBoard() {
           className="marquee-selection"
           style={{
             position: 'absolute',
-            border: '1px dashed #38bdf8',
-            backgroundColor: 'rgba(56, 189, 248, 0.15)',
+            border: `1px solid ${ACCENT_COLOR}`,
+            backgroundColor: MARQUEE_FILL,
             pointerEvents: 'none',
             left: Math.min(marquee.screenStart.x, marquee.screenCurrent.x),
             top: Math.min(marquee.screenStart.y, marquee.screenCurrent.y),
