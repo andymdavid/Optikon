@@ -30,6 +30,7 @@ type CanvasMessageEnvelope = {
 
 type WebSocketData = {
   session: Session | null;
+  boardId: string | null;
 };
 
 function isCanvasMessageType(value: string): value is CanvasMessageType {
@@ -48,34 +49,61 @@ function parseCanvasMessage(data: unknown): CanvasMessageEnvelope | null {
   }
 }
 
+function sendJson(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
+  ws.send(JSON.stringify(payload));
+}
+
+function extractBoardId(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+  const boardId = (payload as { boardId?: unknown }).boardId;
+  if (typeof boardId !== "string" || !boardId.trim()) return null;
+  return boardId;
+}
+
 function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: CanvasMessageEnvelope) {
   switch (message.type) {
     case "joinBoard": {
-      // TODO: implement board join registration
+      const boardId = extractBoardId(message.payload);
+      if (!boardId) {
+        sendJson(ws, { type: "error", payload: { message: "Invalid boardId" } });
+        return;
+      }
+      ws.data.boardId = boardId;
+      sendJson(ws, { type: "joinAck", payload: { boardId, ok: true } });
       break;
     }
-    case "elementUpdate": {
-      // TODO: handle new or updated elements on the board
-      break;
-    }
+    case "elementUpdate":
     case "cursorMove": {
-      // TODO: broadcast cursor positions to other participants
+      // TODO: implement realtime handling
       break;
     }
   }
 }
 
+function ensureJoined(ws: ServerWebSocket<WebSocketData>) {
+  if (ws.data.boardId) return true;
+  sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
+  return false;
+}
+
 const websocketHandler: WebSocketHandler<WebSocketData> = {
   open(_ws) {
-    // Placeholder for future session validation or state hydration
+    console.log("[ws] open");
   },
   message(ws, data) {
     const parsed = parseCanvasMessage(data);
-    if (!parsed) return;
+    if (!parsed) {
+      sendJson(ws, { type: "error", payload: { message: "Invalid message" } });
+      return;
+    }
+    console.log(`[ws] msg ${parsed.type}`);
+    if (parsed.type !== "joinBoard" && !ensureJoined(ws)) {
+      return;
+    }
     handleCanvasMessage(ws, parsed);
   },
   close(_ws) {
-    // Placeholder for cleanup hooks when sockets disconnect
+    console.log("[ws] close");
   },
 };
 
@@ -96,7 +124,7 @@ function handleWebSocketUpgrade(req: Request, serverInstance: Server<WebSocketDa
     return new Response("Expected WebSocket upgrade", { status: 400 });
   }
 
-  const upgraded = serverInstance.upgrade(req, { data: { session } });
+  const upgraded = serverInstance.upgrade(req, { data: { session, boardId: null } });
   if (upgraded) {
     return new Response(null, { status: 101 });
   }
