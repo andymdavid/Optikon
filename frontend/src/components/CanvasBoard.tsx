@@ -132,17 +132,23 @@ export function CanvasBoard() {
       suppressClickRef.current = false
     })
   }, [])
-  const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
-  const [elements, setElements] = useState<ElementMap>({})
-  const [boardId, setBoardId] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [marquee, setMarquee] = useState<{
+  type MarqueeState = {
     start: { x: number; y: number }
     current: { x: number; y: number }
     screenStart: { x: number; y: number }
     screenCurrent: { x: number; y: number }
     shift: boolean
-  } | null>(null)
+  }
+  const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
+  const [elements, setElements] = useState<ElementMap>({})
+  const [boardId, setBoardId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
+  const marqueeRef = useRef<MarqueeState | null>(null)
+  const setMarquee = useCallback((next: MarqueeState | null) => {
+    marqueeRef.current = next
+    setMarqueeState(next)
+  }, [])
 
   const screenToBoard = useCallback(
     (point: { x: number; y: number }) => {
