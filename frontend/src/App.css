@@ -6,6 +6,7 @@
 .canvas-board {
   height: 100%;
   width: 100%;
+  position: relative;
 }
 
 .canvas-board__surface {
@@ -13,4 +14,19 @@
   height: 100%;
   width: 100%;
   background-color: #f7f7f8;
+}
+
+.canvas-board__sticky-editor {
+  border: none;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+  border-radius: 0;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  background: linear-gradient(180deg, #fff7a6 0%, #fef69e 80%);
+  color: #1f2937;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  line-height: 1.3;
+  z-index: 10;
+  overflow: auto;
 }

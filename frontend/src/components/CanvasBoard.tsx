@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 
 import type { BoardElement, StickyNoteElement } from '@shared/boardElements'
 
@@ -88,6 +88,12 @@ type GridSpec = {
   secondaryBoardSpacing: number
   secondarySpacingPx: number
   secondaryAlpha: number
+}
+
+type EditingState = {
+  id: string
+  text: string
+  originalText: string
 }
 
 function computeGridSpec(zoom: number): GridSpec {
@@ -363,7 +369,17 @@ export function CanvasBoard() {
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
   const createBoardInFlightRef = useRef(false)
-  const dragStateRef = useRef<{ id: string; offsetX: number; offsetY: number; pointerId: number; startPointer: { x: number; y: number }; startPositions: Record<string, { x: number; y: number }> } | null>(null)
+  const dragStateRef = useRef<
+    | {
+        ids: string[]
+        offsetX?: number
+        offsetY?: number
+        pointerId: number
+        startPointer: { x: number; y: number }
+        startPositions: Record<string, { x: number; y: number }>
+      }
+    | null
+  >(null)
   const resizeStateRef = useRef<
     | null
     | {
@@ -393,6 +409,8 @@ export function CanvasBoard() {
         shift: boolean
       }
   >(null)
+  const editingStateRef = useRef<EditingState | null>(null)
+  const editingTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
       suppressClickRef.current = false
@@ -410,12 +428,24 @@ export function CanvasBoard() {
   const [boardId, setBoardId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
+  const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
       const value = typeof next === 'function' ? (next as (prev: MarqueeState | null) => MarqueeState | null)(marqueeRef.current) : next
       marqueeRef.current = value
       setMarqueeState(value)
+    },
+    []
+  )
+
+  const updateEditingState = useCallback(
+    (next: EditingState | null | ((prev: EditingState | null) => EditingState | null)) => {
+      setEditingStateInternal((prev) => {
+        const value = typeof next === 'function' ? (next as (prev: EditingState | null) => EditingState | null)(prev) : next
+        editingStateRef.current = value
+        return value
+      })
     },
     []
   )
@@ -491,6 +521,41 @@ export function CanvasBoard() {
     []
   )
 
+  const beginEditingSticky = useCallback(
+    (element: StickyNoteElement) => {
+      suppressClickRef.current = true
+      releaseClickSuppression()
+      setSelection(new Set([element.id]))
+      updateEditingState({ id: element.id, text: element.text, originalText: element.text })
+    },
+    [releaseClickSuppression, setSelection, updateEditingState]
+  )
+
+  const commitEditing = useCallback(() => {
+    const current = editingStateRef.current
+    if (!current) return
+    updateEditingState(null)
+    let updatedElement: StickyNoteElement | null = null
+    setElements((prev) => {
+      const target = prev[current.id]
+      if (!target) return prev
+      if (target.text === current.text) return prev
+      updatedElement = { ...target, text: current.text }
+      return { ...prev, [current.id]: updatedElement }
+    })
+    if (updatedElement) {
+      sendElementsUpdate([updatedElement])
+      if (boardId) {
+        void persistElementsUpdate(boardId, [updatedElement])
+      }
+    }
+  }, [boardId, persistElementsUpdate, sendElementsUpdate, updateEditingState])
+
+  const cancelEditing = useCallback(() => {
+    if (!editingStateRef.current) return
+    updateEditingState(null)
+  }, [updateEditingState])
+
   const handleCanvasClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
       if (suppressClickRef.current) {
@@ -498,6 +563,7 @@ export function CanvasBoard() {
         return
       }
       if (!joinedRef.current || !boardId) return
+      if (editingStateRef.current) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
       const element: StickyNoteElement = {
@@ -611,6 +677,19 @@ export function CanvasBoard() {
     [elements]
   )
 
+  const handleCanvasDoubleClick = useCallback(
+    (event: MouseEvent<HTMLCanvasElement>) => {
+      if (editingStateRef.current || !boardId) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
+      if (!sticky) return
+      event.preventDefault()
+      beginEditingSticky(sticky)
+    },
+    [beginEditingSticky, boardId, hitTestSticky, screenToBoard]
+  )
+
   const hitTestResizeHandle = useCallback(
     (point: { x: number; y: number }): { element: StickyNoteElement; handle: 'nw' | 'ne' | 'sw' | 'se' } | null => {
       const selected = selectedIdsRef.current
@@ -640,6 +719,10 @@ export function CanvasBoard() {
     (event: PointerEvent<HTMLCanvasElement>) => {
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+
+      if (editingStateRef.current) {
+        return
+      }
 
       try {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -757,6 +840,8 @@ export function CanvasBoard() {
       const mode = interactionModeRef.current
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+
+      if (editingStateRef.current) return
 
       const panState = panStateRef.current
       if (mode === 'pan' && panState && event.pointerId === panState.pointerId) {
@@ -882,6 +967,8 @@ export function CanvasBoard() {
       } catch {
         // ignore
       }
+
+      if (editingStateRef.current) return
 
       const mode = interactionModeRef.current
       interactionModeRef.current = 'none'
@@ -1009,6 +1096,7 @@ export function CanvasBoard() {
 
   const handleWheel = useCallback(
     (event: WheelEvent<HTMLCanvasElement>) => {
+      if (editingStateRef.current) return
       // Miro-like: pan on scroll, zoom on Cmd+scroll
       if (!event.metaKey) {
         event.preventDefault()
@@ -1073,6 +1161,7 @@ export function CanvasBoard() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (editingStateRef.current) return
       if (event.code === 'Space') {
         if (!spacePressedRef.current) {
           spacePressedRef.current = true
@@ -1090,6 +1179,7 @@ export function CanvasBoard() {
     }
 
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (editingStateRef.current) return
       if (event.code === 'Space') {
         spacePressedRef.current = false
       }
@@ -1288,6 +1378,26 @@ export function CanvasBoard() {
     })
   }, [cameraState, elements, selectedIds])
 
+  const editingElement = editingState ? elements[editingState.id] : null
+  const editingRect = editingElement ? getStickyScreenRect(editingElement, cameraState) : null
+  const editingFontSize = editingElement ? Math.max(12, 16 * cameraState.zoom) : null
+  const editingPaddingX = 16 * cameraState.zoom
+  const editingPaddingY = 14 * cameraState.zoom
+
+  useEffect(() => {
+    if (!editingState) return
+    const textarea = editingTextareaRef.current
+    if (!textarea) return
+    textarea.focus()
+    textarea.setSelectionRange(editingState.text.length, editingState.text.length)
+  }, [editingState])
+
+  useEffect(() => {
+    if (editingState && !editingElement) {
+      updateEditingState(null)
+    }
+  }, [editingElement, editingState, updateEditingState])
+
   return (
     <section
       aria-label="Canvas board"
@@ -1306,6 +1416,7 @@ export function CanvasBoard() {
         onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
+        onDoubleClick={handleCanvasDoubleClick}
       />
       {marquee && (
         <div
@@ -1319,6 +1430,41 @@ export function CanvasBoard() {
             top: Math.min(marquee.screenStart.y, marquee.screenCurrent.y),
             width: Math.abs(marquee.screenCurrent.x - marquee.screenStart.x),
             height: Math.abs(marquee.screenCurrent.y - marquee.screenStart.y),
+          }}
+        />
+      )}
+      {editingState && editingElement && editingRect && editingFontSize && (
+        <textarea
+          ref={editingTextareaRef}
+          className="canvas-board__sticky-editor"
+          autoFocus
+          value={editingState.text}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            updateEditingState((prev) => (prev ? { ...prev, text: nextValue } : prev))
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              cancelEditing()
+              return
+            }
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              commitEditing()
+            }
+          }}
+          onBlur={() => {
+            commitEditing()
+          }}
+          style={{
+            position: 'absolute',
+            left: editingRect.x,
+            top: editingRect.y,
+            width: editingRect.size,
+            height: editingRect.size,
+            fontSize: `${editingFontSize}px`,
+            padding: `${editingPaddingY}px ${editingPaddingX}px`,
           }}
         />
       )}
