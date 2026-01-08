@@ -41,6 +41,9 @@ const RESIZE_HANDLE_RADIUS = 6
 const RESIZE_HANDLE_HIT_RADIUS = 12
 const ACCENT_COLOR = '#0ea5e9'
 const MARQUEE_FILL = 'rgba(14, 165, 233, 0.12)'
+const MAX_STICKY_FONT_SIZE = 32
+const MIN_STICKY_FONT_SIZE = 12
+const STICKY_TEXT_LINE_HEIGHT = 1.35
 type Rect = { left: number; top: number; right: number; bottom: number }
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
@@ -65,6 +68,8 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
+const getElementFontSize = (element: StickyNoteElement) => resolveStickyFontSize(element.fontSize)
+
 const rectsIntersect = (a: Rect, b: Rect) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
 const DRAG_THROTTLE_MS = 50
 const MIN_ZOOM = 0.2
@@ -75,6 +80,13 @@ function logInbound(message: unknown) {
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+const resolveStickyFontSize = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, MIN_STICKY_FONT_SIZE, MAX_STICKY_FONT_SIZE)
+  }
+  return MAX_STICKY_FONT_SIZE
+}
 
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
@@ -94,6 +106,7 @@ type EditingState = {
   id: string
   text: string
   originalText: string
+  fontSize: number
 }
 
 function computeGridSpec(zoom: number): GridSpec {
@@ -206,6 +219,7 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   if (typeof element.text !== 'string') return null
   const size = getStickySize({ ...element, size: element.size ?? STICKY_SIZE })
+  const fontSize = resolveStickyFontSize(element.fontSize)
   return {
     id: element.id,
     type: 'sticky',
@@ -213,6 +227,7 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
     y: element.y,
     text: element.text,
     size,
+    fontSize,
   }
 }
 
@@ -307,8 +322,8 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const radius = STICKY_CORNER_RADIUS * camera.zoom
   const paddingX = 16 * camera.zoom
   const paddingY = 14 * camera.zoom
-  const fontSize = Math.max(12, 16 * camera.zoom)
-  const lineHeight = fontSize * 1.3
+  const fontSize = getElementFontSize(element) * camera.zoom
+  const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const rect = { x: screenX, y: screenY, width, height }
   drawStickyShadow(ctx, rect, radius)
   ctx.save()
@@ -323,11 +338,16 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.fillStyle = STICKY_TEXT_COLOR
   ctx.font = `${fontSize}px "Inter", "Segoe UI", sans-serif`
   ctx.textBaseline = 'top'
+  ctx.textAlign = 'center'
   const maxWidth = width - paddingX * 2
+  const availableHeight = height - paddingY * 2
   const lines = wrapStickyText(ctx, element.text, maxWidth)
-  lines.slice(0, 7).forEach((line, index) => {
-    const textY = screenY + paddingY + index * lineHeight
-    ctx.fillText(line, screenX + paddingX, textY, maxWidth)
+  const totalHeight = lines.length * lineHeight
+  const offsetY = Math.max(0, (availableHeight - totalHeight) / 2)
+  const textX = screenX + width / 2
+  lines.forEach((line, index) => {
+    const textY = screenY + paddingY + offsetY + index * lineHeight
+    ctx.fillText(line, textX, textY, maxWidth)
   })
   ctx.restore()
 }
@@ -410,7 +430,8 @@ export function CanvasBoard() {
       }
   >(null)
   const editingStateRef = useRef<EditingState | null>(null)
-  const editingTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const editingContentRef = useRef<HTMLDivElement | null>(null)
+  const editingMeasureRef = useRef<HTMLDivElement | null>(null)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
       suppressClickRef.current = false
@@ -526,7 +547,7 @@ export function CanvasBoard() {
       suppressClickRef.current = true
       releaseClickSuppression()
       setSelection(new Set([element.id]))
-      updateEditingState({ id: element.id, text: element.text, originalText: element.text })
+      updateEditingState({ id: element.id, text: element.text, originalText: element.text, fontSize: MAX_STICKY_FONT_SIZE })
     },
     [releaseClickSuppression, setSelection, updateEditingState]
   )
@@ -539,8 +560,9 @@ export function CanvasBoard() {
     setElements((prev) => {
       const target = prev[current.id]
       if (!target) return prev
-      if (target.text === current.text) return prev
-      updatedElement = { ...target, text: current.text }
+      const nextFontSize = resolveStickyFontSize(current.fontSize)
+      if (target.text === current.text && resolveStickyFontSize(target.fontSize) === nextFontSize) return prev
+      updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
       return { ...prev, [current.id]: updatedElement }
     })
     if (updatedElement) {
@@ -573,6 +595,7 @@ export function CanvasBoard() {
         y: boardPoint.y,
         text: 'New note',
         size: STICKY_SIZE,
+        fontSize: MAX_STICKY_FONT_SIZE,
       }
       upsertSticky(element)
       sendElementUpdate(element)
@@ -1380,17 +1403,77 @@ export function CanvasBoard() {
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingRect = editingElement ? getStickyScreenRect(editingElement, cameraState) : null
-  const editingFontSize = editingElement ? Math.max(12, 16 * cameraState.zoom) : null
   const editingPaddingX = 16 * cameraState.zoom
   const editingPaddingY = 14 * cameraState.zoom
+  const editingContentWidth = editingRect ? editingRect.size - editingPaddingX * 2 : null
+  const editingContentHeight = editingRect ? editingRect.size - editingPaddingY * 2 : null
+  const editingFontSizePx = editingState ? editingState.fontSize * cameraState.zoom : null
+
+  const syncEditingTextFromDom = useCallback(() => {
+    const content = editingContentRef.current
+    if (!content) return
+    const nextValue = content.textContent ?? ''
+    updateEditingState((prev) => (prev ? { ...prev, text: nextValue } : prev))
+  }, [updateEditingState])
+
+  const insertPlainText = useCallback(
+    (text: string) => {
+      const selection = window.getSelection()
+      if (!selection || selection.rangeCount === 0) return
+      selection.deleteFromDocument()
+      selection.getRangeAt(0).insertNode(document.createTextNode(text))
+      selection.collapseToEnd()
+      syncEditingTextFromDom()
+    },
+    [syncEditingTextFromDom]
+  )
 
   useEffect(() => {
-    if (!editingState) return
-    const textarea = editingTextareaRef.current
-    if (!textarea) return
-    textarea.focus()
-    textarea.setSelectionRange(editingState.text.length, editingState.text.length)
-  }, [editingState])
+    const content = editingContentRef.current
+    if (!content) return
+    if (!editingState) {
+      content.textContent = ''
+      return
+    }
+    content.textContent = editingState.text
+    requestAnimationFrame(() => {
+      content.focus()
+      const selection = window.getSelection()
+      if (!selection) return
+      const range = document.createRange()
+      range.selectNodeContents(content)
+      range.collapse(false)
+      selection.removeAllRanges()
+      selection.addRange(range)
+    })
+  }, [editingState?.id])
+
+  const ensureEditingFontFits = useCallback(
+    (text: string, currentFontSize: number, maxWidth: number, maxHeight: number) => {
+      let nextFontSize = currentFontSize
+      const measurer = editingMeasureRef.current
+      if (!measurer) return currentFontSize
+      while (nextFontSize > MIN_STICKY_FONT_SIZE) {
+        const appliedFontSize = nextFontSize * cameraState.zoom
+        measurer.style.width = `${maxWidth}px`
+        measurer.style.fontSize = `${appliedFontSize}px`
+        measurer.textContent = text || ' '
+        const measuredHeight = measurer.scrollHeight
+        if (measuredHeight <= maxHeight || nextFontSize <= MIN_STICKY_FONT_SIZE) break
+        nextFontSize -= 1
+      }
+      return nextFontSize
+    },
+    [cameraState.zoom]
+  )
+
+  useEffect(() => {
+    if (!editingState || editingContentWidth === null || editingContentHeight === null) return
+    const fitted = ensureEditingFontFits(editingState.text, editingState.fontSize, editingContentWidth, editingContentHeight)
+    if (fitted < editingState.fontSize) {
+      updateEditingState((prev) => (prev ? { ...prev, fontSize: fitted } : prev))
+    }
+  }, [editingContentHeight, editingContentWidth, editingState?.fontSize, editingState?.text, ensureEditingFontFits, updateEditingState])
 
   useEffect(() => {
     if (editingState && !editingElement) {
@@ -1433,41 +1516,59 @@ export function CanvasBoard() {
           }}
         />
       )}
-      {editingState && editingElement && editingRect && editingFontSize && (
-        <textarea
-          ref={editingTextareaRef}
-          className="canvas-board__sticky-editor"
-          autoFocus
-          value={editingState.text}
-          onChange={(event) => {
-            const nextValue = event.target.value
-            updateEditingState((prev) => (prev ? { ...prev, text: nextValue } : prev))
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              cancelEditing()
-              return
-            }
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              commitEditing()
-            }
-          }}
-          onBlur={() => {
-            commitEditing()
-          }}
-          style={{
-            position: 'absolute',
-            left: editingRect.x,
-            top: editingRect.y,
-            width: editingRect.size,
-            height: editingRect.size,
-            fontSize: `${editingFontSize}px`,
-            padding: `${editingPaddingY}px ${editingPaddingX}px`,
-          }}
-        />
-      )}
+      {editingState &&
+        editingElement &&
+        editingRect &&
+        editingFontSizePx !== null &&
+        editingContentWidth !== null &&
+        editingContentHeight !== null && (
+          <div
+            className="canvas-board__sticky-editor"
+            style={{
+              left: editingRect.x,
+              top: editingRect.y,
+              width: editingRect.size,
+              height: editingRect.size,
+              padding: `${editingPaddingY}px ${editingPaddingX}px`,
+              fontSize: `${editingFontSizePx}px`,
+              lineHeight: STICKY_TEXT_LINE_HEIGHT,
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            <div
+              ref={editingContentRef}
+              className="canvas-board__sticky-editor-content"
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="true"
+              spellCheck={false}
+              onInput={syncEditingTextFromDom}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  commitEditing()
+                }
+              }}
+              onBlur={() => {
+                commitEditing()
+              }}
+              onPaste={(event) => {
+                event.preventDefault()
+                const text = event.clipboardData?.getData('text/plain') ?? ''
+                insertPlainText(text)
+              }}
+            />
+          </div>
+        )}
+      <div ref={editingMeasureRef} className="canvas-board__sticky-measure" aria-hidden />
     </section>
   )
 }

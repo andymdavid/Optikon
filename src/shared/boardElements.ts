@@ -10,6 +10,7 @@ export interface StickyNoteElement extends CanvasElement {
   y: number
   text: string
   size?: number
+  fontSize?: number
 }
 
 export type BoardElement = StickyNoteElement

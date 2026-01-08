@@ -17,8 +17,8 @@
 }
 
 .canvas-board__sticky-editor {
+  position: absolute;
   border: none;
-  resize: none;
   outline: none;
   box-sizing: border-box;
   border-radius: 0;
@@ -26,7 +26,33 @@
   background: linear-gradient(180deg, #fff7a6 0%, #fef69e 80%);
   color: #1f2937;
   font-family: 'Inter', 'Segoe UI', sans-serif;
-  line-height: 1.3;
   z-index: 10;
-  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: text;
+  overflow: hidden;
+}
+
+.canvas-board__sticky-editor-content {
+  width: 100%;
+  text-align: center;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  border: none;
+  background: transparent;
+}
+
+.canvas-board__sticky-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  top: -9999px;
+  left: -9999px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  line-height: 1.35;
 }
