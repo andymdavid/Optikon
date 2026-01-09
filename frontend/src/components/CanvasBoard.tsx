@@ -297,17 +297,6 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-type TextElementBounds = {
-  layout: TextElementLayoutInfo
-  center: { x: number; y: number }
-  rotation: number
-  scale: number
-  width: number
-  height: number
-  corners: Array<{ x: number; y: number }>
-  aabb: Rect
-}
-
 const getTextElementBounds = (
   element: TextElement,
   ctx: CanvasRenderingContext2D | null
