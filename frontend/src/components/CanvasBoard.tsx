@@ -2474,7 +2474,11 @@ export function CanvasBoard() {
         return
       }
       if (event.key === 'r' || event.key === 'R') {
-        setToolMode('rect')
+        setToolMode((prev) => (prev === 'rect' ? 'select' : 'rect'))
+        return
+      }
+      if (event.key === 'Escape') {
+        setToolMode('select')
         return
       }
     }
