@@ -52,8 +52,8 @@ const TEXT_COLOR = '#0f172a'
 const TEXT_BOUNDS_PADDING_X = 12
 const TEXT_BOUNDS_PADDING_Y = 8
 const TEXT_BOUNDS_CHAR_WIDTH = 0.55
-const TEXT_MIN_WIDTH = 320
-const TEXT_MAX_WIDTH = 900
+const TEXT_MIN_WIDTH = 160
+const TEXT_MAX_WIDTH = 1200
 type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode = 'select' | 'sticky' | 'text'
 
@@ -353,10 +353,11 @@ function setsEqual(a: Set<string>, b: Set<string>) {
   return true
 }
 
-function wrapStickyText(
+function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
-  maxWidth: number
+  maxWidth: number,
+  alignCenter = false
 ): string[] {
   const lines: string[] = []
   const rawBlocks = text.split(/\n/)
@@ -372,8 +373,30 @@ function wrapStickyText(
       if (ctx.measureText(next).width <= maxWidth || current === '') {
         current = next
       } else {
-        lines.push(current)
-        current = word
+        if (alignCenter && ctx.measureText(word).width > maxWidth) {
+          const chars = word.split('')
+          let chunk = ''
+          chars.forEach((char) => {
+            const nextChunk = `${chunk}${char}`
+            if (ctx.measureText(nextChunk).width <= maxWidth || chunk === '') {
+              chunk = nextChunk
+            } else {
+              if (chunk) lines.push(chunk)
+              chunk = char
+            }
+          })
+          if (chunk) {
+            if (ctx.measureText(`${current} ${chunk}`).width <= maxWidth) {
+              current = current ? `${current} ${chunk}` : chunk
+            } else {
+              if (current) lines.push(current)
+              current = chunk
+            }
+          }
+        } else {
+          lines.push(current)
+          current = word
+        }
       }
     })
     if (current) lines.push(current)
@@ -502,7 +525,7 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const inner = getStickyInnerSize(element)
   const innerWidth = inner.width * camera.zoom
   const innerHeight = inner.height * camera.zoom
-  const lines = wrapStickyText(ctx, element.text, innerWidth)
+  const lines = wrapText(ctx, element.text, innerWidth, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = Math.max(0, (innerHeight - totalHeight) / 2)
   const textX = screenX + width / 2
@@ -528,7 +551,7 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
   const text = typeof element.text === 'string' ? element.text : ''
-  const lines = wrapStickyText(ctx, text, innerWidth)
+  const lines = wrapText(ctx, text, innerWidth)
   const textX = screenX + TEXT_BOUNDS_PADDING_X * camera.zoom
   let textY = screenY + TEXT_BOUNDS_PADDING_Y * camera.zoom
   lines.forEach((line) => {
