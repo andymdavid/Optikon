@@ -859,11 +859,12 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   const layoutInfo = bounds.layout
   const fontSize = resolveTextFontSize(element.fontSize)
   ctx.save()
-  ctx.translate(camera.offsetX, camera.offsetY)
-  ctx.scale(camera.zoom, camera.zoom)
-  ctx.translate(bounds.center.x, bounds.center.y)
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
   ctx.rotate(bounds.rotation)
-  ctx.scale(bounds.scale, bounds.scale)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
   ctx.translate(-bounds.width / 2 + layoutInfo.inset, -bounds.height / 2 + layoutInfo.inset)
   ctx.fillStyle = TEXT_COLOR
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
@@ -878,14 +879,15 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
 function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleElement, camera: CameraState) {
   const bounds = getRectangleElementBounds(element)
   ctx.save()
-  ctx.translate(camera.offsetX, camera.offsetY)
-  ctx.scale(camera.zoom, camera.zoom)
-  ctx.translate(bounds.center.x, bounds.center.y)
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
   ctx.rotate(bounds.rotation)
-  ctx.scale(bounds.scale, bounds.scale)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / (camera.zoom * bounds.scale)
+  ctx.lineWidth = 2 / scaleFactor
   const width = bounds.width
   const height = bounds.height
   ctx.beginPath()
