@@ -1750,10 +1750,12 @@ export function CanvasBoard() {
     ctx.fillRect(0, 0, cssWidth, cssHeight)
     drawBoardGrid(ctx, cameraState, cssWidth, cssHeight)
     const values = Object.values(elements)
+    const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     values.forEach((element) => {
       if (isStickyElement(element)) {
         drawSticky(ctx, element, cameraState)
       } else if (isTextElement(element)) {
+        if (editingTextId && element.id === editingTextId) return
         drawTextElement(ctx, element, cameraState)
       }
     })
