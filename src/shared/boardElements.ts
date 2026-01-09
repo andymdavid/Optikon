@@ -33,7 +33,6 @@ export interface RectangleElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
-  scale?: number
 }
 
 export type BoardElement = StickyNoteElement | TextElement | RectangleElement
