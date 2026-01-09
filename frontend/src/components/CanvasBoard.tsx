@@ -811,6 +811,21 @@ export function CanvasBoard() {
     updateEditingState(null)
   }, [updateEditingState])
 
+  const hitTestElement = useCallback(
+    (x: number, y: number): string | null => {
+      const values = Object.values(elements)
+      for (let i = values.length - 1; i >= 0; i -= 1) {
+        const element = values[i]
+        const bounds = getElementBounds(element)
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+          return element.id
+        }
+      }
+      return null
+    },
+    [elements]
+  )
+
   const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
     try {
       const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
@@ -958,21 +973,6 @@ export function CanvasBoard() {
       void persistElementsDelete(boardId, ids)
     },
     [boardId, persistElementsDelete, removeElements, sendElementsDelete]
-  )
-
-  const hitTestElement = useCallback(
-    (x: number, y: number): string | null => {
-      const values = Object.values(elements)
-      for (let i = values.length - 1; i >= 0; i -= 1) {
-        const element = values[i]
-        const bounds = getElementBounds(element)
-        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
-          return element.id
-        }
-      }
-      return null
-    },
-    [elements]
   )
 
   const handleCanvasDoubleClick = useCallback(
