@@ -48,10 +48,10 @@ const STICKY_PADDING_X = 16
 const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 const TEXT_DEFAULT_FONT_SIZE = 48
+const TEXT_BOUNDS_PADDING_X = 12
+const TEXT_BOUNDS_PADDING_Y = 8
+const TEXT_BOUNDS_CHAR_WIDTH = 0.55
 type Rect = { left: number; top: number; right: number; bottom: number }
-
-// TODO(phase-6.2.2): All geometry helpers below assume every element is a sticky; introduce
-// per-type `getElementBounds/getElementInnerSize` helpers so TextElement can define its own box.
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
   left: Math.min(a.x, b.x),
@@ -73,6 +73,28 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
     right: element.x + size,
     bottom: element.y + size,
   }
+}
+
+const getTextBounds = (element: TextElement): Rect => {
+  const fontSize = resolveTextFontSize(element.fontSize)
+  const text = typeof element.text === 'string' ? element.text : ''
+  const lines = text.length > 0 ? text.split(/\n/) : ['']
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0)
+  const lineCount = Math.max(1, lines.length)
+  const width = Math.max(fontSize, longest * fontSize * TEXT_BOUNDS_CHAR_WIDTH) + TEXT_BOUNDS_PADDING_X * 2
+  const height = Math.max(fontSize, lineCount * fontSize * STICKY_TEXT_LINE_HEIGHT) + TEXT_BOUNDS_PADDING_Y * 2
+  return {
+    left: element.x,
+    top: element.y,
+    right: element.x + width,
+    bottom: element.y + height,
+  }
+}
+
+const getElementBounds = (element: BoardElement): Rect => {
+  if (isStickyElement(element)) return getStickyBounds(element)
+  if (isTextElement(element)) return getTextBounds(element)
+  return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
 const getStickyInnerSize = (element: StickyNoteElement) => {
@@ -133,6 +155,9 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
 
 const isStickyElement = (element: BoardElement | null | undefined): element is StickyNoteElement =>
   !!element && element.type === 'sticky'
+
+const isTextElement = (element: BoardElement | null | undefined): element is TextElement =>
+  !!element && element.type === 'text'
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -826,22 +851,14 @@ export function CanvasBoard() {
     [boardId, persistElementsDelete, removeElements, sendElementsDelete]
   )
 
-  // TODO(phase-6.2.2): Hit-testing only checks sticky bounds; switch to an element.type-driven
-  // dispatcher so TextElement can define its own bounds + interaction affordances.
-  const hitTestSticky = useCallback(
-    (x: number, y: number): StickyNoteElement | null => {
+  const hitTestElement = useCallback(
+    (x: number, y: number): string | null => {
       const values = Object.values(elements)
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
-        if (!isStickyElement(element)) continue
-        const size = getStickySize(element)
-        if (
-          x >= element.x &&
-          x <= element.x + size &&
-          y >= element.y &&
-          y <= element.y + size
-        ) {
-          return element
+        const bounds = getElementBounds(element)
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+          return element.id
         }
       }
       return null
@@ -854,12 +871,14 @@ export function CanvasBoard() {
       if (editingStateRef.current || !boardId) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
-      const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
-      if (!sticky) return
+      const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+      if (!hitId) return
+      const hitElement = elements[hitId]
+      if (!isStickyElement(hitElement)) return
       event.preventDefault()
-      beginEditingSticky(sticky)
+      beginEditingSticky(hitElement)
     },
-    [beginEditingSticky, boardId, hitTestSticky, screenToBoard]
+    [beginEditingSticky, boardId, elements, hitTestElement, screenToBoard]
   )
 
   // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
@@ -963,8 +982,9 @@ export function CanvasBoard() {
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
-      const sticky = hitTestSticky(boardPoint.x, boardPoint.y)
-      if (!sticky) {
+      const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
+      const hitElement = hitElementId ? elements[hitElementId] : null
+      if (!hitElement) {
         dragStateRef.current = null
         marqueeCandidateRef.current = { startBoard: boardPoint, startScreen: canvasPoint, shift: event.shiftKey }
         setMarquee(null)
@@ -979,13 +999,13 @@ export function CanvasBoard() {
       let nextSelection: Set<string>
       if (event.shiftKey) {
         nextSelection = new Set(currentSelection)
-        if (nextSelection.has(sticky.id)) nextSelection.delete(sticky.id)
-        else nextSelection.add(sticky.id)
-        if (nextSelection.size === 0) nextSelection.add(sticky.id)
-      } else if (currentSelection.has(sticky.id)) {
+        if (nextSelection.has(hitElement.id)) nextSelection.delete(hitElement.id)
+        else nextSelection.add(hitElement.id)
+        if (nextSelection.size === 0) nextSelection.add(hitElement.id)
+      } else if (currentSelection.has(hitElement.id)) {
         nextSelection = new Set(currentSelection)
       } else {
-        nextSelection = new Set([sticky.id])
+        nextSelection = new Set([hitElement.id])
       }
       if (!setsEqual(currentSelection, nextSelection)) {
         setSelection(nextSelection)
@@ -1006,7 +1026,7 @@ export function CanvasBoard() {
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestResizeHandle, hitTestSticky, screenToBoard, setMarquee, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, screenToBoard, setMarquee, setSelection]
   )
 
   const handlePointerMove = useCallback(
@@ -1198,15 +1218,13 @@ export function CanvasBoard() {
       if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
         const matchingIds = Object.values(elements)
-          .filter((element): element is StickyNoteElement =>
-            isStickyElement(element) && rectsIntersect(selectionRect, getStickyBounds(element))
-          )
+          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element)))
           .map((element) => element.id)
 
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
         if (matchingIds.length === 0) {
-          const sample = Object.values(elements).find((element) => isStickyElement(element))
-          if (sample) console.log('[marquee sample]', getStickyBounds(sample))
+          const sample = Object.values(elements)[0]
+          if (sample) console.log('[marquee sample]', getElementBounds(sample))
         }
 
         if (matchingIds.length > 0) {
