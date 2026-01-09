@@ -51,6 +51,7 @@ const TEXT_DEFAULT_FONT_SIZE = 48
 const TEXT_COLOR = '#0f172a'
 const TEXT_DEFAULT_MAX_WIDTH = 800
 const TEXT_SAFETY_INSET = 2
+const TEXT_LINE_HEIGHT = 1.18
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
@@ -200,7 +201,7 @@ const getTextLayout = (element: TextElement, zoom: number, ctx: CanvasRenderingC
     resolveTextFontSize(element.fontSize) * zoom,
     TEXT_DEFAULT_MAX_WIDTH * zoom,
     STICKY_FONT_FAMILY,
-    STICKY_TEXT_LINE_HEIGHT
+    TEXT_LINE_HEIGHT
   )
 
 const getTextLayoutForContent = (
@@ -209,7 +210,7 @@ const getTextLayoutForContent = (
   zoom: number,
   ctx: CanvasRenderingContext2D | null
 ): TextLayout =>
-  measureTextLayout(ctx, text, fontSize * zoom, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
+  measureTextLayout(ctx, text, fontSize * zoom, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
 
 const getStickySize = (element: StickyNoteElement) => {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -2187,7 +2188,7 @@ const hitTestElement = useCallback(
               spellCheck={false}
               style={{
                 fontSize: `${editingTextFontSizePx}px`,
-                lineHeight: STICKY_TEXT_LINE_HEIGHT,
+                lineHeight: TEXT_LINE_HEIGHT,
                 padding: `${TEXT_SAFETY_INSET}px`,
               }}
               onInput={syncEditingTextFromDom}
