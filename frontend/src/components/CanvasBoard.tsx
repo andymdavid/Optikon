@@ -1331,13 +1331,10 @@ export function CanvasBoard() {
     Object.values(elements).forEach((element) => {
       if (element.id === editingId) return
       const inner = getStickyInnerSize(element)
-      const currentFontSize = getElementFontSize(element)
       const bounds = getStickyFontBounds(element)
-      if (!fontFitsSticky(ctx, element.text, currentFontSize, inner.width, inner.height)) {
-        const fitted = fitFontSize(ctx, element.text, inner.width, inner.height, bounds.max, bounds.min)
-        if (Math.abs(fitted - currentFontSize) > 0.1) {
-          adjustments.push({ ...element, fontSize: fitted })
-        }
+      const fitted = fitFontSize(ctx, element.text, inner.width, inner.height, bounds.max, bounds.min)
+      if (Math.abs(fitted - getElementFontSize(element)) > 0.1) {
+        adjustments.push({ ...element, fontSize: fitted })
       }
     })
     if (adjustments.length === 0) return
