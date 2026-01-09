@@ -61,7 +61,9 @@ type TextLayout = {
   lineWidths: number[]
   maxLineWidth: number
   totalHeight: number
-  lineHeight: number
+  blockWidth: number
+  lineAdvance: number
+  baselineOffsets: number[]
   ascent: number
   descent: number
   maxWidthPx: number
@@ -86,7 +88,7 @@ const getSharedMeasureContext = () => {
 const measureTextLayout = (
   ctx: CanvasRenderingContext2D | null,
   text: string,
-  fontSize: number,
+  fontSizePx: number,
   maxWidthPx: number,
   fontFamily: string,
   lineHeightMultiplier: number
@@ -94,23 +96,25 @@ const measureTextLayout = (
   const normalizedText = typeof text === 'string' ? text : ''
   if (!ctx) {
     const lines = normalizedText.split(/\n/) || ['']
-    const fallbackLineHeight = fontSize * lineHeightMultiplier
-    const widths = lines.map((line) => line.length * (fontSize * 0.6))
+    const fallbackLineHeight = fontSizePx * lineHeightMultiplier
+    const widths = lines.map((line) => line.length * (fontSizePx * 0.6))
     const maxLineWidth = widths.reduce((max, width) => Math.max(max, width), 0)
     return {
       lines: lines.length > 0 ? lines : [''],
       lineWidths: widths,
       maxLineWidth,
       totalHeight: Math.max(1, lines.length) * fallbackLineHeight,
-      lineHeight: fallbackLineHeight,
-      ascent: fontSize * 0.8,
-      descent: fontSize * 0.2,
+      blockWidth: maxLineWidth,
+      lineAdvance: fallbackLineHeight,
+      baselineOffsets: lines.map((_, index) => index * fallbackLineHeight + fontSizePx * 0.8),
+      ascent: fontSizePx * 0.8,
+      descent: fontSizePx * 0.2,
       maxWidthPx,
     }
   }
 
-  ctx.font = `${fontSize}px ${fontFamily}`
-  const lineHeight = Math.max(1, fontSize * lineHeightMultiplier)
+  ctx.font = `${fontSizePx}px ${fontFamily}`
+  const lineAdvance = Math.max(1, fontSizePx * lineHeightMultiplier)
   const lines: string[] = []
   const lineWidths: number[] = []
 
@@ -169,11 +173,24 @@ const measureTextLayout = (
   }
 
   const metrics = ctx.measureText(TEXT_MEASURE_SAMPLE)
-  const ascent = metrics.actualBoundingBoxAscent ?? fontSize * 0.8
-  const descent = metrics.actualBoundingBoxDescent ?? fontSize * 0.2
+  const ascent = metrics.actualBoundingBoxAscent ?? fontSizePx * 0.8
+  const descent = metrics.actualBoundingBoxDescent ?? fontSizePx * 0.2
   const maxLineWidth = lineWidths.reduce((max, width) => Math.max(max, width), 0)
-  const totalHeight = Math.max(1, lines.length) * lineHeight
-  return { lines, lineWidths, maxLineWidth, totalHeight, lineHeight, ascent, descent, maxWidthPx }
+  const baselineOffsets = lines.map((_, index) => ascent + index * lineAdvance)
+  const totalHeight =
+    lines.length === 0 ? ascent + descent : baselineOffsets[baselineOffsets.length - 1] + descent
+  return {
+    lines,
+    lineWidths,
+    maxLineWidth,
+    totalHeight,
+    blockWidth: maxLineWidth,
+    lineAdvance,
+    baselineOffsets,
+    ascent,
+    descent,
+    maxWidthPx,
+  }
 }
 
 const getTextLayout = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): TextLayout =>
@@ -212,7 +229,7 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
 const getTextBounds = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): Rect => {
   const layout = getTextLayout(element, zoom, ctx)
   const insetBoard = TEXT_SAFETY_INSET / zoom
-  const width = layout.maxLineWidth / zoom + insetBoard * 2
+  const width = layout.blockWidth / zoom + insetBoard * 2
   const height = layout.totalHeight / zoom + insetBoard * 2
   return {
     left: element.x,
@@ -662,12 +679,11 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left'
-  const offsetX = (camera.offsetX + element.x + TEXT_SAFETY_INSET) * camera.zoom
-  let offsetY = (camera.offsetY + element.y + TEXT_SAFETY_INSET) * camera.zoom + layout.ascent * camera.zoom
-  const lineHeightPx = layout.lineHeight * camera.zoom
-  layout.lines.forEach((line) => {
-    ctx.fillText(line, offsetX, offsetY)
-    offsetY += lineHeightPx
+  const insetScreen = TEXT_SAFETY_INSET
+  const baseX = (element.x + camera.offsetX) * camera.zoom + insetScreen
+  const baseY = (element.y + camera.offsetY) * camera.zoom + insetScreen
+  layout.lines.forEach((line, index) => {
+    ctx.fillText(line, baseX, baseY + layout.baselineOffsets[index])
   })
   ctx.restore()
 }
@@ -1965,7 +1981,7 @@ const hitTestElement = useCallback(
           left: editingTextElement.x,
           top: editingTextElement.y,
           right:
-            editingTextElement.x + editingTextLayout.maxLineWidth / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
+            editingTextElement.x + editingTextLayout.blockWidth / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
           bottom:
             editingTextElement.y + editingTextLayout.totalHeight / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
         }
@@ -1974,8 +1990,8 @@ const hitTestElement = useCallback(
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
-        width: (editingTextBounds.right - editingTextBounds.left) * cameraState.zoom,
-        height: (editingTextBounds.bottom - editingTextBounds.top) * cameraState.zoom,
+        width: editingTextLayout ? editingTextLayout.blockWidth + TEXT_SAFETY_INSET * 2 : 0,
+        height: editingTextLayout ? editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2 : 0,
       }
     : null
   const editingTextFontSizePx =
