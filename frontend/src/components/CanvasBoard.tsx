@@ -52,6 +52,8 @@ const TEXT_COLOR = '#0f172a'
 const TEXT_BOUNDS_PADDING_X = 12
 const TEXT_BOUNDS_PADDING_Y = 8
 const TEXT_BOUNDS_CHAR_WIDTH = 0.55
+const TEXT_MIN_WIDTH = 320
+const TEXT_MAX_WIDTH = 900
 type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode = 'select' | 'sticky' | 'text'
 
@@ -80,11 +82,17 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
 const getTextBounds = (element: TextElement): Rect => {
   const fontSize = resolveTextFontSize(element.fontSize)
   const text = typeof element.text === 'string' ? element.text : ''
-  const lines = text.length > 0 ? text.split(/\n/) : ['']
-  const longest = lines.reduce((max, line) => Math.max(max, line.length), 0)
-  const lineCount = Math.max(1, lines.length)
-  const width = Math.max(fontSize, longest * fontSize * TEXT_BOUNDS_CHAR_WIDTH) + TEXT_BOUNDS_PADDING_X * 2
-  const height = Math.max(fontSize, lineCount * fontSize * STICKY_TEXT_LINE_HEIGHT) + TEXT_BOUNDS_PADDING_Y * 2
+  const rawLines = text.length > 0 ? text.split(/\n/) : ['']
+  const longest = rawLines.reduce((max, line) => Math.max(max, line.length), 0)
+  const baseWidth = Math.max(fontSize, longest * fontSize * TEXT_BOUNDS_CHAR_WIDTH)
+  const clampedInnerWidth = Math.min(TEXT_MAX_WIDTH - TEXT_BOUNDS_PADDING_X * 2, Math.max(TEXT_MIN_WIDTH - TEXT_BOUNDS_PADDING_X * 2, baseWidth))
+  const maxCharsPerLine = Math.max(1, Math.floor(clampedInnerWidth / (fontSize * TEXT_BOUNDS_CHAR_WIDTH)))
+  const wrappedLineCount = rawLines.reduce((count, line) => {
+    if (line.length === 0) return count + 1
+    return count + Math.max(1, Math.ceil(line.length / maxCharsPerLine))
+  }, 0)
+  const width = clampedInnerWidth + TEXT_BOUNDS_PADDING_X * 2
+  const height = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT + TEXT_BOUNDS_PADDING_Y * 2
   return {
     left: element.x,
     top: element.y,
@@ -1769,7 +1777,11 @@ export function CanvasBoard() {
   const editingStickyFontSizePx =
     editingState?.elementType === 'sticky' ? editingState.fontSize * cameraState.zoom : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
-  const editingTextBounds = editingTextElement ? getElementBounds(editingTextElement) : null
+  const editingTextPreview =
+    editingState?.elementType === 'text' && editingTextElement
+      ? { ...editingTextElement, text: editingState.text, fontSize: editingState.fontSize }
+      : null
+  const editingTextBounds = editingTextPreview ? getTextBounds(editingTextPreview) : null
   const editingTextRect = editingTextBounds
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
@@ -1780,6 +1792,8 @@ export function CanvasBoard() {
     : null
   const editingTextFontSizePx =
     editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
+  const editingTextPaddingX = TEXT_BOUNDS_PADDING_X * cameraState.zoom
+  const editingTextPaddingY = TEXT_BOUNDS_PADDING_Y * cameraState.zoom
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
@@ -1959,6 +1973,7 @@ export function CanvasBoard() {
               height: editingTextRect.height,
               fontSize: `${editingTextFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
+              padding: `${editingTextPaddingY}px ${editingTextPaddingX}px`,
             }}
             onPointerDown={(event) => event.stopPropagation()}
           >
