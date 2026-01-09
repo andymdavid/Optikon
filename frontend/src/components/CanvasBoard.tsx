@@ -459,13 +459,6 @@ type TransformState =
       startBounds: TextElementBounds
     }
   | {
-      mode: 'rectCorner'
-      pointerId: number
-      id: string
-      handle: 'nw' | 'ne' | 'se' | 'sw'
-      startBounds: RectElementBounds
-    }
-  | {
       mode: 'width'
       pointerId: number
       id: string
@@ -956,7 +949,7 @@ type TransformHandleSpec = {
 
 const getTransformHandleSpecs = (
   bounds: TransformBounds,
-  options: { cornerMode: 'corner' | 'scale'; verticalMode: 'height' | 'scale'; horizontalMode: 'width' }
+  options: { cornerMode: 'scale'; verticalMode: 'height' | 'scale'; horizontalMode: 'width' }
 ): TransformHandleSpec[] => {
   const specs: TransformHandleSpec[] = []
   const cornerHandles: Array<{ handle: 'nw' | 'ne' | 'se' | 'sw'; index: number }> = [
@@ -1756,48 +1749,40 @@ export function CanvasBoard() {
         event.preventDefault()
         suppressClickRef.current = true
         interactionModeRef.current = 'transform'
-    const handleSpec = transformHandleHit.handle
-    if (handleSpec.kind === 'scale') {
-      transformStateRef.current = {
-        mode: 'scale',
-        pointerId: event.pointerId,
-        id: transformHandleHit.element.id,
-        elementType: 'text',
-        handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
-        startBounds: transformHandleHit.bounds as TextElementBounds,
-      }
-    } else if (handleSpec.kind === 'corner') {
-      transformStateRef.current = {
-        mode: 'rectCorner',
-        pointerId: event.pointerId,
-        id: transformHandleHit.element.id,
-        handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw',
-        startBounds: transformHandleHit.bounds as RectElementBounds,
-      }
-    } else if (handleSpec.kind === 'width') {
-      transformStateRef.current = {
-        mode: 'width',
-        pointerId: event.pointerId,
-        id: transformHandleHit.element.id,
-        elementType: transformHandleHit.element.type,
+        const handleSpec = transformHandleHit.handle
+        if (handleSpec.kind === 'scale') {
+          transformStateRef.current = {
+            mode: 'scale',
+            pointerId: event.pointerId,
+            id: transformHandleHit.element.id,
+            elementType: 'text',
+            handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
+            startBounds: transformHandleHit.bounds as TextElementBounds,
+          }
+        } else if (handleSpec.kind === 'width') {
+          transformStateRef.current = {
+            mode: 'width',
+            pointerId: event.pointerId,
+            id: transformHandleHit.element.id,
+            elementType: transformHandleHit.element.type,
             handle: handleSpec.handle as 'e' | 'w',
             startBounds: transformHandleHit.bounds,
           }
-    } else if (handleSpec.kind === 'height') {
-      transformStateRef.current = {
-        mode: 'height',
-        pointerId: event.pointerId,
-        id: transformHandleHit.element.id,
-        elementType: 'rect',
+        } else if (handleSpec.kind === 'height') {
+          transformStateRef.current = {
+            mode: 'height',
+            pointerId: event.pointerId,
+            id: transformHandleHit.element.id,
+            elementType: 'rect',
             handle: handleSpec.handle as 'n' | 's',
             startBounds: transformHandleHit.bounds as RectElementBounds,
           }
-      } else {
-        const angle = Math.atan2(
-          boardPoint.y - transformHandleHit.bounds.center.y,
-          boardPoint.x - transformHandleHit.bounds.center.x
-        )
-        transformStateRef.current = {
+        } else {
+          const angle = Math.atan2(
+            boardPoint.y - transformHandleHit.bounds.center.y,
+            boardPoint.x - transformHandleHit.bounds.center.x
+          )
+          transformStateRef.current = {
             mode: 'rotate',
             pointerId: event.pointerId,
             id: transformHandleHit.element.id,
@@ -1973,7 +1958,7 @@ export function CanvasBoard() {
         setElements((prev) => {
           const target = prev[transformState.id]
           if (!target) return prev
-          let nextElement: BoardElement | null = null
+      let nextElement: BoardElement | null = null
           if (transformState.mode === 'scale') {
             if (!isTextElement(target)) return prev
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
@@ -1984,37 +1969,6 @@ export function CanvasBoard() {
               const rawScale = Math.abs(dot / denom)
               const nextScale = clamp(rawScale, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
               nextElement = { ...target, scale: nextScale }
-            }
-          } else if (transformState.mode === 'rectCorner') {
-            if (!isRectangleElement(target)) return prev
-            const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
-            const bounds = transformState.startBounds
-            const minHalfWidth = RECT_MIN_SIZE / 2
-            const minHalfHeight = RECT_MIN_SIZE / 2
-            const targetHalfWidth = Math.max(minHalfWidth, Math.abs(pointerLocal.x))
-            const targetHalfHeight = Math.max(minHalfHeight, Math.abs(pointerLocal.y))
-            const baseHalfWidth = bounds.width / 2
-            const baseHalfHeight = bounds.height / 2
-            const deltaHalfWidth = targetHalfWidth - baseHalfWidth
-            const deltaHalfHeight = targetHalfHeight - baseHalfHeight
-            const horizontalDir = pointerLocal.x >= 0 ? 1 : -1
-            const verticalDir = pointerLocal.y >= 0 ? 1 : -1
-            const cos = Math.cos(bounds.rotation)
-            const sin = Math.sin(bounds.rotation)
-            const shiftX = horizontalDir * deltaHalfWidth * bounds.scale
-            const shiftY = verticalDir * deltaHalfHeight * bounds.scale
-            const newCenter = {
-              x: bounds.center.x + shiftX * cos - shiftY * sin,
-              y: bounds.center.y + shiftX * sin + shiftY * cos,
-            }
-            const newX = newCenter.x - targetHalfWidth
-            const newY = newCenter.y - targetHalfHeight
-            nextElement = {
-              ...target,
-              x: newX,
-              y: newY,
-              w: targetHalfWidth * 2,
-              h: targetHalfHeight * 2,
             }
           } else if (transformState.mode === 'width') {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
