@@ -413,7 +413,7 @@ const fontFitsSticky = (
 ) => {
   if (!text || text.trim().length === 0) return true
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
-  const lines = wrapStickyText(ctx, text, maxWidth)
+  const lines = wrapText(ctx, text, maxWidth, true)
   if (lines.length === 0) return true
   const totalHeight = lines.length * fontSize * STICKY_TEXT_LINE_HEIGHT
   if (totalHeight > maxHeight) return false
