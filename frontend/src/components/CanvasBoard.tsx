@@ -1762,9 +1762,17 @@ export function CanvasBoard() {
       const element = elements[id]
       if (!element) return
       const withHandles = isStickyElement(element) && selectedArray.length === 1 && selectedArray[0] === id
-      drawElementSelection(ctx, element, cameraState, { withHandles })
+      let selectionElement: BoardElement = element
+      if (
+        editingState?.elementType === 'text' &&
+        editingState.id === id &&
+        isTextElement(element)
+      ) {
+        selectionElement = { ...element, text: editingState.text, fontSize: editingState.fontSize }
+      }
+      drawElementSelection(ctx, selectionElement, cameraState, { withHandles })
     })
-  }, [cameraState, elements, selectedIds])
+  }, [cameraState, editingState, elements, selectedIds])
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
