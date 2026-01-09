@@ -24,4 +24,16 @@ export interface TextElement extends CanvasElement {
   rotation?: number
 }
 
-export type BoardElement = StickyNoteElement | TextElement
+export interface RectangleElement extends CanvasElement {
+  type: 'rect'
+  x: number
+  y: number
+  w: number
+  h: number
+  fill?: string
+  stroke?: string
+  rotation?: number
+  scale?: number
+}
+
+export type BoardElement = StickyNoteElement | TextElement | RectangleElement

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 
-import type { BoardElement, StickyNoteElement, TextElement } from '@shared/boardElements'
+import type { BoardElement, RectangleElement, StickyNoteElement, TextElement } from '@shared/boardElements'
 
 export type CameraState = {
   offsetX: number
@@ -59,10 +59,13 @@ const TEXT_MAX_SCALE = 6
 const TEXT_ROTATION_HANDLE_OFFSET = 32
 const TEXT_ROTATION_SNAP_EPSILON = (5 * Math.PI) / 180
 const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
+const RECT_DEFAULT_FILL = '#dbeafe'
+const RECT_DEFAULT_STROKE = '#2563eb'
+const RECT_MIN_SIZE = 8
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text'
+type ToolMode = 'select' | 'sticky' | 'text' | 'rect'
 
 type TextLayout = {
   lines: string[]
@@ -209,6 +212,19 @@ type TextElementLayoutInfo = {
   inset: number
 }
 
+type TransformBounds = {
+  center: { x: number; y: number }
+  rotation: number
+  scale: number
+  width: number
+  height: number
+  corners: Array<{ x: number; y: number }>
+  aabb: Rect
+}
+
+type TextElementBounds = TransformBounds & { layout: TextElementLayoutInfo }
+type RectElementBounds = TransformBounds
+
 const getTextLayoutForContent = (
   text: string,
   fontSize: number,
@@ -227,6 +243,43 @@ const getTextElementLayout = (
   const height = layout.totalHeight + inset * 2
   const width = wrapWidth + inset * 2
   return { layout, wrapWidth, width, height, inset }
+}
+
+const computeTransformBounds = (
+  base: { x: number; y: number; width: number; height: number; rotation: number; scale: number }
+): TransformBounds => {
+  const center = {
+    x: base.x + base.width / 2,
+    y: base.y + base.height / 2,
+  }
+  const halfWidth = base.width / 2
+  const halfHeight = base.height / 2
+  const cos = Math.cos(base.rotation)
+  const sin = Math.sin(base.rotation)
+  const transform = (dx: number, dy: number) => {
+    const scaledX = dx * base.scale
+    const scaledY = dy * base.scale
+    return {
+      x: center.x + scaledX * cos - scaledY * sin,
+      y: center.y + scaledX * sin + scaledY * cos,
+    }
+  }
+  const corners = [
+    transform(-halfWidth, -halfHeight),
+    transform(halfWidth, -halfHeight),
+    transform(halfWidth, halfHeight),
+    transform(-halfWidth, halfHeight),
+  ]
+  const aabb = corners.reduce<Rect>(
+    (acc, point) => ({
+      left: Math.min(acc.left, point.x),
+      right: Math.max(acc.right, point.x),
+      top: Math.min(acc.top, point.y),
+      bottom: Math.max(acc.bottom, point.y),
+    }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
+  )
+  return { center, rotation: base.rotation, scale: base.scale, width: base.width, height: base.height, corners, aabb }
 }
 
 const getStickySize = (element: StickyNoteElement) => {
@@ -262,45 +315,36 @@ const getTextElementBounds = (
   const layoutInfo = getTextElementLayout(element, ctx)
   const rotation = resolveTextRotation(element.rotation)
   const scale = resolveTextScale(element.scale)
-  const width = layoutInfo.width
-  const height = layoutInfo.height
-  const center = {
-    x: element.x + width / 2,
-    y: element.y + height / 2,
-  }
-  const halfWidth = width / 2
-  const halfHeight = height / 2
-  const cos = Math.cos(rotation)
-  const sin = Math.sin(rotation)
-  const transform = (dx: number, dy: number) => {
-    const scaledX = dx * scale
-    const scaledY = dy * scale
-    return {
-      x: center.x + scaledX * cos - scaledY * sin,
-      y: center.y + scaledX * sin + scaledY * cos,
-    }
-  }
-  const corners = [
-    transform(-halfWidth, -halfHeight),
-    transform(halfWidth, -halfHeight),
-    transform(halfWidth, halfHeight),
-    transform(-halfWidth, halfHeight),
-  ]
-  const aabb = corners.reduce<Rect>(
-    (acc, point) => ({
-      left: Math.min(acc.left, point.x),
-      right: Math.max(acc.right, point.x),
-      top: Math.min(acc.top, point.y),
-      bottom: Math.max(acc.bottom, point.y),
-    }),
-    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
-  )
-  return { layout: layoutInfo, center, rotation, scale, width, height, corners, aabb }
+  const bounds = computeTransformBounds({
+    x: element.x,
+    y: element.y,
+    width: layoutInfo.width,
+    height: layoutInfo.height,
+    rotation,
+    scale,
+  })
+  return { ...bounds, layout: layoutInfo }
+}
+
+const getRectangleElementBounds = (element: RectangleElement): RectElementBounds => {
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  const scale = resolveTextScale(element.scale)
+  return computeTransformBounds({
+    x: element.x,
+    y: element.y,
+    width,
+    height,
+    rotation,
+    scale,
+  })
 }
 
 const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D | null): Rect => {
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
+  if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
@@ -387,6 +431,9 @@ const isStickyElement = (element: BoardElement | null | undefined): element is S
 const isTextElement = (element: BoardElement | null | undefined): element is TextElement =>
   !!element && element.type === 'text'
 
+const isRectangleElement = (element: BoardElement | null | undefined): element is RectangleElement =>
+  !!element && element.type === 'rect'
+
 type GridSpec = {
   primaryBoardSpacing: number
   primarySpacingPx: number
@@ -403,27 +450,38 @@ type EditingState = {
   elementType: 'sticky' | 'text'
 }
 
-type TextTransformState =
+type TransformState =
   | {
       mode: 'scale'
       pointerId: number
       id: string
+      elementType: 'text' | 'rect'
       handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's'
-      startBounds: TextElementBounds
+      startBounds: TextElementBounds | RectElementBounds
     }
   | {
       mode: 'width'
       pointerId: number
       id: string
+      elementType: 'text' | 'rect'
       handle: 'e' | 'w'
-      startBounds: TextElementBounds
+      startBounds: TextElementBounds | RectElementBounds
+    }
+  | {
+      mode: 'height'
+      pointerId: number
+      id: string
+      elementType: 'rect'
+      handle: 'n' | 's'
+      startBounds: RectElementBounds
     }
   | {
       mode: 'rotate'
       pointerId: number
       id: string
+      elementType: 'text' | 'rect'
       handle: 'rotate'
-      startBounds: TextElementBounds
+      startBounds: TextElementBounds | RectElementBounds
       startPointerAngle: number
     }
 
@@ -581,11 +639,37 @@ function parseTextElement(raw: unknown): TextElement | null {
   }
 }
 
+function parseRectangleElement(raw: unknown): RectangleElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<RectangleElement>
+  if (element.type !== 'rect') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  const scale = resolveTextScale(element.scale)
+  return {
+    id: element.id,
+    type: 'rect',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+    scale,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
   if (type === 'sticky') return parseStickyElement(raw)
   if (type === 'text') return parseTextElement(raw)
+  if (type === 'rect') return parseRectangleElement(raw)
   return null
 }
 
@@ -802,6 +886,26 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   ctx.restore()
 }
 
+function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleElement, camera: CameraState) {
+  const bounds = getRectangleElementBounds(element)
+  ctx.save()
+  ctx.translate(camera.offsetX, camera.offsetY)
+  ctx.scale(camera.zoom, camera.zoom)
+  ctx.translate(bounds.center.x, bounds.center.y)
+  ctx.rotate(bounds.rotation)
+  ctx.scale(bounds.scale, bounds.scale)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / (camera.zoom * bounds.scale)
+  const width = bounds.width
+  const height = bounds.height
+  ctx.beginPath()
+  ctx.rect(-width / 2, -height / 2, width, height)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -834,15 +938,18 @@ function drawStickySelection(
   ctx.restore()
 }
 
-type TextHandleSpec = {
-  kind: 'scale' | 'width' | 'rotate'
+type TransformHandleSpec = {
+  kind: 'scale' | 'width' | 'height' | 'rotate'
   handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | 'rotate'
   position: { x: number; y: number }
   anchor?: { x: number; y: number }
 }
 
-const getTextHandleSpecs = (bounds: TextElementBounds): TextHandleSpec[] => {
-  const specs: TextHandleSpec[] = []
+const getTransformHandleSpecs = (
+  bounds: TransformBounds,
+  options: { verticalMode: 'scale' | 'height'; horizontalMode: 'width' }
+): TransformHandleSpec[] => {
+  const specs: TransformHandleSpec[] = []
   const cornerHandles: Array<{ handle: 'nw' | 'ne' | 'se' | 'sw'; index: number }> = [
     { handle: 'nw', index: 0 },
     { handle: 'ne', index: 1 },
@@ -860,10 +967,10 @@ const getTextHandleSpecs = (bounds: TextElementBounds): TextHandleSpec[] => {
   const rightCenter = midpoint(bounds.corners[1], bounds.corners[2])
   const bottomCenter = midpoint(bounds.corners[2], bounds.corners[3])
   const leftCenter = midpoint(bounds.corners[3], bounds.corners[0])
-  specs.push({ kind: 'scale', handle: 'n', position: topCenter })
-  specs.push({ kind: 'scale', handle: 's', position: bottomCenter })
-  specs.push({ kind: 'width', handle: 'e', position: rightCenter })
-  specs.push({ kind: 'width', handle: 'w', position: leftCenter })
+  specs.push({ kind: options.verticalMode, handle: 'n', position: topCenter })
+  specs.push({ kind: options.verticalMode, handle: 's', position: bottomCenter })
+  specs.push({ kind: options.horizontalMode, handle: 'e', position: rightCenter })
+  specs.push({ kind: options.horizontalMode, handle: 'w', position: leftCenter })
   const cos = Math.cos(bounds.rotation)
   const sin = Math.sin(bounds.rotation)
   const offset = bounds.height / 2 * bounds.scale + TEXT_ROTATION_HANDLE_OFFSET
@@ -876,7 +983,7 @@ const getTextHandleSpecs = (bounds: TextElementBounds): TextHandleSpec[] => {
   return specs
 }
 
-const toTextLocalCoordinates = (point: { x: number; y: number }, bounds: TextElementBounds) => {
+const toTextLocalCoordinates = (point: { x: number; y: number }, bounds: TransformBounds) => {
   const dx = point.x - bounds.center.x
   const dy = point.y - bounds.center.y
   const cos = Math.cos(bounds.rotation)
@@ -891,7 +998,7 @@ const toTextLocalCoordinates = (point: { x: number; y: number }, bounds: TextEle
 
 const getTextHandleLocalPosition = (
   handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
-  bounds: TextElementBounds
+  bounds: TransformBounds
 ) => {
   const halfWidth = bounds.width / 2
   const halfHeight = bounds.height / 2
@@ -959,7 +1066,60 @@ function drawTextSelection(
       ctx.fill()
       ctx.stroke()
     }
-    const handles = getTextHandleSpecs(bounds)
+    const handles = getTransformHandleSpecs(bounds, { verticalMode: 'scale', horizontalMode: 'width' })
+    handles.forEach((handle) => {
+      if (handle.kind === 'rotate' && handle.anchor) {
+        const anchor = toScreen(handle.anchor)
+        const rotationScreen = toScreen(handle.position)
+        ctx.beginPath()
+        ctx.strokeStyle = ACCENT_COLOR
+        ctx.lineWidth = 1
+        ctx.moveTo(anchor.x, anchor.y)
+        ctx.lineTo(rotationScreen.x, rotationScreen.y)
+        ctx.stroke()
+      }
+      drawHandle(handle.position)
+    })
+  }
+  ctx.restore()
+}
+
+function drawRectangleSelection(
+  ctx: CanvasRenderingContext2D,
+  element: RectangleElement,
+  camera: CameraState,
+  options: { withHandles: boolean }
+) {
+  const bounds = getRectangleElementBounds(element)
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
+  ctx.save()
+  ctx.strokeStyle = ACCENT_COLOR
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  const first = toScreen(bounds.corners[0])
+  ctx.moveTo(first.x, first.y)
+  for (let index = 1; index < bounds.corners.length; index += 1) {
+    const point = toScreen(bounds.corners[index])
+    ctx.lineTo(point.x, point.y)
+  }
+  ctx.closePath()
+  ctx.stroke()
+  if (options.withHandles) {
+    const handleRadius = RESIZE_HANDLE_RADIUS
+    const drawHandle = (point: { x: number; y: number }) => {
+      const screen = toScreen(point)
+      ctx.beginPath()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = ACCENT_COLOR
+      ctx.lineWidth = 1
+      ctx.arc(screen.x, screen.y, handleRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    const handles = getTransformHandleSpecs(bounds, { verticalMode: 'height', horizontalMode: 'width' })
     handles.forEach((handle) => {
       if (handle.kind === 'rotate' && handle.anchor) {
         const anchor = toScreen(handle.anchor)
@@ -989,6 +1149,10 @@ function drawElementSelection(
   }
   if (isTextElement(element)) {
     drawTextSelection(ctx, element, camera, options)
+    return
+  }
+  if (isRectangleElement(element)) {
+    drawRectangleSelection(ctx, element, camera, options)
   }
 }
 
@@ -1017,7 +1181,15 @@ export function CanvasBoard() {
         handle: 'nw' | 'ne' | 'sw' | 'se'
       }
   >(null)
-  const textTransformStateRef = useRef<TextTransformState | null>(null)
+  const rectCreationRef = useRef<
+    | null
+    | {
+        pointerId: number
+        start: { x: number; y: number }
+        id: string
+      }
+  >(null)
+  const transformStateRef = useRef<TransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
   const panStateRef = useRef<{
@@ -1029,7 +1201,9 @@ export function CanvasBoard() {
   } | null>(null)
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
-  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'textTransform'>('none')
+  const interactionModeRef = useRef<
+    'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'transform' | 'rect-create'
+  >('none')
   const marqueeCandidateRef = useRef<
     | null
     | {
@@ -1262,6 +1436,13 @@ export function CanvasBoard() {
           }
           continue
         }
+        if (isRectangleElement(element)) {
+          const bounds = getRectangleElementBounds(element)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
         const aabb = getElementBounds(element, ctx)
         if (x >= aabb.left && x <= aabb.right && y >= aabb.top && y <= aabb.bottom) {
           return element.id
@@ -1470,18 +1651,27 @@ export function CanvasBoard() {
     [cameraState, elements]
   )
 
-  const hitTestTextHandle = useCallback(
+  const hitTestTransformHandle = useCallback(
     (
       point: { x: number; y: number }
-    ): { element: TextElement; bounds: TextElementBounds; handle: TextHandleSpec } | null => {
+    ): {
+      element: TextElement | RectangleElement
+      bounds: TextElementBounds | RectElementBounds
+      handle: TransformHandleSpec
+    } | null => {
       const selected = selectedIdsRef.current
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!isTextElement(element)) return null
+      if (!isTextElement(element) && !isRectangleElement(element)) return null
       const ctx = getSharedMeasureContext()
-      const bounds = getTextElementBounds(element, ctx)
-      const handles = getTextHandleSpecs(bounds)
+      const bounds = isTextElement(element)
+        ? getTextElementBounds(element, ctx)
+        : getRectangleElementBounds(element)
+      const handleOptions = isTextElement(element)
+        ? { verticalMode: 'scale' as const, horizontalMode: 'width' as const }
+        : { verticalMode: 'height' as const, horizontalMode: 'width' as const }
+      const handles = getTransformHandleSpecs(bounds, handleOptions)
       const handleRadius = RESIZE_HANDLE_HIT_RADIUS
       const toScreen = (position: { x: number; y: number }) => ({
         x: (position.x + cameraState.offsetX) * cameraState.zoom,
@@ -1542,39 +1732,51 @@ export function CanvasBoard() {
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
-      const textHandleHit = hitTestTextHandle(canvasPoint)
-      if (textHandleHit) {
+      const transformHandleHit = hitTestTransformHandle(canvasPoint)
+      if (transformHandleHit) {
         event.preventDefault()
         suppressClickRef.current = true
-        interactionModeRef.current = 'textTransform'
-        const handleSpec = textHandleHit.handle
+        interactionModeRef.current = 'transform'
+        const handleSpec = transformHandleHit.handle
         if (handleSpec.kind === 'scale') {
-          textTransformStateRef.current = {
+          transformStateRef.current = {
             mode: 'scale',
             pointerId: event.pointerId,
-            id: textHandleHit.element.id,
+            id: transformHandleHit.element.id,
+            elementType: transformHandleHit.element.type,
             handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
-            startBounds: textHandleHit.bounds,
+            startBounds: transformHandleHit.bounds,
           }
         } else if (handleSpec.kind === 'width') {
-          textTransformStateRef.current = {
+          transformStateRef.current = {
             mode: 'width',
             pointerId: event.pointerId,
-            id: textHandleHit.element.id,
+            id: transformHandleHit.element.id,
+            elementType: transformHandleHit.element.type,
             handle: handleSpec.handle as 'e' | 'w',
-            startBounds: textHandleHit.bounds,
+            startBounds: transformHandleHit.bounds,
+          }
+        } else if (handleSpec.kind === 'height') {
+          transformStateRef.current = {
+            mode: 'height',
+            pointerId: event.pointerId,
+            id: transformHandleHit.element.id,
+            elementType: 'rect',
+            handle: handleSpec.handle as 'n' | 's',
+            startBounds: transformHandleHit.bounds as RectElementBounds,
           }
         } else {
           const angle = Math.atan2(
-            boardPoint.y - textHandleHit.bounds.center.y,
-            boardPoint.x - textHandleHit.bounds.center.x
+            boardPoint.y - transformHandleHit.bounds.center.y,
+            boardPoint.x - transformHandleHit.bounds.center.x
           )
-          textTransformStateRef.current = {
+          transformStateRef.current = {
             mode: 'rotate',
             pointerId: event.pointerId,
-            id: textHandleHit.element.id,
+            id: transformHandleHit.element.id,
+            elementType: transformHandleHit.element.type,
             handle: 'rotate',
-            startBounds: textHandleHit.bounds,
+            startBounds: transformHandleHit.bounds,
             startPointerAngle: angle,
           }
         }
@@ -1614,6 +1816,28 @@ export function CanvasBoard() {
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
+        if (toolMode === 'rect') {
+          event.preventDefault()
+          const id = randomId()
+          const newElement: RectangleElement = {
+            id,
+            type: 'rect',
+            x: boardPoint.x,
+            y: boardPoint.y,
+            w: RECT_MIN_SIZE,
+            h: RECT_MIN_SIZE,
+            fill: RECT_DEFAULT_FILL,
+            stroke: RECT_DEFAULT_STROKE,
+            rotation: 0,
+            scale: 1,
+          }
+          rectCreationRef.current = { pointerId: event.pointerId, start: boardPoint, id }
+          interactionModeRef.current = 'rect-create'
+          suppressClickRef.current = true
+          setElements((prev) => ({ ...prev, [id]: newElement }))
+          setSelection(new Set([id]))
+          return
+        }
         dragStateRef.current = null
         marqueeCandidateRef.current = { startBoard: boardPoint, startScreen: canvasPoint, shift: event.shiftKey }
         setMarquee(null)
@@ -1655,7 +1879,7 @@ export function CanvasBoard() {
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, hitTestTextHandle, screenToBoard, setMarquee, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, hitTestTransformHandle, screenToBoard, setMarquee, setSelection, toolMode]
   )
 
   const handlePointerMove = useCallback(
@@ -1707,41 +1931,84 @@ export function CanvasBoard() {
         return
       }
 
-      const textTransformState = textTransformStateRef.current
-      if (mode === 'textTransform' && textTransformState && textTransformState.pointerId === event.pointerId) {
+      const transformState = transformStateRef.current
+      if (mode === 'transform' && transformState && transformState.pointerId === event.pointerId) {
         const boardPoint = screenToBoard(canvasPoint)
         const measureCtx = getSharedMeasureContext()
-        let updatedElement: TextElement | null = null
+        let updatedElement: BoardElement | null = null
         setElements((prev) => {
-          const target = prev[textTransformState.id]
-          if (!target || !isTextElement(target)) return prev
-          let nextElement: TextElement | null = null
-          if (textTransformState.mode === 'width') {
-            const pointerLocal = toTextLocalCoordinates(boardPoint, textTransformState.startBounds)
-            const direction = textTransformState.handle === 'e' ? 1 : -1
-            const inset = textTransformState.startBounds.layout.inset
-            const minHalfWidth = (TEXT_MIN_WRAP_WIDTH + inset * 2) / 2
-            const targetHalf = direction * pointerLocal.x
-            const newHalfWidth = Math.max(minHalfWidth, targetHalf)
-            const newWidth = newHalfWidth * 2
-            const newWrapWidth = clamp(newWidth - inset * 2, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
-            const baseHalfWidth = textTransformState.startBounds.width / 2
-            const deltaHalf = newHalfWidth - baseHalfWidth
-            const cos = Math.cos(textTransformState.startBounds.rotation)
-            const sin = Math.sin(textTransformState.startBounds.rotation)
-            const shift = direction * deltaHalf * textTransformState.startBounds.scale
-            const newCenter = {
-              x: textTransformState.startBounds.center.x + shift * cos,
-              y: textTransformState.startBounds.center.y + shift * sin,
+          const target = prev[transformState.id]
+          if (!target) return prev
+          if (transformState.elementType === 'text' && !isTextElement(target)) return prev
+          if (transformState.elementType === 'rect' && !isRectangleElement(target)) return prev
+          let nextElement: BoardElement | null = null
+          if (transformState.mode === 'width') {
+            const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
+            const direction = transformState.handle === 'e' ? 1 : -1
+            if (transformState.elementType === 'text' && isTextElement(target)) {
+              const bounds = transformState.startBounds as TextElementBounds
+              const inset = bounds.layout.inset
+              const minHalfWidth = (TEXT_MIN_WRAP_WIDTH + inset * 2) / 2
+              const targetHalf = direction * pointerLocal.x
+              const newHalfWidth = Math.max(minHalfWidth, targetHalf)
+              const newWidth = newHalfWidth * 2
+              const newWrapWidth = clamp(newWidth - inset * 2, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
+              const baseHalfWidth = bounds.width / 2
+              const deltaHalf = newHalfWidth - baseHalfWidth
+              const cos = Math.cos(bounds.rotation)
+              const sin = Math.sin(bounds.rotation)
+              const shift = direction * deltaHalf * bounds.scale
+              const newCenter = {
+                x: bounds.center.x + shift * cos,
+                y: bounds.center.y + shift * sin,
+              }
+              const provisional = { ...target, w: newWrapWidth }
+              const layoutInfo = getTextElementLayout(provisional, measureCtx)
+              const newX = newCenter.x - layoutInfo.width / 2
+              const newY = newCenter.y - layoutInfo.height / 2
+              nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
+            } else if (transformState.elementType === 'rect' && isRectangleElement(target)) {
+              const bounds = transformState.startBounds
+              const minHalfWidth = RECT_MIN_SIZE / 2
+              const targetHalf = direction * pointerLocal.x
+              const newHalfWidth = Math.max(minHalfWidth, targetHalf)
+              const newWidth = newHalfWidth * 2
+              const baseHalfWidth = bounds.width / 2
+              const deltaHalf = newHalfWidth - baseHalfWidth
+              const cos = Math.cos(bounds.rotation)
+              const sin = Math.sin(bounds.rotation)
+              const shift = direction * deltaHalf * bounds.scale
+              const newCenter = {
+                x: bounds.center.x + shift * cos,
+                y: bounds.center.y + shift * sin,
+              }
+              const newX = newCenter.x - newWidth / 2
+              const newY = newCenter.y - bounds.height / 2
+              nextElement = { ...target, x: newX, y: newY, w: newWidth }
             }
-            const provisional = { ...target, w: newWrapWidth }
-            const layoutInfo = getTextElementLayout(provisional, measureCtx)
-            const newX = newCenter.x - layoutInfo.width / 2
-            const newY = newCenter.y - layoutInfo.height / 2
-            nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
-          } else if (textTransformState.mode === 'scale') {
-            const pointerLocal = toTextLocalCoordinates(boardPoint, textTransformState.startBounds)
-            const handleVector = getTextHandleLocalPosition(textTransformState.handle, textTransformState.startBounds)
+          } else if (transformState.mode === 'height' && isRectangleElement(target)) {
+            const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
+            const direction = transformState.handle === 's' ? 1 : -1
+            const bounds = transformState.startBounds
+            const minHalfHeight = RECT_MIN_SIZE / 2
+            const targetHalf = direction * pointerLocal.y
+            const newHalfHeight = Math.max(minHalfHeight, targetHalf)
+            const newHeight = newHalfHeight * 2
+            const baseHalfHeight = bounds.height / 2
+            const deltaHalf = newHalfHeight - baseHalfHeight
+            const cos = Math.cos(bounds.rotation)
+            const sin = Math.sin(bounds.rotation)
+            const shift = direction * deltaHalf * bounds.scale
+            const newCenter = {
+              x: bounds.center.x - shift * sin,
+              y: bounds.center.y + shift * cos,
+            }
+            const newX = newCenter.x - bounds.width / 2
+            const newY = newCenter.y - newHeight / 2
+            nextElement = { ...target, x: newX, y: newY, h: newHeight }
+          } else if (transformState.mode === 'scale') {
+            const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
+            const handleVector = getTextHandleLocalPosition(transformState.handle, transformState.startBounds)
             const denom = handleVector.x * handleVector.x + handleVector.y * handleVector.y
             if (denom > 0.0001) {
               const dot = pointerLocal.x * handleVector.x + pointerLocal.y * handleVector.y
@@ -1749,13 +2016,13 @@ export function CanvasBoard() {
               const nextScale = clamp(rawScale, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
               nextElement = { ...target, scale: nextScale }
             }
-          } else if (textTransformState.mode === 'rotate') {
-            const dx = boardPoint.x - textTransformState.startBounds.center.x
-            const dy = boardPoint.y - textTransformState.startBounds.center.y
+          } else if (transformState.mode === 'rotate') {
+            const dx = boardPoint.x - transformState.startBounds.center.x
+            const dy = boardPoint.y - transformState.startBounds.center.y
             if (Math.abs(dx) + Math.abs(dy) >= 0.0001) {
               const angle = Math.atan2(dy, dx)
-              const delta = angle - textTransformState.startPointerAngle
-              let nextRotation = textTransformState.startBounds.rotation + delta
+              const delta = angle - transformState.startPointerAngle
+              let nextRotation = transformState.startBounds.rotation + delta
               const snapped = Math.round(nextRotation / TEXT_ROTATION_SNAP_INCREMENT) * TEXT_ROTATION_SNAP_INCREMENT
               if (Math.abs(snapped - nextRotation) <= TEXT_ROTATION_SNAP_EPSILON) {
                 nextRotation = snapped
@@ -1766,6 +2033,32 @@ export function CanvasBoard() {
           if (!nextElement) return prev
           updatedElement = nextElement
           return { ...prev, [nextElement.id]: nextElement }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
+            lastBroadcastRef.current = now
+          }
+        }
+        return
+      }
+
+      if (mode === 'rect-create') {
+        const creation = rectCreationRef.current
+        if (!creation || creation.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        let updatedElement: RectangleElement | null = null
+        setElements((prev) => {
+          const target = prev[creation.id]
+          if (!target || !isRectangleElement(target)) return prev
+          const width = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.x - creation.start.x))
+          const height = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.y - creation.start.y))
+          const nextX = Math.min(creation.start.x, boardPoint.x)
+          const nextY = Math.min(creation.start.y, boardPoint.y)
+          const updated = { ...target, x: nextX, y: nextY, w: width, h: height }
+          updatedElement = updated
+          return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
           const now = Date.now()
@@ -1913,9 +2206,9 @@ export function CanvasBoard() {
         return
       }
 
-      if (mode === 'textTransform') {
-        const transformState = textTransformStateRef.current
-        textTransformStateRef.current = null
+      if (mode === 'transform') {
+        const transformState = transformStateRef.current
+        transformStateRef.current = null
         suppressClickRef.current = false
         setMarquee(null)
         marqueeCandidateRef.current = null
@@ -1925,6 +2218,22 @@ export function CanvasBoard() {
         sendElementsUpdate([element])
         if (boardId) {
           void persistElementsUpdate(boardId, [element])
+        }
+        return
+      }
+
+      if (mode === 'rect-create') {
+        const creationState = rectCreationRef.current
+        rectCreationRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!creationState) return
+        const element = elements[creationState.id]
+        if (!element || !isRectangleElement(element)) return
+        sendElementsUpdate([element])
+        if (boardId) {
+          void persistElementCreate(boardId, element)
         }
         return
       }
@@ -1983,7 +2292,7 @@ export function CanvasBoard() {
       suppressClickRef.current = true
       releaseClickSuppression()
     },
-    [boardId, elements, handleCanvasClick, clearSelection, persistElementsUpdate, releaseClickSuppression, sendElementsUpdate, setMarquee, setSelection]
+    [boardId, elements, handleCanvasClick, clearSelection, persistElementCreate, persistElementsUpdate, releaseClickSuppression, sendElementsUpdate, setMarquee, setSelection]
   )
 
   const handlePointerUp = useCallback(
@@ -2101,6 +2410,10 @@ export function CanvasBoard() {
       }
       if (event.key === 't' || event.key === 'T') {
         setToolMode('text')
+        return
+      }
+      if (event.key === 'r' || event.key === 'R') {
+        setToolMode('rect')
         return
       }
     }
@@ -2335,6 +2648,8 @@ export function CanvasBoard() {
       } else if (isTextElement(element)) {
         if (editingTextId && element.id === editingTextId) return
         drawTextElement(ctx, element, cameraState)
+      } else if (isRectangleElement(element)) {
+        drawRectangleElement(ctx, element, cameraState)
       }
     })
     const selectedArray = Array.from(selectedIds)

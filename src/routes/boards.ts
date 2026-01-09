@@ -61,7 +61,7 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   }
 
   const body = (await safeJson(req)) as { type?: string; element?: SharedBoardElement } | null;
-  const allowedElementTypes: Array<SharedBoardElement["type"]> = ["sticky", "text"]
+  const allowedElementTypes: Array<SharedBoardElement["type"]> = ["sticky", "text", "rect"]
   const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
     typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"])
 
