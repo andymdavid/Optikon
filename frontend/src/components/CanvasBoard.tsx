@@ -2262,17 +2262,6 @@ export function CanvasBoard() {
         if (!creationState) return
         let element = elements[creationState.id]
         if (!element || !isRectangleElement(element)) return
-        if (!creationState.hasDragged) {
-          const adjusted = {
-            ...element,
-            w: creationState.baseSize,
-            h: creationState.baseSize,
-            x: creationState.start.x,
-            y: creationState.start.y,
-          }
-          element = adjusted
-          setElements((prev) => ({ ...prev, [creationState.id]: adjusted }))
-        }
         sendElementsUpdate([element])
         if (boardId) {
           void persistElementCreate(boardId, element)
