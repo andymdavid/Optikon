@@ -8,6 +8,7 @@ export type CameraState = {
   zoom: number
 }
 
+// TODO(phase-6.2.1): ElementMap is sticky-only; replace with a union map once TextElement exists.
 type ElementMap = Record<string, StickyNoteElement>
 
 const initialCameraState: CameraState = {
@@ -48,6 +49,9 @@ const STICKY_PADDING_X = 16
 const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 type Rect = { left: number; top: number; right: number; bottom: number }
+
+// TODO(phase-6.2.2): All geometry helpers below assume every element is a sticky; introduce
+// per-type `getElementBounds/getElementInnerSize` helpers so TextElement can define its own box.
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
   left: Math.min(a.x, b.x),
@@ -128,6 +132,8 @@ type GridSpec = {
   secondaryAlpha: number
 }
 
+// TODO(phase-6.2.5): EditingState only captures sticky note text/font; extend to describe
+// TextElement editing (and other element-specific controls) when we generalize the overlay.
 type EditingState = {
   id: string
   text: string
@@ -237,6 +243,8 @@ function logOutbound(message: unknown) {
 
 const randomId = () => Math.random().toString(36).slice(2, 10)
 
+// TODO(phase-6.2.1): Promote this to a generic parseElement(type) helper so TextElement payloads
+// can be validated/deserialized without duplicating WS/persistence plumbing.
 function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
   const element = raw as Partial<StickyNoteElement>
@@ -392,6 +400,8 @@ const drawStickyShadow = (
   ctx.restore()
 }
 
+// TODO(phase-6.2.3): Keep this sticky renderer but add a drawElement dispatcher that picks the
+// correct render function for TextElement vs StickyNoteElement.
 function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
   const stickySize = getStickySize(element)
   const width = stickySize * camera.zoom
@@ -571,6 +581,8 @@ export function CanvasBoard() {
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom]
   )
 
+  // TODO(phase-6.2.1): Every persistence + realtime helper below accepts StickyNoteElement.
+  // Introduce element-type tagging so TextElement instances flow through the same pipes.
   const upsertSticky = useCallback((element: StickyNoteElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
@@ -632,6 +644,8 @@ export function CanvasBoard() {
     []
   )
 
+  // TODO(phase-6.2.5): Editing UX is sticky-exclusive; add an element-type switch when
+  // TextElement editing arrives so keyboard shortcuts + overlay pick the correct component.
   const beginEditingSticky = useCallback(
     (element: StickyNoteElement) => {
       suppressClickRef.current = true
@@ -682,6 +696,8 @@ export function CanvasBoard() {
       if (editingStateRef.current) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      // TODO(phase-6.2.4): Creation always spawns a sticky; introduce toolMode + per-type defaults
+      // so TextElement clicks route through the same handler.
       const draft: StickyNoteElement = {
         id: randomId(),
         type: 'sticky',
@@ -778,6 +794,8 @@ export function CanvasBoard() {
     [boardId, persistElementsDelete, removeElements, sendElementsDelete]
   )
 
+  // TODO(phase-6.2.2): Hit-testing only checks sticky bounds; switch to an element.type-driven
+  // dispatcher so TextElement can define its own bounds + interaction affordances.
   const hitTestSticky = useCallback(
     (x: number, y: number): StickyNoteElement | null => {
       const values = Object.values(elements)
@@ -811,6 +829,8 @@ export function CanvasBoard() {
     [beginEditingSticky, boardId, hitTestSticky, screenToBoard]
   )
 
+  // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
+  // TextElement will need its own bounding box + per-corner sizing rules.
   const hitTestResizeHandle = useCallback(
     (point: { x: number; y: number }): { element: StickyNoteElement; handle: 'nw' | 'ne' | 'sw' | 'se' } | null => {
       const selected = selectedIdsRef.current
@@ -1326,6 +1346,8 @@ export function CanvasBoard() {
   useEffect(() => {
     const ctx = getMeasureContext()
     if (!ctx) return
+    // TODO(phase-6.2.5): Font auto-fit assumes every element follows sticky sizing rules;
+    // skip non-sticky types (e.g. TextElement) once we support them.
     const adjustments: StickyNoteElement[] = []
     const editingId = editingStateRef.current?.id
     Object.values(elements).forEach((element) => {
@@ -1364,6 +1386,8 @@ export function CanvasBoard() {
         const data = (await response.json()) as {
           elements?: Array<{ id?: string; element?: BoardElement | null }>
         }
+        // TODO(phase-6.2.1): Persisted payloads only parse stickies; add type-keyed parsing once
+        // TextElement rows exist in the DB.
         const parsed: StickyNoteElement[] = []
         data.elements?.forEach((entry) => {
           const sticky = parseStickyElement(entry?.element)
@@ -1432,11 +1456,14 @@ export function CanvasBoard() {
             joinedRef.current = true
           } else if (parsed?.type === 'elementUpdate') {
             console.log('[ws in elementUpdate]', parsed.payload)
+            // TODO(phase-6.2.1): Dispatch on element.type once TextElement is emitted over WS.
             const incoming = parseStickyElement((parsed.payload as { element?: unknown })?.element)
             if (incoming) upsertSticky(incoming)
           } else if (parsed?.type === 'elementsUpdate') {
             const payload = parsed.payload as { elements?: BoardElement[] }
-            const updated = payload?.elements?.map((el) => parseStickyElement(el))?.filter(Boolean) as StickyNoteElement[]
+            const updated = payload?.elements
+              ?.map((el) => parseStickyElement(el))
+              ?.filter(Boolean) as StickyNoteElement[]
             if (updated.length > 0) {
               setElements((prev) => {
                 const next = { ...prev }
@@ -1517,6 +1544,8 @@ export function CanvasBoard() {
     ctx.fillRect(0, 0, cssWidth, cssHeight)
     drawBoardGrid(ctx, cameraState, cssWidth, cssHeight)
     const values = Object.values(elements)
+    // TODO(phase-6.2.3): Rendering dispatch is sticky-only; introduce drawElement(element)
+    // so TextElement draws with its own renderer without reworking this loop.
     values.forEach((element) => {
       drawSticky(ctx, element, cameraState)
     })
@@ -1656,6 +1685,8 @@ export function CanvasBoard() {
         editingFontSizePx !== null &&
         editingContentWidth !== null &&
         editingContentHeight !== null && (
+          // TODO(phase-6.2.5): Overlay styling + DOM structure is sticky-specific; split into
+          // element-type specific overlays once TextElement editing is introduced.
           <div
             className="canvas-board__sticky-editor"
             style={{
