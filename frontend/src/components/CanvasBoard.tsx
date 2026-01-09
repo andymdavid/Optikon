@@ -1191,6 +1191,8 @@ export function CanvasBoard() {
         pointerId: number
         start: { x: number; y: number }
         id: string
+        baseSize: number
+        hasDragged: boolean
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -1829,14 +1831,20 @@ export function CanvasBoard() {
             type: 'rect',
             x: boardPoint.x,
             y: boardPoint.y,
-            w: baseBoardSize,
-            h: baseBoardSize,
+            w: RECT_MIN_SIZE,
+            h: RECT_MIN_SIZE,
             fill: RECT_DEFAULT_FILL,
             stroke: RECT_DEFAULT_STROKE,
             rotation: 0,
             scale: 1,
           }
-          rectCreationRef.current = { pointerId: event.pointerId, start: boardPoint, id }
+          rectCreationRef.current = {
+            pointerId: event.pointerId,
+            start: boardPoint,
+            id,
+            baseSize: baseBoardSize,
+            hasDragged: false,
+          }
           interactionModeRef.current = 'rect-create'
           suppressClickRef.current = true
           setElements((prev) => ({ ...prev, [id]: newElement }))
@@ -2070,6 +2078,13 @@ export function CanvasBoard() {
           return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
+          const dragDistanceX = Math.abs(boardPoint.x - creation.start.x)
+          const dragDistanceY = Math.abs(boardPoint.y - creation.start.y)
+          if (!creation.hasDragged && (dragDistanceX > RECT_MIN_SIZE || dragDistanceY > RECT_MIN_SIZE)) {
+            rectCreationRef.current = { ...creation, hasDragged: true }
+          }
+        }
+        if (updatedElement) {
           const now = Date.now()
           if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
             sendElementsUpdate([updatedElement])
@@ -2245,8 +2260,19 @@ export function CanvasBoard() {
         setMarquee(null)
         marqueeCandidateRef.current = null
         if (!creationState) return
-        const element = elements[creationState.id]
+        let element = elements[creationState.id]
         if (!element || !isRectangleElement(element)) return
+        if (!creationState.hasDragged) {
+          const adjusted = {
+            ...element,
+            w: creationState.baseSize,
+            h: creationState.baseSize,
+            x: creationState.start.x,
+            y: creationState.start.y,
+          }
+          element = adjusted
+          setElements((prev) => ({ ...prev, [creationState.id]: adjusted }))
+        }
         sendElementsUpdate([element])
         if (boardId) {
           void persistElementCreate(boardId, element)
