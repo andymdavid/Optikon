@@ -53,6 +53,7 @@ const TEXT_BOUNDS_PADDING_X = 12
 const TEXT_BOUNDS_PADDING_Y = 8
 const TEXT_BOUNDS_CHAR_WIDTH = 0.55
 type Rect = { left: number; top: number; right: number; bottom: number }
+type ToolMode = 'select' | 'sticky' | 'text'
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
   left: Math.min(a.x, b.x),
@@ -652,6 +653,7 @@ export function CanvasBoard() {
   const [boardId, setBoardId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
+  const [toolMode, setToolMode] = useState<ToolMode>('select')
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
@@ -772,6 +774,17 @@ export function CanvasBoard() {
     [getMeasureContext, releaseClickSuppression, setSelection, updateEditingState]
   )
 
+  const beginEditingText = useCallback(
+    (element: TextElement) => {
+      suppressClickRef.current = true
+      releaseClickSuppression()
+      setSelection(new Set([element.id]))
+      const fontSize = resolveTextFontSize(element.fontSize)
+      updateEditingState({ id: element.id, text: element.text, originalText: element.text, fontSize })
+    },
+    [releaseClickSuppression, setSelection, updateEditingState]
+  )
+
   const commitEditing = useCallback(() => {
     const current = editingStateRef.current
     if (!current) return
@@ -798,18 +811,22 @@ export function CanvasBoard() {
     updateEditingState(null)
   }, [updateEditingState])
 
-  const handleCanvasClick = useCallback(
-    (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false
-        return
-      }
-      if (!joinedRef.current || !boardId) return
-      if (editingStateRef.current) return
-      const rect = event.currentTarget.getBoundingClientRect()
-      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
-      // TODO(phase-6.2.4): Creation always spawns a sticky; introduce toolMode + per-type defaults
-      // so TextElement clicks route through the same handler.
+  const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
+      })
+      if (!response.ok) throw new Error('Failed to persist element')
+    } catch (error) {
+      console.error('Failed to persist board element', error)
+    }
+  }, [])
+
+  const createStickyAtPoint = useCallback(
+    (boardPoint: { x: number; y: number }, opts?: { autoEdit?: boolean }) => {
+      if (!boardId) return
       const draft: StickyNoteElement = {
         id: randomId(),
         type: 'sticky',
@@ -826,20 +843,57 @@ export function CanvasBoard() {
       upsertElement(element)
       sendElementUpdate(element)
       setSelection(new Set([element.id]))
-      void (async () => {
-        try {
-          const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
-          })
-          if (!response.ok) throw new Error('Failed to persist element')
-        } catch (error) {
-          console.error('Failed to persist board element', error)
-        }
-      })()
+      if (opts?.autoEdit) {
+        beginEditingSticky(element)
+      }
+      void persistElementCreate(boardId, element)
     },
-    [boardId, getMeasureContext, screenToBoard, sendElementUpdate, setSelection, upsertElement]
+    [beginEditingSticky, boardId, getMeasureContext, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+  )
+
+  const createTextAtPoint = useCallback(
+    (boardPoint: { x: number; y: number }) => {
+      if (!boardId) return
+      const element: TextElement = {
+        id: randomId(),
+        type: 'text',
+        x: boardPoint.x,
+        y: boardPoint.y,
+        text: '',
+        fontSize: TEXT_DEFAULT_FONT_SIZE,
+      }
+      upsertElement(element)
+      sendElementUpdate(element)
+      setSelection(new Set([element.id]))
+      beginEditingText(element)
+      void persistElementCreate(boardId, element)
+    },
+    [beginEditingText, boardId, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+  )
+
+  const handleCanvasClick = useCallback(
+    (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
+      if (!joinedRef.current || !boardId) return
+      if (editingStateRef.current) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+      if (hitId) {
+        return
+      }
+      if (toolMode === 'sticky') {
+        createStickyAtPoint(boardPoint)
+      } else if (toolMode === 'text') {
+        createTextAtPoint(boardPoint)
+      } else if (toolMode === 'select') {
+        clearSelection()
+      }
+    },
+    [boardId, clearSelection, createStickyAtPoint, createTextAtPoint, hitTestElement, screenToBoard, toolMode]
   )
 
   const removeElements = useCallback((ids: string[]) => {
@@ -1424,6 +1478,20 @@ export function CanvasBoard() {
         if (ids.length === 0) return
         event.preventDefault()
         deleteSelectedElements(ids)
+        return
+      }
+
+      if (event.key === 'v' || event.key === 'V') {
+        setToolMode('select')
+        return
+      }
+      if (event.key === 'n' || event.key === 'N') {
+        setToolMode('sticky')
+        return
+      }
+      if (event.key === 't' || event.key === 'T') {
+        setToolMode('text')
+        return
       }
     }
 
@@ -1441,7 +1509,7 @@ export function CanvasBoard() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [deleteSelectedElements])
+    }, [deleteSelectedElements])
 
   useEffect(() => {
     setSelection(new Set())
@@ -1736,10 +1804,10 @@ export function CanvasBoard() {
   }, [editingState?.id])
 
   useEffect(() => {
-    if (editingState && !editingStickyElement) {
+    if (editingState && !editingElement) {
       updateEditingState(null)
     }
-  }, [editingState, editingStickyElement, updateEditingState])
+  }, [editingElement, editingState, updateEditingState])
 
   useEffect(() => {
     const ctx = getMeasureContext()
