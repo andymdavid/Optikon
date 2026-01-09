@@ -59,7 +59,7 @@ const TEXT_MAX_SCALE = 40
 const TEXT_ROTATION_HANDLE_OFFSET = 32
 const TEXT_ROTATION_SNAP_EPSILON = (5 * Math.PI) / 180
 const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
-const RECT_DEFAULT_FILL = '#dbeafe'
+const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
 const RECT_DEFAULT_SCREEN_SIZE = 180
@@ -1843,14 +1843,15 @@ export function CanvasBoard() {
         if (toolMode === 'rect') {
           event.preventDefault()
           const id = randomId()
-          const baseBoardSize = Math.max(RECT_MIN_SIZE, RECT_DEFAULT_SCREEN_SIZE / cameraState.zoom)
+          const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
+          const defaultHeight = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
           const newElement: RectangleElement = {
             id,
             type: 'rect',
             x: boardPoint.x,
             y: boardPoint.y,
-            w: baseBoardSize,
-            h: baseBoardSize,
+            w: defaultWidth,
+            h: defaultHeight,
             fill: RECT_DEFAULT_FILL,
             stroke: RECT_DEFAULT_STROKE,
             rotation: 0,
@@ -1860,7 +1861,7 @@ export function CanvasBoard() {
             pointerId: event.pointerId,
             start: boardPoint,
             id,
-            baseSize: baseBoardSize,
+            baseSize: defaultWidth,
             hasDragged: false,
           }
           interactionModeRef.current = 'rect-create'
