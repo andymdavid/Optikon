@@ -1748,7 +1748,7 @@ export function CanvasBoard() {
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
-      const transformHandleHit = hitTestTransformHandle(canvasPoint)
+      const transformHandleHit = toolMode === 'select' ? hitTestTransformHandle(canvasPoint) : null
       if (transformHandleHit) {
         event.preventDefault()
         suppressClickRef.current = true
