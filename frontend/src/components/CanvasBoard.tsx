@@ -64,6 +64,7 @@ type TextLayout = {
   lineHeight: number
   ascent: number
   descent: number
+  maxWidthPx: number
 }
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
@@ -86,7 +87,7 @@ const measureTextLayout = (
   ctx: CanvasRenderingContext2D | null,
   text: string,
   fontSize: number,
-  maxWidth: number,
+  maxWidthPx: number,
   fontFamily: string,
   lineHeightMultiplier: number
 ): TextLayout => {
@@ -104,6 +105,7 @@ const measureTextLayout = (
       lineHeight: fallbackLineHeight,
       ascent: fontSize * 0.8,
       descent: fontSize * 0.2,
+      maxWidthPx,
     }
   }
 
@@ -117,25 +119,19 @@ const measureTextLayout = (
     lineWidths.push(ctx.measureText(content).width)
   }
 
-  const processWordChunks = (word: string, maxWidthPx: number) => {
+  const processWordChunks = (word: string): string => {
     let chunk = ''
-    let trailingChunk = ''
     for (const char of word) {
       const nextChunk = `${chunk}${char}`
       const width = ctx.measureText(nextChunk).width
       if (width <= maxWidthPx || chunk === '') {
         chunk = nextChunk
-        trailingChunk = chunk
       } else {
         pushLine(chunk)
         chunk = char
-        trailingChunk = chunk
       }
     }
-    if (chunk) {
-      return chunk
-    }
-    return trailingChunk
+    return chunk
   }
 
   const paragraphs = normalizedText.split(/\n/)
@@ -143,26 +139,26 @@ const measureTextLayout = (
     const words = paragraph.split(/\s+/).filter(Boolean)
     if (words.length === 0) {
       pushLine('')
-      return
-    }
-    let current = ''
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word
-      const width = ctx.measureText(candidate).width
-      if (width <= maxWidth || current === '') {
-        current = candidate
-      } else {
-        if (current) pushLine(current)
-        const wordWidth = ctx.measureText(word).width
-        if (wordWidth <= maxWidth) {
-          current = word
+    } else {
+      let current = ''
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word
+        const width = ctx.measureText(candidate).width
+        if (width <= maxWidthPx || current === '') {
+          current = candidate
         } else {
-          current = processWordChunks(word, maxWidth)
+          if (current) pushLine(current)
+          const wordWidth = ctx.measureText(word).width
+          if (wordWidth <= maxWidthPx) {
+            current = word
+          } else {
+            current = processWordChunks(word)
+          }
         }
       }
+      if (current) pushLine(current)
     }
-    if (current) pushLine(current)
-    if (paragraphIndex < paragraphs.length - 1 && paragraph.trim().length === 0) {
+    if (paragraphIndex < paragraphs.length - 1) {
       pushLine('')
     }
   })
@@ -177,14 +173,14 @@ const measureTextLayout = (
   const descent = metrics.actualBoundingBoxDescent ?? fontSize * 0.2
   const maxLineWidth = lineWidths.reduce((max, width) => Math.max(max, width), 0)
   const totalHeight = Math.max(1, lines.length) * lineHeight
-  return { lines, lineWidths, maxLineWidth, totalHeight, lineHeight, ascent, descent }
+  return { lines, lineWidths, maxLineWidth, totalHeight, lineHeight, ascent, descent, maxWidthPx }
 }
 
 const getTextLayout = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): TextLayout =>
   measureTextLayout(
     ctx,
     element.text,
-    resolveTextFontSize(element.fontSize),
+    resolveTextFontSize(element.fontSize) * zoom,
     TEXT_DEFAULT_MAX_WIDTH * zoom,
     STICKY_FONT_FAMILY,
     STICKY_TEXT_LINE_HEIGHT
@@ -196,7 +192,7 @@ const getTextLayoutForContent = (
   zoom: number,
   ctx: CanvasRenderingContext2D | null
 ): TextLayout =>
-  measureTextLayout(ctx, text, fontSize, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
+  measureTextLayout(ctx, text, fontSize * zoom, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
 
 const getStickySize = (element: StickyNoteElement) => {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -710,7 +706,14 @@ function drawStickySelection(
 
 function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
   const measureCtx = getSharedMeasureContext()
-  const bounds = getTextBounds(element, camera.zoom, measureCtx)
+  const layout = getTextLayout(element, camera.zoom, measureCtx)
+  const insetBoard = TEXT_SAFETY_INSET / camera.zoom
+  const bounds = {
+    left: element.x,
+    top: element.y,
+    right: element.x + layout.maxLineWidth / camera.zoom + insetBoard * 2,
+    bottom: element.y + layout.totalHeight / camera.zoom + insetBoard * 2,
+  }
   const x = (bounds.left + camera.offsetX) * camera.zoom
   const y = (bounds.top + camera.offsetY) * camera.zoom
   const width = (bounds.right - bounds.left) * camera.zoom
@@ -727,7 +730,7 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, 
     ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'
     ctx.font = '12px "Inter", sans-serif'
     ctx.fillText(
-      `zoom=${camera.zoom.toFixed(2)} maxWidth(px)=${(TEXT_DEFAULT_MAX_WIDTH * camera.zoom).toFixed(1)} lines=${getTextLayout(element, camera.zoom, getSharedMeasureContext()).lines.length}`,
+      `zoom=${camera.zoom.toFixed(2)} maxWidth(px)=${layout.maxWidthPx.toFixed(1)} maxLine=${layout.maxLineWidth.toFixed(1)} totalHeight=${layout.totalHeight.toFixed(1)} lines=${layout.lines.length}`,
       x,
       y - 8
     )
@@ -1522,7 +1525,10 @@ const hitTestElement = useCallback(
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
         if (matchingIds.length === 0) {
           const sample = Object.values(elements)[0]
-          if (sample) console.log('[marquee sample]', getElementBounds(sample))
+          if (sample) {
+            const sampleCtx = getSharedMeasureContext()
+            console.log('[marquee sample]', getElementBounds(sample, cameraState.zoom, sampleCtx))
+          }
         }
 
         if (matchingIds.length > 0) {
@@ -1958,8 +1964,10 @@ const hitTestElement = useCallback(
       ? {
           left: editingTextElement.x,
           top: editingTextElement.y,
-          right: editingTextElement.x + editingTextLayout.maxLineWidth + TEXT_SAFETY_INSET * 2,
-          bottom: editingTextElement.y + editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2,
+          right:
+            editingTextElement.x + editingTextLayout.maxLineWidth / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
+          bottom:
+            editingTextElement.y + editingTextLayout.totalHeight / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
         }
       : null
   const editingTextRect = editingTextBounds
@@ -2164,7 +2172,7 @@ const hitTestElement = useCallback(
               style={{
                 fontSize: `${editingTextFontSizePx}px`,
                 lineHeight: STICKY_TEXT_LINE_HEIGHT,
-                padding: `${TEXT_SAFETY_INSET * cameraState.zoom}px`,
+                padding: `${TEXT_SAFETY_INSET}px`,
               }}
               onInput={syncEditingTextFromDom}
               onKeyDown={(event) => {
