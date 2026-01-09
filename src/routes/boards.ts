@@ -61,10 +61,16 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   }
 
   const body = (await safeJson(req)) as { type?: string; element?: SharedBoardElement } | null;
-  // TODO(phase-6.2.1): Payload validation is sticky-specific; accept TextElement by extending the
-  // shared schema + type guard instead of hard-coding the type check here.
-  if (!body?.type || body.type !== "sticky" || !body.element || typeof body.element.id !== "string") {
+  const allowedElementTypes: Array<SharedBoardElement["type"]> = ["sticky", "text"]
+  const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
+    typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"])
+
+  if (!body?.type || !isAllowedType(body.type) || !body.element || typeof body.element.id !== "string") {
     return jsonResponse({ message: "Invalid element payload." }, 400);
+  }
+
+  if (body.element.type !== body.type) {
+    return jsonResponse({ message: "Element type mismatch." }, 400);
   }
 
   const element = createBoardElementRecord(boardId, body.element);

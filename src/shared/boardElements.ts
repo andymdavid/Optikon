@@ -13,6 +13,12 @@ export interface StickyNoteElement extends CanvasElement {
   fontSize?: number
 }
 
-// TODO(phase-6.2.1): BoardElement only accepts StickyNoteElement today; extend to TextElement
-// (and other future CanvasElement implementations) when we add multi-type support.
-export type BoardElement = StickyNoteElement
+export interface TextElement extends CanvasElement {
+  type: 'text'
+  x: number
+  y: number
+  text: string
+  fontSize?: number
+}
+
+export type BoardElement = StickyNoteElement | TextElement

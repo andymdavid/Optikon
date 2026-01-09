@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 
-import type { BoardElement, StickyNoteElement } from '@shared/boardElements'
+import type { BoardElement, StickyNoteElement, TextElement } from '@shared/boardElements'
 
 export type CameraState = {
   offsetX: number
@@ -8,8 +8,7 @@ export type CameraState = {
   zoom: number
 }
 
-// TODO(phase-6.2.1): ElementMap is sticky-only; replace with a union map once TextElement exists.
-type ElementMap = Record<string, StickyNoteElement>
+type ElementMap = Record<string, BoardElement>
 
 const initialCameraState: CameraState = {
   offsetX: 0,
@@ -48,6 +47,7 @@ const STICKY_TEXT_LINE_HEIGHT = 1.35
 const STICKY_PADDING_X = 16
 const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
+const TEXT_DEFAULT_FONT_SIZE = 48
 type Rect = { left: number; top: number; right: number; bottom: number }
 
 // TODO(phase-6.2.2): All geometry helpers below assume every element is a sticky; introduce
@@ -118,11 +118,21 @@ const resolveStickyFontSize = (value: unknown) => {
   return BASE_STICKY_FONT_MAX
 }
 
+const resolveTextFontSize = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(1, value)
+  }
+  return TEXT_DEFAULT_FONT_SIZE
+}
+
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
 }
+
+const isStickyElement = (element: BoardElement | null | undefined): element is StickyNoteElement =>
+  !!element && element.type === 'sticky'
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -243,8 +253,6 @@ function logOutbound(message: unknown) {
 
 const randomId = () => Math.random().toString(36).slice(2, 10)
 
-// TODO(phase-6.2.1): Promote this to a generic parseElement(type) helper so TextElement payloads
-// can be validated/deserialized without duplicating WS/persistence plumbing.
 function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
   const element = raw as Partial<StickyNoteElement>
@@ -271,6 +279,32 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
     size,
     fontSize,
   }
+}
+
+function parseTextElement(raw: unknown): TextElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<TextElement>
+  if (element.type !== 'text') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.text !== 'string') return null
+  const fontSize = resolveTextFontSize(element.fontSize)
+  return {
+    id: element.id,
+    type: 'text',
+    x: element.x,
+    y: element.y,
+    text: element.text,
+    fontSize,
+  }
+}
+
+function parseBoardElement(raw: unknown): BoardElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const type = (raw as { type?: string }).type
+  if (type === 'sticky') return parseStickyElement(raw)
+  if (type === 'text') return parseTextElement(raw)
+  return null
 }
 
 function setsEqual(a: Set<string>, b: Set<string>) {
@@ -581,9 +615,7 @@ export function CanvasBoard() {
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom]
   )
 
-  // TODO(phase-6.2.1): Every persistence + realtime helper below accepts StickyNoteElement.
-  // Introduce element-type tagging so TextElement instances flow through the same pipes.
-  const upsertSticky = useCallback((element: StickyNoteElement) => {
+  const upsertElement = useCallback((element: BoardElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
 
@@ -599,7 +631,7 @@ export function CanvasBoard() {
   }, [])
 
   const sendElementUpdate = useCallback(
-    (element: StickyNoteElement) => {
+    (element: BoardElement) => {
       const socket = socketRef.current
       if (!socket || socket.readyState !== WebSocket.OPEN || !joinedRef.current || !boardId) return
       const message = {
@@ -613,7 +645,7 @@ export function CanvasBoard() {
   )
 
   const sendElementsUpdate = useCallback(
-    (updated: StickyNoteElement[]) => {
+    (updated: BoardElement[]) => {
       const socket = socketRef.current
       if (!socket || !joinedRef.current || !boardId) return
       if (updated.length === 0) return
@@ -628,7 +660,7 @@ export function CanvasBoard() {
   )
 
   const persistElementsUpdate = useCallback(
-    async (board: string, elementsToPersist: StickyNoteElement[]) => {
+    async (board: string, elementsToPersist: BoardElement[]) => {
       if (elementsToPersist.length === 0) return
       try {
         const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
@@ -711,7 +743,7 @@ export function CanvasBoard() {
       const { max, min } = getStickyFontBounds(draft)
       const fontSize = ctx ? fitFontSize(ctx, draft.text, inner.width, inner.height, max, min) : max
       const element = { ...draft, fontSize }
-      upsertSticky(element)
+      upsertElement(element)
       sendElementUpdate(element)
       setSelection(new Set([element.id]))
       void (async () => {
@@ -727,7 +759,7 @@ export function CanvasBoard() {
         }
       })()
     },
-    [boardId, getMeasureContext, screenToBoard, sendElementUpdate, setSelection, upsertSticky]
+    [boardId, getMeasureContext, screenToBoard, sendElementUpdate, setSelection, upsertElement]
   )
 
   const removeElements = useCallback((ids: string[]) => {
@@ -801,6 +833,7 @@ export function CanvasBoard() {
       const values = Object.values(elements)
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
+        if (!isStickyElement(element)) continue
         const size = getStickySize(element)
         if (
           x >= element.x &&
@@ -837,7 +870,7 @@ export function CanvasBoard() {
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!element) return null
+      if (!isStickyElement(element)) return null
       const frame = getSelectionFrameRect(element, cameraState)
       const handles: Array<{ handle: 'nw' | 'ne' | 'sw' | 'se'; x: number; y: number }> = [
         { handle: 'nw', x: frame.x, y: frame.y },
@@ -1075,7 +1108,7 @@ export function CanvasBoard() {
       const boardPoint = screenToBoard(canvasPoint)
       const deltaX = boardPoint.x - dragState.startPointer.x
       const deltaY = boardPoint.y - dragState.startPointer.y
-      const updatedElements: StickyNoteElement[] = []
+      const updatedElements: BoardElement[] = []
       setElements((prev) => {
         const next = { ...prev }
         let changed = false
@@ -1127,7 +1160,7 @@ export function CanvasBoard() {
         const dragState = dragStateRef.current
         dragStateRef.current = null
         if (!dragState) return
-        const finalElements: StickyNoteElement[] = []
+        const finalElements: BoardElement[] = []
         dragState.ids.forEach((id) => {
           const element = elements[id]
           if (element) finalElements.push(element)
@@ -1165,12 +1198,14 @@ export function CanvasBoard() {
       if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
         const matchingIds = Object.values(elements)
-          .filter((element) => rectsIntersect(selectionRect, getStickyBounds(element)))
+          .filter((element): element is StickyNoteElement =>
+            isStickyElement(element) && rectsIntersect(selectionRect, getStickyBounds(element))
+          )
           .map((element) => element.id)
 
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
         if (matchingIds.length === 0) {
-          const sample = Object.values(elements)[0]
+          const sample = Object.values(elements).find((element) => isStickyElement(element))
           if (sample) console.log('[marquee sample]', getStickyBounds(sample))
         }
 
@@ -1351,6 +1386,7 @@ export function CanvasBoard() {
     const adjustments: StickyNoteElement[] = []
     const editingId = editingStateRef.current?.id
     Object.values(elements).forEach((element) => {
+      if (!isStickyElement(element)) return
       if (element.id === editingId) return
       const inner = getStickyInnerSize(element)
       const bounds = getStickyFontBounds(element)
@@ -1386,13 +1422,11 @@ export function CanvasBoard() {
         const data = (await response.json()) as {
           elements?: Array<{ id?: string; element?: BoardElement | null }>
         }
-        // TODO(phase-6.2.1): Persisted payloads only parse stickies; add type-keyed parsing once
-        // TextElement rows exist in the DB.
-        const parsed: StickyNoteElement[] = []
+        const parsed: BoardElement[] = []
         data.elements?.forEach((entry) => {
-          const sticky = parseStickyElement(entry?.element)
-          if (sticky) {
-            parsed.push(sticky)
+          const parsedElement = parseBoardElement(entry?.element)
+          if (parsedElement) {
+            parsed.push(parsedElement)
           }
         })
         if (!cancelled && parsed.length > 0) {
@@ -1456,14 +1490,13 @@ export function CanvasBoard() {
             joinedRef.current = true
           } else if (parsed?.type === 'elementUpdate') {
             console.log('[ws in elementUpdate]', parsed.payload)
-            // TODO(phase-6.2.1): Dispatch on element.type once TextElement is emitted over WS.
-            const incoming = parseStickyElement((parsed.payload as { element?: unknown })?.element)
-            if (incoming) upsertSticky(incoming)
+            const incoming = parseBoardElement((parsed.payload as { element?: unknown })?.element)
+            if (incoming) upsertElement(incoming)
           } else if (parsed?.type === 'elementsUpdate') {
             const payload = parsed.payload as { elements?: BoardElement[] }
-            const updated = payload?.elements
-              ?.map((el) => parseStickyElement(el))
-              ?.filter(Boolean) as StickyNoteElement[]
+            const updated = (payload?.elements ?? [])
+              .map((element) => parseBoardElement(element))
+              .filter((element): element is BoardElement => !!element)
             if (updated.length > 0) {
               setElements((prev) => {
                 const next = { ...prev }
@@ -1524,7 +1557,7 @@ export function CanvasBoard() {
       }
       socket.close()
     }
-  }, [boardId, removeElements, sendElementUpdate, upsertSticky])
+  }, [boardId, removeElements, sendElementUpdate, upsertElement])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -1547,20 +1580,22 @@ export function CanvasBoard() {
     // TODO(phase-6.2.3): Rendering dispatch is sticky-only; introduce drawElement(element)
     // so TextElement draws with its own renderer without reworking this loop.
     values.forEach((element) => {
+      if (!isStickyElement(element)) return
       drawSticky(ctx, element, cameraState)
     })
     const selectedArray = Array.from(selectedIds)
     selectedArray.forEach((id) => {
       const element = elements[id]
-      if (!element) return
+      if (!isStickyElement(element)) return
       const withHandles = selectedArray.length === 1 && selectedArray[0] === id
       drawStickySelection(ctx, element, cameraState, { withHandles })
     })
   }, [cameraState, elements, selectedIds])
 
   const editingElement = editingState ? elements[editingState.id] : null
-  const editingRect = editingElement ? getStickyScreenRect(editingElement, cameraState) : null
-  const editingInnerSize = editingElement ? getStickyInnerSize(editingElement) : null
+  const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
+  const editingRect = editingStickyElement ? getStickyScreenRect(editingStickyElement, cameraState) : null
+  const editingInnerSize = editingStickyElement ? getStickyInnerSize(editingStickyElement) : null
   const editingPaddingX = STICKY_PADDING_X * cameraState.zoom
   const editingPaddingY = STICKY_PADDING_Y * cameraState.zoom
   const editingContentWidth = editingInnerSize ? editingInnerSize.width : null
@@ -1570,7 +1605,7 @@ export function CanvasBoard() {
   const updateEditingText = useCallback(
     (nextValue: string) => {
       const ctx = getMeasureContext()
-      const target = editingElement
+      const target = editingStickyElement
       if (!ctx || !target) {
         updateEditingState((prev) => (prev ? { ...prev, text: nextValue } : prev))
         return
@@ -1583,7 +1618,7 @@ export function CanvasBoard() {
         return { ...prev, text: nextValue, fontSize: fitted }
       })
     },
-    [editingElement, getMeasureContext, updateEditingState]
+    [editingStickyElement, getMeasureContext, updateEditingState]
   )
 
   const syncEditingTextFromDom = useCallback(() => {
@@ -1627,22 +1662,22 @@ export function CanvasBoard() {
   }, [editingState?.id])
 
   useEffect(() => {
-    if (editingState && !editingElement) {
+    if (editingState && !editingStickyElement) {
       updateEditingState(null)
     }
-  }, [editingElement, editingState, updateEditingState])
+  }, [editingState, editingStickyElement, updateEditingState])
 
   useEffect(() => {
     const ctx = getMeasureContext()
     const current = editingStateRef.current
-    if (!ctx || !current || !editingElement) return
-    const inner = getStickyInnerSize(editingElement)
-    const bounds = getStickyFontBounds(editingElement)
+    if (!ctx || !current || !editingStickyElement) return
+    const inner = getStickyInnerSize(editingStickyElement)
+    const bounds = getStickyFontBounds(editingStickyElement)
     const fitted = fitFontSize(ctx, current.text, inner.width, inner.height, bounds.max, bounds.min)
     if (Math.abs(fitted - current.fontSize) > 0.1) {
       updateEditingState((prev) => (prev ? { ...prev, fontSize: fitted } : prev))
     }
-  }, [editingElement, editingElement?.size, getMeasureContext, updateEditingState])
+  }, [editingStickyElement, editingStickyElement?.size, getMeasureContext, updateEditingState])
 
   return (
     <section
@@ -1680,7 +1715,7 @@ export function CanvasBoard() {
         />
       )}
       {editingState &&
-        editingElement &&
+        editingStickyElement &&
         editingRect &&
         editingFontSizePx !== null &&
         editingContentWidth !== null &&
