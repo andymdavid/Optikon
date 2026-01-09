@@ -48,6 +48,7 @@ const STICKY_PADDING_X = 16
 const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 const TEXT_DEFAULT_FONT_SIZE = 48
+const TEXT_COLOR = '#0f172a'
 const TEXT_BOUNDS_PADDING_X = 12
 const TEXT_BOUNDS_PADDING_Y = 8
 const TEXT_BOUNDS_CHAR_WIDTH = 0.55
@@ -500,6 +501,32 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.restore()
 }
 
+function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
+  const bounds = getTextBounds(element)
+  const width = (bounds.right - bounds.left) * camera.zoom
+  const height = (bounds.bottom - bounds.top) * camera.zoom
+  const screenX = (bounds.left + camera.offsetX) * camera.zoom
+  const screenY = (bounds.top + camera.offsetY) * camera.zoom
+  const fontSize = resolveTextFontSize(element.fontSize) * camera.zoom
+  const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
+  const innerWidth = Math.max(0, width - TEXT_BOUNDS_PADDING_X * 2 * camera.zoom)
+  ctx.save()
+  ctx.fillStyle = TEXT_COLOR
+  ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  const text = typeof element.text === 'string' ? element.text : ''
+  const lines = wrapStickyText(ctx, text, innerWidth)
+  const textX = screenX + TEXT_BOUNDS_PADDING_X * camera.zoom
+  let textY = screenY + TEXT_BOUNDS_PADDING_Y * camera.zoom
+  lines.forEach((line) => {
+    ctx.fillText(line, textX, textY, innerWidth)
+    textY += lineHeight
+    if (textY - screenY > height) return
+  })
+  ctx.restore()
+}
+
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -530,6 +557,34 @@ function drawStickySelection(
     })
   }
   ctx.restore()
+}
+
+function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
+  const bounds = getElementBounds(element)
+  const x = (bounds.left + camera.offsetX) * camera.zoom
+  const y = (bounds.top + camera.offsetY) * camera.zoom
+  const width = (bounds.right - bounds.left) * camera.zoom
+  const height = (bounds.bottom - bounds.top) * camera.zoom
+  ctx.save()
+  ctx.strokeStyle = ACCENT_COLOR
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(x, y, width, height)
+  ctx.restore()
+}
+
+function drawElementSelection(
+  ctx: CanvasRenderingContext2D,
+  element: BoardElement,
+  camera: CameraState,
+  options: { withHandles: boolean }
+) {
+  if (isStickyElement(element)) {
+    drawStickySelection(ctx, element, camera, options)
+    return
+  }
+  if (isTextElement(element)) {
+    drawTextSelection(ctx, element, camera)
+  }
 }
 
 export function CanvasBoard() {
@@ -1595,18 +1650,19 @@ export function CanvasBoard() {
     ctx.fillRect(0, 0, cssWidth, cssHeight)
     drawBoardGrid(ctx, cameraState, cssWidth, cssHeight)
     const values = Object.values(elements)
-    // TODO(phase-6.2.3): Rendering dispatch is sticky-only; introduce drawElement(element)
-    // so TextElement draws with its own renderer without reworking this loop.
     values.forEach((element) => {
-      if (!isStickyElement(element)) return
-      drawSticky(ctx, element, cameraState)
+      if (isStickyElement(element)) {
+        drawSticky(ctx, element, cameraState)
+      } else if (isTextElement(element)) {
+        drawTextElement(ctx, element, cameraState)
+      }
     })
     const selectedArray = Array.from(selectedIds)
     selectedArray.forEach((id) => {
       const element = elements[id]
-      if (!isStickyElement(element)) return
-      const withHandles = selectedArray.length === 1 && selectedArray[0] === id
-      drawStickySelection(ctx, element, cameraState, { withHandles })
+      if (!element) return
+      const withHandles = isStickyElement(element) && selectedArray.length === 1 && selectedArray[0] === id
+      drawElementSelection(ctx, element, cameraState, { withHandles })
     })
   }, [cameraState, elements, selectedIds])
 
