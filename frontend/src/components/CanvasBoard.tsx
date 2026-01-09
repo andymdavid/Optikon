@@ -169,13 +169,12 @@ type GridSpec = {
   secondaryAlpha: number
 }
 
-// TODO(phase-6.2.5): EditingState only captures sticky note text/font; extend to describe
-// TextElement editing (and other element-specific controls) when we generalize the overlay.
 type EditingState = {
   id: string
   text: string
   originalText: string
   fontSize: number
+  elementType: 'sticky' | 'text'
 }
 
 function computeGridSpec(zoom: number): GridSpec {
@@ -769,7 +768,13 @@ export function CanvasBoard() {
       const inner = getStickyInnerSize(element)
       const { max, min } = getStickyFontBounds(element)
       const fitted = ctx ? fitFontSize(ctx, element.text, inner.width, inner.height, max, min) : max
-      updateEditingState({ id: element.id, text: element.text, originalText: element.text, fontSize: fitted })
+      updateEditingState({
+        id: element.id,
+        elementType: 'sticky',
+        text: element.text,
+        originalText: element.text,
+        fontSize: fitted,
+      })
     },
     [getMeasureContext, releaseClickSuppression, setSelection, updateEditingState]
   )
@@ -780,7 +785,13 @@ export function CanvasBoard() {
       releaseClickSuppression()
       setSelection(new Set([element.id]))
       const fontSize = resolveTextFontSize(element.fontSize)
-      updateEditingState({ id: element.id, text: element.text, originalText: element.text, fontSize })
+      updateEditingState({
+        id: element.id,
+        elementType: 'text',
+        text: element.text,
+        originalText: element.text,
+        fontSize,
+      })
     },
     [releaseClickSuppression, setSelection, updateEditingState]
   )
@@ -789,14 +800,23 @@ export function CanvasBoard() {
     const current = editingStateRef.current
     if (!current) return
     updateEditingState(null)
-    let updatedElement: StickyNoteElement | null = null
+    let updatedElement: BoardElement | null = null
     setElements((prev) => {
       const target = prev[current.id]
       if (!target) return prev
-      const nextFontSize = clampFontSizeForElement(target, resolveStickyFontSize(current.fontSize))
-      if (target.text === current.text && resolveStickyFontSize(target.fontSize) === nextFontSize) return prev
-      updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
-      return { ...prev, [current.id]: updatedElement }
+      if (isStickyElement(target)) {
+        const nextFontSize = clampFontSizeForElement(target, resolveStickyFontSize(current.fontSize))
+        if (target.text === current.text && resolveStickyFontSize(target.fontSize) === nextFontSize) return prev
+        updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
+        return { ...prev, [current.id]: updatedElement }
+      }
+      if (isTextElement(target)) {
+        const nextFontSize = resolveTextFontSize(current.fontSize)
+        if (target.text === current.text && resolveTextFontSize(target.fontSize) === nextFontSize) return prev
+        updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
+        return { ...prev, [current.id]: updatedElement }
+      }
+      return prev
     })
     if (updatedElement) {
       sendElementsUpdate([updatedElement])
@@ -1742,22 +1762,34 @@ export function CanvasBoard() {
   const editingPaddingY = STICKY_PADDING_Y * cameraState.zoom
   const editingContentWidth = editingInnerSize ? editingInnerSize.width : null
   const editingContentHeight = editingInnerSize ? editingInnerSize.height : null
-  const editingFontSizePx = editingState ? editingState.fontSize * cameraState.zoom : null
+  const editingStickyFontSizePx =
+    editingState?.elementType === 'sticky' ? editingState.fontSize * cameraState.zoom : null
+  const editingTextElement = isTextElement(editingElement) ? editingElement : null
+  const editingTextBounds = editingTextElement ? getElementBounds(editingTextElement) : null
+  const editingTextRect = editingTextBounds
+    ? {
+        x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
+        y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
+        width: (editingTextBounds.right - editingTextBounds.left) * cameraState.zoom,
+        height: (editingTextBounds.bottom - editingTextBounds.top) * cameraState.zoom,
+      }
+    : null
+  const editingTextFontSizePx =
+    editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
       const ctx = getMeasureContext()
-      const target = editingStickyElement
-      if (!ctx || !target) {
-        updateEditingState((prev) => (prev ? { ...prev, text: nextValue } : prev))
-        return
-      }
-      const inner = getStickyInnerSize(target)
-      const bounds = getStickyFontBounds(target)
+      const stickyTarget = editingStickyElement
       updateEditingState((prev) => {
         if (!prev) return prev
-        const fitted = fitFontSize(ctx, nextValue, inner.width, inner.height, bounds.max, bounds.min)
-        return { ...prev, text: nextValue, fontSize: fitted }
+        if (prev.elementType === 'sticky' && stickyTarget && ctx) {
+          const inner = getStickyInnerSize(stickyTarget)
+          const bounds = getStickyFontBounds(stickyTarget)
+          const fitted = fitFontSize(ctx, nextValue, inner.width, inner.height, bounds.max, bounds.min)
+          return { ...prev, text: nextValue, fontSize: fitted }
+        }
+        return { ...prev, text: nextValue }
       })
     },
     [editingStickyElement, getMeasureContext, updateEditingState]
@@ -1856,10 +1888,10 @@ export function CanvasBoard() {
           }}
         />
       )}
-      {editingState &&
+      {editingState?.elementType === 'sticky' &&
         editingStickyElement &&
         editingRect &&
-        editingFontSizePx !== null &&
+        editingStickyFontSizePx !== null &&
         editingContentWidth !== null &&
         editingContentHeight !== null && (
           // TODO(phase-6.2.5): Overlay styling + DOM structure is sticky-specific; split into
@@ -1872,7 +1904,7 @@ export function CanvasBoard() {
               width: editingRect.size,
               height: editingRect.size,
               padding: `${editingPaddingY}px ${editingPaddingX}px`,
-              fontSize: `${editingFontSizePx}px`,
+              fontSize: `${editingStickyFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
             }}
             onPointerDown={(event) => {
@@ -1882,6 +1914,53 @@ export function CanvasBoard() {
             <div
               ref={editingContentRef}
               className="canvas-board__sticky-editor-content"
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="true"
+              spellCheck={false}
+              onInput={syncEditingTextFromDom}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  commitEditing()
+                }
+              }}
+              onBlur={() => {
+                commitEditing()
+              }}
+              onPaste={(event) => {
+                event.preventDefault()
+                const text = event.clipboardData?.getData('text/plain') ?? ''
+                insertPlainText(text)
+              }}
+            />
+          </div>
+        )}
+      {editingState?.elementType === 'text' &&
+        editingTextElement &&
+        editingTextRect &&
+        editingTextFontSizePx !== null && (
+          <div
+            className="canvas-board__text-editor"
+            style={{
+              left: editingTextRect.x,
+              top: editingTextRect.y,
+              width: editingTextRect.width,
+              height: editingTextRect.height,
+              fontSize: `${editingTextFontSizePx}px`,
+              lineHeight: STICKY_TEXT_LINE_HEIGHT,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div
+              ref={editingContentRef}
+              className="canvas-board__text-editor-content"
               contentEditable
               suppressContentEditableWarning
               role="textbox"
