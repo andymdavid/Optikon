@@ -49,10 +49,9 @@ const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 const TEXT_DEFAULT_FONT_SIZE = 48
 const TEXT_COLOR = '#0f172a'
-const TEXT_BOUNDS_PADDING_X = 12
-const TEXT_BOUNDS_PADDING_Y = 8
+const TEXT_BOUNDS_PADDING_X = 6
+const TEXT_BOUNDS_PADDING_Y = 2
 const TEXT_BOUNDS_CHAR_WIDTH = 0.55
-const TEXT_MIN_WIDTH = 160
 const TEXT_MAX_WIDTH = 1200
 type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode = 'select' | 'sticky' | 'text'
@@ -79,29 +78,26 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-type TextBounds = Rect & { innerHeight: number }
-
-const getTextBounds = (element: TextElement): TextBounds => {
+const getTextBounds = (element: TextElement): Rect => {
   const fontSize = resolveTextFontSize(element.fontSize)
   const text = typeof element.text === 'string' ? element.text : ''
   const rawLines = text.length > 0 ? text.split(/\n/) : ['']
   const longest = rawLines.reduce((max, line) => Math.max(max, line.length), 0)
   const baseWidth = Math.max(fontSize, longest * fontSize * TEXT_BOUNDS_CHAR_WIDTH)
-  const clampedInnerWidth = Math.min(TEXT_MAX_WIDTH - TEXT_BOUNDS_PADDING_X * 2, Math.max(TEXT_MIN_WIDTH - TEXT_BOUNDS_PADDING_X * 2, baseWidth))
-  const maxCharsPerLine = Math.max(1, Math.floor(clampedInnerWidth / (fontSize * TEXT_BOUNDS_CHAR_WIDTH)))
+  const maxInnerWidth = Math.max(fontSize, TEXT_MAX_WIDTH - TEXT_BOUNDS_PADDING_X * 2)
+  const innerWidth = Math.min(maxInnerWidth, baseWidth)
+  const maxCharsPerLine = Math.max(1, Math.floor(innerWidth / (fontSize * TEXT_BOUNDS_CHAR_WIDTH)))
   const wrappedLineCount = rawLines.reduce((count, line) => {
     if (line.length === 0) return count + 1
     return count + Math.max(1, Math.ceil(line.length / maxCharsPerLine))
   }, 0)
-  const width = clampedInnerWidth + TEXT_BOUNDS_PADDING_X * 2
-  const innerHeight = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT
-  const height = innerHeight + TEXT_BOUNDS_PADDING_Y * 2
+  const width = innerWidth + TEXT_BOUNDS_PADDING_X * 2
+  const height = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT + TEXT_BOUNDS_PADDING_Y * 2
   return {
     left: element.x,
     top: element.y,
     right: element.x + width,
     bottom: element.y + height,
-    innerHeight,
   }
 }
 
@@ -1825,7 +1821,6 @@ export function CanvasBoard() {
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
         width: (editingTextBounds.right - editingTextBounds.left) * cameraState.zoom,
         height: (editingTextBounds.bottom - editingTextBounds.top) * cameraState.zoom,
-        innerHeight: editingTextBounds.innerHeight * cameraState.zoom,
       }
     : null
   const editingTextFontSizePx =
@@ -2008,7 +2003,7 @@ export function CanvasBoard() {
               left: editingTextRect.x,
               top: editingTextRect.y,
               width: editingTextRect.width,
-              height: editingTextRect.innerHeight,
+              height: editingTextRect.height,
               fontSize: `${editingTextFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
               padding: `${editingTextPaddingY}px ${editingTextPaddingX}px`,
