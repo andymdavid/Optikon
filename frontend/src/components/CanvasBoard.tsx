@@ -568,7 +568,7 @@ function drawStickySelection(
 }
 
 function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
-  const bounds = getElementBounds(element)
+  const bounds = getTextBounds(element)
   const x = (bounds.left + camera.offsetX) * camera.zoom
   const y = (bounds.top + camera.offsetY) * camera.zoom
   const width = (bounds.right - bounds.left) * camera.zoom
