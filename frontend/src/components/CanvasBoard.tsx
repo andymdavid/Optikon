@@ -79,7 +79,9 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-const getTextBounds = (element: TextElement): Rect => {
+type TextBounds = Rect & { innerHeight: number }
+
+const getTextBounds = (element: TextElement): TextBounds => {
   const fontSize = resolveTextFontSize(element.fontSize)
   const text = typeof element.text === 'string' ? element.text : ''
   const rawLines = text.length > 0 ? text.split(/\n/) : ['']
@@ -92,12 +94,14 @@ const getTextBounds = (element: TextElement): Rect => {
     return count + Math.max(1, Math.ceil(line.length / maxCharsPerLine))
   }, 0)
   const width = clampedInnerWidth + TEXT_BOUNDS_PADDING_X * 2
-  const height = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT + TEXT_BOUNDS_PADDING_Y * 2
+  const innerHeight = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT
+  const height = innerHeight + TEXT_BOUNDS_PADDING_Y * 2
   return {
     left: element.x,
     top: element.y,
     right: element.x + width,
     bottom: element.y + height,
+    innerHeight,
   }
 }
 
@@ -1798,6 +1802,7 @@ export function CanvasBoard() {
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
         width: (editingTextBounds.right - editingTextBounds.left) * cameraState.zoom,
         height: (editingTextBounds.bottom - editingTextBounds.top) * cameraState.zoom,
+        innerHeight: editingTextBounds.innerHeight * cameraState.zoom,
       }
     : null
   const editingTextFontSizePx =
@@ -1980,7 +1985,7 @@ export function CanvasBoard() {
               left: editingTextRect.x,
               top: editingTextRect.y,
               width: editingTextRect.width,
-              height: editingTextRect.height,
+              height: editingTextRect.innerHeight,
               fontSize: `${editingTextFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
               padding: `${editingTextPaddingY}px ${editingTextPaddingX}px`,
