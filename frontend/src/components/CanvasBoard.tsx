@@ -50,8 +50,15 @@ const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 const TEXT_DEFAULT_FONT_SIZE = 48
 const TEXT_COLOR = '#0f172a'
 const TEXT_DEFAULT_MAX_WIDTH = 800
+const TEXT_MIN_WRAP_WIDTH = 120
+const TEXT_MAX_WRAP_WIDTH = 3200
 const TEXT_SAFETY_INSET = 2
 const TEXT_LINE_HEIGHT = 1.18
+const TEXT_MIN_SCALE = 0.2
+const TEXT_MAX_SCALE = 6
+const TEXT_ROTATION_HANDLE_OFFSET = 32
+const TEXT_ROTATION_SNAP_EPSILON = (5 * Math.PI) / 180
+const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
@@ -194,23 +201,33 @@ const measureTextLayout = (
   }
 }
 
-const getTextLayout = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): TextLayout =>
-  measureTextLayout(
-    ctx,
-    element.text,
-    resolveTextFontSize(element.fontSize) * zoom,
-    TEXT_DEFAULT_MAX_WIDTH * zoom,
-    STICKY_FONT_FAMILY,
-    TEXT_LINE_HEIGHT
-  )
+type TextElementLayoutInfo = {
+  layout: TextLayout
+  wrapWidth: number
+  width: number
+  height: number
+  inset: number
+}
 
 const getTextLayoutForContent = (
   text: string,
   fontSize: number,
-  zoom: number,
+  wrapWidth: number,
   ctx: CanvasRenderingContext2D | null
-): TextLayout =>
-  measureTextLayout(ctx, text, fontSize * zoom, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
+): TextLayout => measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
+
+const getTextElementLayout = (
+  element: TextElement,
+  ctx: CanvasRenderingContext2D | null
+): TextElementLayoutInfo => {
+  const fontSize = resolveTextFontSize(element.fontSize)
+  const wrapWidth = resolveTextWrapWidth(element.w)
+  const layout = getTextLayoutForContent(element.text ?? '', fontSize, wrapWidth, ctx)
+  const inset = TEXT_SAFETY_INSET
+  const height = layout.totalHeight + inset * 2
+  const width = wrapWidth + inset * 2
+  return { layout, wrapWidth, width, height, inset }
+}
 
 const getStickySize = (element: StickyNoteElement) => {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -227,22 +244,63 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-const getTextBounds = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): Rect => {
-  const layout = getTextLayout(element, zoom, ctx)
-  const insetBoard = TEXT_SAFETY_INSET / zoom
-  const width = layout.blockWidth / zoom + insetBoard * 2
-  const height = layout.totalHeight / zoom + insetBoard * 2
-  return {
-    left: element.x,
-    top: element.y,
-    right: element.x + width,
-    bottom: element.y + height,
-  }
+type TextElementBounds = {
+  layout: TextElementLayoutInfo
+  center: { x: number; y: number }
+  rotation: number
+  scale: number
+  width: number
+  height: number
+  corners: Array<{ x: number; y: number }>
+  aabb: Rect
 }
 
-const getElementBounds = (element: BoardElement, zoom: number, ctx: CanvasRenderingContext2D | null): Rect => {
+const getTextElementBounds = (
+  element: TextElement,
+  ctx: CanvasRenderingContext2D | null
+): TextElementBounds => {
+  const layoutInfo = getTextElementLayout(element, ctx)
+  const rotation = resolveTextRotation(element.rotation)
+  const scale = resolveTextScale(element.scale)
+  const width = layoutInfo.width
+  const height = layoutInfo.height
+  const center = {
+    x: element.x + width / 2,
+    y: element.y + height / 2,
+  }
+  const halfWidth = width / 2
+  const halfHeight = height / 2
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  const transform = (dx: number, dy: number) => {
+    const scaledX = dx * scale
+    const scaledY = dy * scale
+    return {
+      x: center.x + scaledX * cos - scaledY * sin,
+      y: center.y + scaledX * sin + scaledY * cos,
+    }
+  }
+  const corners = [
+    transform(-halfWidth, -halfHeight),
+    transform(halfWidth, -halfHeight),
+    transform(halfWidth, halfHeight),
+    transform(-halfWidth, halfHeight),
+  ]
+  const aabb = corners.reduce<Rect>(
+    (acc, point) => ({
+      left: Math.min(acc.left, point.x),
+      right: Math.max(acc.right, point.x),
+      top: Math.min(acc.top, point.y),
+      bottom: Math.max(acc.bottom, point.y),
+    }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
+  )
+  return { layout: layoutInfo, center, rotation, scale, width, height, corners, aabb }
+}
+
+const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D | null): Rect => {
   if (isStickyElement(element)) return getStickyBounds(element)
-  if (isTextElement(element)) return getTextBounds(element, zoom, ctx)
+  if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
@@ -296,6 +354,27 @@ const resolveTextFontSize = (value: unknown) => {
   return TEXT_DEFAULT_FONT_SIZE
 }
 
+const resolveTextWrapWidth = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
+  }
+  return TEXT_DEFAULT_MAX_WIDTH
+}
+
+const resolveTextScale = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
+  }
+  return 1
+}
+
+const resolveTextRotation = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  return 0
+}
+
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
@@ -323,6 +402,30 @@ type EditingState = {
   fontSize: number
   elementType: 'sticky' | 'text'
 }
+
+type TextTransformState =
+  | {
+      mode: 'scale'
+      pointerId: number
+      id: string
+      handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's'
+      startBounds: TextElementBounds
+    }
+  | {
+      mode: 'width'
+      pointerId: number
+      id: string
+      handle: 'e' | 'w'
+      startBounds: TextElementBounds
+    }
+  | {
+      mode: 'rotate'
+      pointerId: number
+      id: string
+      handle: 'rotate'
+      startBounds: TextElementBounds
+      startPointerAngle: number
+    }
 
 function computeGridSpec(zoom: number): GridSpec {
   if (zoom <= 0) {
@@ -462,6 +565,9 @@ function parseTextElement(raw: unknown): TextElement | null {
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   if (typeof element.text !== 'string') return null
   const fontSize = resolveTextFontSize(element.fontSize)
+  const wrapWidth = resolveTextWrapWidth(element.w)
+  const scale = resolveTextScale(element.scale)
+  const rotation = resolveTextRotation(element.rotation)
   return {
     id: element.id,
     type: 'text',
@@ -469,6 +575,9 @@ function parseTextElement(raw: unknown): TextElement | null {
     y: element.y,
     text: element.text,
     fontSize,
+    w: wrapWidth,
+    scale,
+    rotation,
   }
 }
 
@@ -673,18 +782,22 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
 
 function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
   const measureCtx = getSharedMeasureContext()
-  const layout = getTextLayout(element, camera.zoom, measureCtx)
-  const fontSize = resolveTextFontSize(element.fontSize) * camera.zoom
+  const bounds = getTextElementBounds(element, measureCtx)
+  const layoutInfo = bounds.layout
+  const fontSize = resolveTextFontSize(element.fontSize)
   ctx.save()
+  ctx.translate(camera.offsetX, camera.offsetY)
+  ctx.scale(camera.zoom, camera.zoom)
+  ctx.translate(bounds.center.x, bounds.center.y)
+  ctx.rotate(bounds.rotation)
+  ctx.scale(bounds.scale, bounds.scale)
+  ctx.translate(-bounds.width / 2 + layoutInfo.inset, -bounds.height / 2 + layoutInfo.inset)
   ctx.fillStyle = TEXT_COLOR
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left'
-  const insetScreen = TEXT_SAFETY_INSET
-  const baseX = (element.x + camera.offsetX) * camera.zoom + insetScreen
-  const baseY = (element.y + camera.offsetY) * camera.zoom + insetScreen
-  layout.lines.forEach((line, index) => {
-    ctx.fillText(line, baseX, baseY + layout.baselineOffsets[index])
+  layoutInfo.layout.lines.forEach((line, index) => {
+    ctx.fillText(line, 0, layoutInfo.layout.baselineOffsets[index])
   })
   ctx.restore()
 }
@@ -721,36 +834,145 @@ function drawStickySelection(
   ctx.restore()
 }
 
-function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
-  const measureCtx = getSharedMeasureContext()
-  const layout = getTextLayout(element, camera.zoom, measureCtx)
-  const insetBoard = TEXT_SAFETY_INSET / camera.zoom
-  const bounds = {
-    left: element.x,
-    top: element.y,
-    right: element.x + layout.maxLineWidth / camera.zoom + insetBoard * 2,
-    bottom: element.y + layout.totalHeight / camera.zoom + insetBoard * 2,
+type TextHandleSpec = {
+  kind: 'scale' | 'width' | 'rotate'
+  handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | 'rotate'
+  position: { x: number; y: number }
+  anchor?: { x: number; y: number }
+}
+
+const getTextHandleSpecs = (bounds: TextElementBounds): TextHandleSpec[] => {
+  const specs: TextHandleSpec[] = []
+  const cornerHandles: Array<{ handle: 'nw' | 'ne' | 'se' | 'sw'; index: number }> = [
+    { handle: 'nw', index: 0 },
+    { handle: 'ne', index: 1 },
+    { handle: 'se', index: 2 },
+    { handle: 'sw', index: 3 },
+  ]
+  cornerHandles.forEach(({ handle, index }) => {
+    specs.push({ kind: 'scale', handle, position: bounds.corners[index] })
+  })
+  const midpoint = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  })
+  const topCenter = midpoint(bounds.corners[0], bounds.corners[1])
+  const rightCenter = midpoint(bounds.corners[1], bounds.corners[2])
+  const bottomCenter = midpoint(bounds.corners[2], bounds.corners[3])
+  const leftCenter = midpoint(bounds.corners[3], bounds.corners[0])
+  specs.push({ kind: 'scale', handle: 'n', position: topCenter })
+  specs.push({ kind: 'scale', handle: 's', position: bottomCenter })
+  specs.push({ kind: 'width', handle: 'e', position: rightCenter })
+  specs.push({ kind: 'width', handle: 'w', position: leftCenter })
+  const cos = Math.cos(bounds.rotation)
+  const sin = Math.sin(bounds.rotation)
+  const offset = bounds.height / 2 * bounds.scale + TEXT_ROTATION_HANDLE_OFFSET
+  const rotationLocal = { x: 0, y: -offset }
+  const rotationPosition = {
+    x: bounds.center.x + rotationLocal.x * cos - rotationLocal.y * sin,
+    y: bounds.center.y + rotationLocal.x * sin + rotationLocal.y * cos,
   }
-  const x = (bounds.left + camera.offsetX) * camera.zoom
-  const y = (bounds.top + camera.offsetY) * camera.zoom
-  const width = (bounds.right - bounds.left) * camera.zoom
-  const height = (bounds.bottom - bounds.top) * camera.zoom
+  specs.push({ kind: 'rotate', handle: 'rotate', position: rotationPosition, anchor: topCenter })
+  return specs
+}
+
+const toTextLocalCoordinates = (point: { x: number; y: number }, bounds: TextElementBounds) => {
+  const dx = point.x - bounds.center.x
+  const dy = point.y - bounds.center.y
+  const cos = Math.cos(bounds.rotation)
+  const sin = Math.sin(bounds.rotation)
+  const rotatedX = dx * cos + dy * sin
+  const rotatedY = -dx * sin + dy * cos
+  return {
+    x: rotatedX / bounds.scale,
+    y: rotatedY / bounds.scale,
+  }
+}
+
+const getTextHandleLocalPosition = (
+  handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
+  bounds: TextElementBounds
+) => {
+  const halfWidth = bounds.width / 2
+  const halfHeight = bounds.height / 2
+  switch (handle) {
+    case 'nw':
+      return { x: -halfWidth, y: -halfHeight }
+    case 'ne':
+      return { x: halfWidth, y: -halfHeight }
+    case 'se':
+      return { x: halfWidth, y: halfHeight }
+    case 'sw':
+      return { x: -halfWidth, y: halfHeight }
+    case 'n':
+      return { x: 0, y: -halfHeight }
+    case 's':
+    default:
+      return { x: 0, y: halfHeight }
+  }
+}
+
+function drawTextSelection(
+  ctx: CanvasRenderingContext2D,
+  element: TextElement,
+  camera: CameraState,
+  options: { withHandles: boolean }
+) {
+  const measureCtx = getSharedMeasureContext()
+  const bounds = getTextElementBounds(element, measureCtx)
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
   ctx.save()
   ctx.strokeStyle = ACCENT_COLOR
   ctx.lineWidth = 1.5
-  ctx.strokeRect(x, y, width, height)
+  ctx.beginPath()
+  const first = toScreen(bounds.corners[0])
+  ctx.moveTo(first.x, first.y)
+  for (let index = 1; index < bounds.corners.length; index += 1) {
+    const point = toScreen(bounds.corners[index])
+    ctx.lineTo(point.x, point.y)
+  }
+  ctx.closePath()
+  ctx.stroke()
   if (TEXT_DEBUG_BOUNDS) {
     ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)'
     ctx.setLineDash([4, 4])
-    ctx.strokeRect(x, y, width, height)
-    ctx.setLineDash([])
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'
-    ctx.font = '12px "Inter", sans-serif'
-    ctx.fillText(
-      `zoom=${camera.zoom.toFixed(2)} maxWidth(px)=${layout.maxWidthPx.toFixed(1)} maxLine=${layout.maxLineWidth.toFixed(1)} totalHeight=${layout.totalHeight.toFixed(1)} lines=${layout.lines.length}`,
-      x,
-      y - 8
+    ctx.strokeRect(
+      (bounds.aabb.left + camera.offsetX) * camera.zoom,
+      (bounds.aabb.top + camera.offsetY) * camera.zoom,
+      (bounds.aabb.right - bounds.aabb.left) * camera.zoom,
+      (bounds.aabb.bottom - bounds.aabb.top) * camera.zoom
     )
+    ctx.setLineDash([])
+  }
+  if (options.withHandles) {
+    const handleRadius = RESIZE_HANDLE_RADIUS
+    const drawHandle = (point: { x: number; y: number }) => {
+      const screen = toScreen(point)
+      ctx.beginPath()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = ACCENT_COLOR
+      ctx.lineWidth = 1
+      ctx.arc(screen.x, screen.y, handleRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    const handles = getTextHandleSpecs(bounds)
+    handles.forEach((handle) => {
+      if (handle.kind === 'rotate' && handle.anchor) {
+        const anchor = toScreen(handle.anchor)
+        const rotationScreen = toScreen(handle.position)
+        ctx.beginPath()
+        ctx.strokeStyle = ACCENT_COLOR
+        ctx.lineWidth = 1
+        ctx.moveTo(anchor.x, anchor.y)
+        ctx.lineTo(rotationScreen.x, rotationScreen.y)
+        ctx.stroke()
+      }
+      drawHandle(handle.position)
+    })
   }
   ctx.restore()
 }
@@ -766,7 +988,7 @@ function drawElementSelection(
     return
   }
   if (isTextElement(element)) {
-    drawTextSelection(ctx, element, camera)
+    drawTextSelection(ctx, element, camera, options)
   }
 }
 
@@ -795,6 +1017,7 @@ export function CanvasBoard() {
         handle: 'nw' | 'ne' | 'sw' | 'se'
       }
   >(null)
+  const textTransformStateRef = useRef<TextTransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
   const panStateRef = useRef<{
@@ -806,7 +1029,7 @@ export function CanvasBoard() {
   } | null>(null)
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
-  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize'>('none')
+  const interactionModeRef = useRef<'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'textTransform'>('none')
   const marqueeCandidateRef = useRef<
     | null
     | {
@@ -1014,21 +1237,40 @@ export function CanvasBoard() {
     updateEditingState(null)
   }, [updateEditingState])
 
-const hitTestElement = useCallback(
-  (x: number, y: number): string | null => {
-    const values = Object.values(elements)
-    const ctx = getSharedMeasureContext()
-    for (let i = values.length - 1; i >= 0; i -= 1) {
-      const element = values[i]
-      const bounds = getElementBounds(element, cameraState.zoom, ctx)
-      if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
-        return element.id
+  const hitTestElement = useCallback(
+    (x: number, y: number): string | null => {
+      const values = Object.values(elements)
+      const ctx = getSharedMeasureContext()
+      const pointInPolygon = (point: { x: number; y: number }, corners: Array<{ x: number; y: number }>) => {
+        let inside = false
+        for (let i = 0, j = corners.length - 1; i < corners.length; j = i, i += 1) {
+          const xi = corners[i].x
+          const yi = corners[i].y
+          const xj = corners[j].x
+          const yj = corners[j].y
+          const intersect = yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi || 1e-9) + xi
+          if (intersect) inside = !inside
+        }
+        return inside
       }
-    }
-    return null
-  },
-  [cameraState.zoom, elements]
-)
+      for (let i = values.length - 1; i >= 0; i -= 1) {
+        const element = values[i]
+        if (isTextElement(element)) {
+          const bounds = getTextElementBounds(element, ctx)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
+        const aabb = getElementBounds(element, ctx)
+        if (x >= aabb.left && x <= aabb.right && y >= aabb.top && y <= aabb.bottom) {
+          return element.id
+        }
+      }
+      return null
+    },
+    [elements]
+  )
 
   const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
     try {
@@ -1080,6 +1322,9 @@ const hitTestElement = useCallback(
         y: boardPoint.y,
         text: '',
         fontSize: TEXT_DEFAULT_FONT_SIZE,
+        w: TEXT_DEFAULT_MAX_WIDTH,
+        scale: 1,
+        rotation: 0,
       }
       upsertElement(element)
       sendElementUpdate(element)
@@ -1225,6 +1470,35 @@ const hitTestElement = useCallback(
     [cameraState, elements]
   )
 
+  const hitTestTextHandle = useCallback(
+    (
+      point: { x: number; y: number }
+    ): { element: TextElement; bounds: TextElementBounds; handle: TextHandleSpec } | null => {
+      const selected = selectedIdsRef.current
+      if (selected.size !== 1) return null
+      const [id] = Array.from(selected)
+      const element = elements[id]
+      if (!isTextElement(element)) return null
+      const ctx = getSharedMeasureContext()
+      const bounds = getTextElementBounds(element, ctx)
+      const handles = getTextHandleSpecs(bounds)
+      const handleRadius = RESIZE_HANDLE_HIT_RADIUS
+      const toScreen = (position: { x: number; y: number }) => ({
+        x: (position.x + cameraState.offsetX) * cameraState.zoom,
+        y: (position.y + cameraState.offsetY) * cameraState.zoom,
+      })
+      for (const handle of handles) {
+        const screen = toScreen(handle.position)
+        const distance = Math.hypot(point.x - screen.x, point.y - screen.y)
+        if (distance <= handleRadius) {
+          return { element, bounds, handle }
+        }
+      }
+      return null
+    },
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
+  )
+
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
       const rect = event.currentTarget.getBoundingClientRect()
@@ -1267,6 +1541,45 @@ const hitTestElement = useCallback(
         setMarquee(null)
         return
       }
+      const boardPoint = screenToBoard(canvasPoint)
+      const textHandleHit = hitTestTextHandle(canvasPoint)
+      if (textHandleHit) {
+        event.preventDefault()
+        suppressClickRef.current = true
+        interactionModeRef.current = 'textTransform'
+        const handleSpec = textHandleHit.handle
+        if (handleSpec.kind === 'scale') {
+          textTransformStateRef.current = {
+            mode: 'scale',
+            pointerId: event.pointerId,
+            id: textHandleHit.element.id,
+            handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
+            startBounds: textHandleHit.bounds,
+          }
+        } else if (handleSpec.kind === 'width') {
+          textTransformStateRef.current = {
+            mode: 'width',
+            pointerId: event.pointerId,
+            id: textHandleHit.element.id,
+            handle: handleSpec.handle as 'e' | 'w',
+            startBounds: textHandleHit.bounds,
+          }
+        } else {
+          const angle = Math.atan2(
+            boardPoint.y - textHandleHit.bounds.center.y,
+            boardPoint.x - textHandleHit.bounds.center.x
+          )
+          textTransformStateRef.current = {
+            mode: 'rotate',
+            pointerId: event.pointerId,
+            id: textHandleHit.element.id,
+            handle: 'rotate',
+            startBounds: textHandleHit.bounds,
+            startPointerAngle: angle,
+          }
+        }
+        return
+      }
       const handleHit = hitTestResizeHandle(canvasPoint)
       if (handleHit) {
         event.preventDefault()
@@ -1298,7 +1611,6 @@ const hitTestElement = useCallback(
         }
         return
       }
-      const boardPoint = screenToBoard(canvasPoint)
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
@@ -1343,7 +1655,7 @@ const hitTestElement = useCallback(
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, screenToBoard, setMarquee, setSelection]
+    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, hitTestTextHandle, screenToBoard, setMarquee, setSelection]
   )
 
   const handlePointerMove = useCallback(
@@ -1392,6 +1704,76 @@ const hitTestElement = useCallback(
               }
             : prev
         )
+        return
+      }
+
+      const textTransformState = textTransformStateRef.current
+      if (mode === 'textTransform' && textTransformState && textTransformState.pointerId === event.pointerId) {
+        const boardPoint = screenToBoard(canvasPoint)
+        const measureCtx = getSharedMeasureContext()
+        let updatedElement: TextElement | null = null
+        setElements((prev) => {
+          const target = prev[textTransformState.id]
+          if (!target || !isTextElement(target)) return prev
+          let nextElement: TextElement | null = null
+          if (textTransformState.mode === 'width') {
+            const pointerLocal = toTextLocalCoordinates(boardPoint, textTransformState.startBounds)
+            const direction = textTransformState.handle === 'e' ? 1 : -1
+            const inset = textTransformState.startBounds.layout.inset
+            const minHalfWidth = (TEXT_MIN_WRAP_WIDTH + inset * 2) / 2
+            const targetHalf = direction * pointerLocal.x
+            const newHalfWidth = Math.max(minHalfWidth, targetHalf)
+            const newWidth = newHalfWidth * 2
+            const newWrapWidth = clamp(newWidth - inset * 2, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
+            const baseHalfWidth = textTransformState.startBounds.width / 2
+            const deltaHalf = newHalfWidth - baseHalfWidth
+            const cos = Math.cos(textTransformState.startBounds.rotation)
+            const sin = Math.sin(textTransformState.startBounds.rotation)
+            const shift = direction * deltaHalf * textTransformState.startBounds.scale
+            const newCenter = {
+              x: textTransformState.startBounds.center.x + shift * cos,
+              y: textTransformState.startBounds.center.y + shift * sin,
+            }
+            const provisional = { ...target, w: newWrapWidth }
+            const layoutInfo = getTextElementLayout(provisional, measureCtx)
+            const newX = newCenter.x - layoutInfo.width / 2
+            const newY = newCenter.y - layoutInfo.height / 2
+            nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
+          } else if (textTransformState.mode === 'scale') {
+            const pointerLocal = toTextLocalCoordinates(boardPoint, textTransformState.startBounds)
+            const handleVector = getTextHandleLocalPosition(textTransformState.handle, textTransformState.startBounds)
+            const denom = handleVector.x * handleVector.x + handleVector.y * handleVector.y
+            if (denom > 0.0001) {
+              const dot = pointerLocal.x * handleVector.x + pointerLocal.y * handleVector.y
+              const rawScale = Math.abs(dot / denom)
+              const nextScale = clamp(rawScale, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
+              nextElement = { ...target, scale: nextScale }
+            }
+          } else if (textTransformState.mode === 'rotate') {
+            const dx = boardPoint.x - textTransformState.startBounds.center.x
+            const dy = boardPoint.y - textTransformState.startBounds.center.y
+            if (Math.abs(dx) + Math.abs(dy) >= 0.0001) {
+              const angle = Math.atan2(dy, dx)
+              const delta = angle - textTransformState.startPointerAngle
+              let nextRotation = textTransformState.startBounds.rotation + delta
+              const snapped = Math.round(nextRotation / TEXT_ROTATION_SNAP_INCREMENT) * TEXT_ROTATION_SNAP_INCREMENT
+              if (Math.abs(snapped - nextRotation) <= TEXT_ROTATION_SNAP_EPSILON) {
+                nextRotation = snapped
+              }
+              nextElement = { ...target, rotation: nextRotation }
+            }
+          }
+          if (!nextElement) return prev
+          updatedElement = nextElement
+          return { ...prev, [nextElement.id]: nextElement }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
+            lastBroadcastRef.current = now
+          }
+        }
         return
       }
 
@@ -1531,12 +1913,28 @@ const hitTestElement = useCallback(
         return
       }
 
+      if (mode === 'textTransform') {
+        const transformState = textTransformStateRef.current
+        textTransformStateRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!transformState) return
+        const element = elements[transformState.id]
+        if (!element) return
+        sendElementsUpdate([element])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [element])
+        }
+        return
+      }
+
       const marqueeState = marqueeRef.current
       if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
     const measureCtx = getSharedMeasureContext()
     const matchingIds = Object.values(elements)
-          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element, cameraState.zoom, measureCtx)))
+          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element, measureCtx)))
           .map((element) => element.id)
 
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
@@ -1544,7 +1942,7 @@ const hitTestElement = useCallback(
           const sample = Object.values(elements)[0]
           if (sample) {
             const sampleCtx = getSharedMeasureContext()
-            console.log('[marquee sample]', getElementBounds(sample, cameraState.zoom, sampleCtx))
+            console.log('[marquee sample]', getElementBounds(sample, sampleCtx))
           }
         }
 
@@ -1940,10 +2338,11 @@ const hitTestElement = useCallback(
       }
     })
     const selectedArray = Array.from(selectedIds)
+    const singleSelectionId = selectedArray.length === 1 ? selectedArray[0] : null
     selectedArray.forEach((id) => {
       const element = elements[id]
       if (!element) return
-      const withHandles = isStickyElement(element) && selectedArray.length === 1 && selectedArray[0] === id
+      const withHandles = singleSelectionId === id
       let selectionElement: BoardElement = element
       if (
         editingState?.elementType === 'text' &&
@@ -1967,12 +2366,13 @@ const hitTestElement = useCallback(
   const editingStickyFontSizePx =
     editingState?.elementType === 'sticky' ? editingState.fontSize * cameraState.zoom : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
+  const editingTextWrapWidth = editingTextElement ? resolveTextWrapWidth(editingTextElement.w) : TEXT_DEFAULT_MAX_WIDTH
   const editingTextLayout =
     editingState?.elementType === 'text'
       ? getTextLayoutForContent(
           editingState.text,
           editingState.fontSize,
-          cameraState.zoom,
+          editingTextWrapWidth,
           getSharedMeasureContext()
         )
       : null
@@ -1982,17 +2382,17 @@ const hitTestElement = useCallback(
           left: editingTextElement.x,
           top: editingTextElement.y,
           right:
-            editingTextElement.x + editingTextLayout.blockWidth / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
+            editingTextElement.x + editingTextWrapWidth + TEXT_SAFETY_INSET * 2,
           bottom:
-            editingTextElement.y + editingTextLayout.totalHeight / cameraState.zoom + (TEXT_SAFETY_INSET / cameraState.zoom) * 2,
+            editingTextElement.y + editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2,
         }
       : null
   const editingTextRect = editingTextBounds
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
-        width: editingTextLayout ? editingTextLayout.blockWidth + TEXT_SAFETY_INSET * 2 : 0,
-        height: editingTextLayout ? editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2 : 0,
+        width: (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * cameraState.zoom,
+        height: (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * cameraState.zoom,
       }
     : null
   const editingTextFontSizePx =

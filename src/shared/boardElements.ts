@@ -19,6 +19,9 @@ export interface TextElement extends CanvasElement {
   y: number
   text: string
   fontSize?: number
+  w?: number
+  scale?: number
+  rotation?: number
 }
 
 export type BoardElement = StickyNoteElement | TextElement
