@@ -1003,11 +1003,15 @@ export function CanvasBoard() {
       const hitId = hitTestElement(boardPoint.x, boardPoint.y)
       if (!hitId) return
       const hitElement = elements[hitId]
-      if (!isStickyElement(hitElement)) return
+      if (!hitElement) return
       event.preventDefault()
-      beginEditingSticky(hitElement)
+      if (isStickyElement(hitElement)) {
+        beginEditingSticky(hitElement)
+      } else if (isTextElement(hitElement)) {
+        beginEditingText(hitElement)
+      }
     },
-    [beginEditingSticky, boardId, elements, hitTestElement, screenToBoard]
+    [beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, screenToBoard]
   )
 
   // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
