@@ -896,6 +896,91 @@ export function CanvasBoard() {
     [boardId, clearSelection, createStickyAtPoint, createTextAtPoint, hitTestElement, screenToBoard, toolMode]
   )
 
+  const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
+      })
+      if (!response.ok) throw new Error('Failed to persist element')
+    } catch (error) {
+      console.error('Failed to persist board element', error)
+    }
+  }, [])
+
+  const createStickyAtPoint = useCallback(
+    (boardPoint: { x: number; y: number }, opts?: { autoEdit?: boolean }) => {
+      if (!boardId) return
+      const draft: StickyNoteElement = {
+        id: randomId(),
+        type: 'sticky',
+        x: boardPoint.x,
+        y: boardPoint.y,
+        text: 'New note',
+        size: STICKY_SIZE,
+      }
+      const ctx = getMeasureContext()
+      const inner = getStickyInnerSize(draft)
+      const { max, min } = getStickyFontBounds(draft)
+      const fontSize = ctx ? fitFontSize(ctx, draft.text, inner.width, inner.height, max, min) : max
+      const element = { ...draft, fontSize }
+      upsertElement(element)
+      sendElementUpdate(element)
+      setSelection(new Set([element.id]))
+      if (opts?.autoEdit) {
+        beginEditingSticky(element)
+      }
+      void persistElementCreate(boardId, element)
+    },
+    [beginEditingSticky, boardId, getMeasureContext, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+  )
+
+  const createTextAtPoint = useCallback(
+    (boardPoint: { x: number; y: number }) => {
+      if (!boardId) return
+      const element: TextElement = {
+        id: randomId(),
+        type: 'text',
+        x: boardPoint.x,
+        y: boardPoint.y,
+        text: '',
+        fontSize: TEXT_DEFAULT_FONT_SIZE,
+      }
+      upsertElement(element)
+      sendElementUpdate(element)
+      setSelection(new Set([element.id]))
+      beginEditingText(element)
+      void persistElementCreate(boardId, element)
+    },
+    [beginEditingText, boardId, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+  )
+
+  const handleCanvasClick = useCallback(
+    (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
+      if (!joinedRef.current || !boardId) return
+      if (editingStateRef.current) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+      if (hitId) {
+        return
+      }
+      if (toolMode === 'sticky') {
+        createStickyAtPoint(boardPoint)
+      } else if (toolMode === 'text') {
+        createTextAtPoint(boardPoint)
+      } else if (toolMode === 'select') {
+        clearSelection()
+      }
+    },
+    [boardId, clearSelection, createStickyAtPoint, createTextAtPoint, hitTestElement, screenToBoard, toolMode]
+  )
+
   const removeElements = useCallback((ids: string[]) => {
     if (ids.length === 0) return
     setElements((prev) => {
