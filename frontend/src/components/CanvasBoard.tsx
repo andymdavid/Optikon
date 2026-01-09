@@ -2073,6 +2073,7 @@ export function CanvasBoard() {
       if (mode === 'resize' && resizeState && resizeState.pointerId === event.pointerId) {
         const boardPoint = screenToBoard(canvasPoint)
         let updatedElement: StickyNoteElement | null = null
+        const ctx = getMeasureContext()
         setElements((prev) => {
           const target = prev[resizeState.id]
           if (!target) return prev
@@ -2100,7 +2101,13 @@ export function CanvasBoard() {
               nextY = anchor.y
               break
           }
-          const updated = { ...target, x: nextX, y: nextY, size }
+          const resized = { ...target, x: nextX, y: nextY, size }
+          const inner = getStickyInnerSize(resized)
+          const bounds = getStickyFontBounds(resized)
+          const fitted = ctx
+            ? fitFontSize(ctx, resized.text, inner.width, inner.height, bounds.max, bounds.min)
+            : bounds.max
+          const updated = { ...resized, fontSize: fitted }
           updatedElement = updated
           return { ...prev, [resizeState.id]: updated }
         })
@@ -2142,7 +2149,7 @@ export function CanvasBoard() {
         }
       }
     },
-    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, screenToBoard, sendElementsUpdate, setMarquee]
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, getMeasureContext, screenToBoard, sendElementsUpdate, setMarquee]
   )
 
   const finishDrag = useCallback(
