@@ -350,7 +350,7 @@ const getStickyPadding = (element: StickyNoteElement) => {
 
 const getStickyInnerSize = (element: StickyNoteElement) => {
   const size = getStickySize(element)
-  const { paddingY } = getStickyPadding(element)
+  const { paddingX, paddingY } = getStickyPadding(element)
   return {
     width: Math.max(0, size - paddingX * 2),
     height: Math.max(0, size - paddingY * 2),
