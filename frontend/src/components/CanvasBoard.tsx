@@ -340,11 +340,20 @@ const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D |
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
+const getStickyPadding = (element: StickyNoteElement) => {
+  const size = getStickySize(element)
+  const scale = size / STICKY_SIZE
+  const paddingX = Math.max(2, STICKY_PADDING_X * scale)
+  const paddingY = Math.max(2, STICKY_PADDING_Y * scale)
+  return { paddingX, paddingY }
+}
+
 const getStickyInnerSize = (element: StickyNoteElement) => {
   const size = getStickySize(element)
+  const { paddingY } = getStickyPadding(element)
   return {
-    width: Math.max(0, size - STICKY_PADDING_X * 2),
-    height: Math.max(0, size - STICKY_PADDING_Y * 2),
+    width: Math.max(0, size - paddingX * 2),
+    height: Math.max(0, size - paddingY * 2),
   }
 }
 
@@ -824,7 +833,8 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
   const radius = STICKY_CORNER_RADIUS * camera.zoom
-  const paddingY = STICKY_PADDING_Y * camera.zoom
+  const { paddingY } = getStickyPadding(element)
+  const paddingYScreen = paddingY * camera.zoom
   const fontSize = getElementFontSize(element) * camera.zoom
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const rect = { x: screenX, y: screenY, width, height }
@@ -850,7 +860,7 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const offsetY = Math.max(0, (innerHeight - totalHeight) / 2)
   const textX = screenX + width / 2
   lines.forEach((line, index) => {
-    const textY = screenY + paddingY + offsetY + index * lineHeight
+    const textY = screenY + paddingYScreen + offsetY + index * lineHeight
     ctx.fillText(line, textX, textY, innerWidth)
   })
   ctx.restore()
@@ -2680,8 +2690,9 @@ export function CanvasBoard() {
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
   const editingRect = editingStickyElement ? getStickyScreenRect(editingStickyElement, cameraState) : null
   const editingInnerSize = editingStickyElement ? getStickyInnerSize(editingStickyElement) : null
-  const editingPaddingX = STICKY_PADDING_X * cameraState.zoom
-  const editingPaddingY = STICKY_PADDING_Y * cameraState.zoom
+  const editingStickyPadding = editingStickyElement ? getStickyPadding(editingStickyElement) : null
+  const editingPaddingX = editingStickyPadding ? editingStickyPadding.paddingX * cameraState.zoom : null
+  const editingPaddingY = editingStickyPadding ? editingStickyPadding.paddingY * cameraState.zoom : null
   const editingContentWidth = editingInnerSize ? editingInnerSize.width : null
   const editingContentHeight = editingInnerSize ? editingInnerSize.height : null
   const editingStickyFontSizePx =
@@ -2845,7 +2856,10 @@ export function CanvasBoard() {
               top: editingRect.y,
               width: editingRect.size,
               height: editingRect.size,
-              padding: `${editingPaddingY}px ${editingPaddingX}px`,
+              padding:
+                editingPaddingX !== null && editingPaddingY !== null
+                  ? `${editingPaddingY}px ${editingPaddingX}px`
+                  : undefined,
               fontSize: `${editingStickyFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
             }}
