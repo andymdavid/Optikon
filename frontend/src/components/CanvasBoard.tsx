@@ -51,6 +51,7 @@ const TEXT_DEFAULT_FONT_SIZE = 48
 const TEXT_COLOR = '#0f172a'
 const TEXT_DEFAULT_MAX_WIDTH = 800
 const TEXT_SAFETY_INSET = 2
+const TEXT_DEBUG_BOUNDS = true
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode = 'select' | 'sticky' | 'text'
@@ -179,22 +180,23 @@ const measureTextLayout = (
   return { lines, lineWidths, maxLineWidth, totalHeight, lineHeight, ascent, descent }
 }
 
-const getTextLayout = (element: TextElement): TextLayout => {
-  const ctx = getSharedMeasureContext()
-  return measureTextLayout(
+const getTextLayout = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): TextLayout =>
+  measureTextLayout(
     ctx,
     element.text,
     resolveTextFontSize(element.fontSize),
-    TEXT_DEFAULT_MAX_WIDTH,
+    TEXT_DEFAULT_MAX_WIDTH * zoom,
     STICKY_FONT_FAMILY,
     STICKY_TEXT_LINE_HEIGHT
   )
-}
 
-const getTextLayoutForContent = (text: string, fontSize: number): TextLayout => {
-  const ctx = getSharedMeasureContext()
-  return measureTextLayout(ctx, text, fontSize, TEXT_DEFAULT_MAX_WIDTH, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
-}
+const getTextLayoutForContent = (
+  text: string,
+  fontSize: number,
+  zoom: number,
+  ctx: CanvasRenderingContext2D | null
+): TextLayout =>
+  measureTextLayout(ctx, text, fontSize, TEXT_DEFAULT_MAX_WIDTH * zoom, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
 
 const getStickySize = (element: StickyNoteElement) => {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -211,10 +213,11 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-const getTextBounds = (element: TextElement): Rect => {
-  const layout = getTextLayout(element)
-  const width = layout.maxLineWidth + TEXT_SAFETY_INSET * 2
-  const height = layout.totalHeight + TEXT_SAFETY_INSET * 2
+const getTextBounds = (element: TextElement, zoom: number, ctx: CanvasRenderingContext2D | null): Rect => {
+  const layout = getTextLayout(element, zoom, ctx)
+  const insetBoard = TEXT_SAFETY_INSET / zoom
+  const width = layout.maxLineWidth / zoom + insetBoard * 2
+  const height = layout.totalHeight / zoom + insetBoard * 2
   return {
     left: element.x,
     top: element.y,
@@ -223,9 +226,9 @@ const getTextBounds = (element: TextElement): Rect => {
   }
 }
 
-const getElementBounds = (element: BoardElement): Rect => {
+const getElementBounds = (element: BoardElement, zoom: number, ctx: CanvasRenderingContext2D | null): Rect => {
   if (isStickyElement(element)) return getStickyBounds(element)
-  if (isTextElement(element)) return getTextBounds(element)
+  if (isTextElement(element)) return getTextBounds(element, zoom, ctx)
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
@@ -655,7 +658,8 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
 }
 
 function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
-  const layout = getTextLayout(element)
+  const measureCtx = getSharedMeasureContext()
+  const layout = getTextLayout(element, camera.zoom, measureCtx)
   const fontSize = resolveTextFontSize(element.fontSize) * camera.zoom
   ctx.save()
   ctx.fillStyle = TEXT_COLOR
@@ -705,7 +709,8 @@ function drawStickySelection(
 }
 
 function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
-  const bounds = getTextBounds(element)
+  const measureCtx = getSharedMeasureContext()
+  const bounds = getTextBounds(element, camera.zoom, measureCtx)
   const x = (bounds.left + camera.offsetX) * camera.zoom
   const y = (bounds.top + camera.offsetY) * camera.zoom
   const width = (bounds.right - bounds.left) * camera.zoom
@@ -714,6 +719,19 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, element: TextElement, 
   ctx.strokeStyle = ACCENT_COLOR
   ctx.lineWidth = 1.5
   ctx.strokeRect(x, y, width, height)
+  if (TEXT_DEBUG_BOUNDS) {
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)'
+    ctx.setLineDash([4, 4])
+    ctx.strokeRect(x, y, width, height)
+    ctx.setLineDash([])
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'
+    ctx.font = '12px "Inter", sans-serif'
+    ctx.fillText(
+      `zoom=${camera.zoom.toFixed(2)} maxWidth(px)=${(TEXT_DEFAULT_MAX_WIDTH * camera.zoom).toFixed(1)} lines=${getTextLayout(element, camera.zoom, getSharedMeasureContext()).lines.length}`,
+      x,
+      y - 8
+    )
+  }
   ctx.restore()
 }
 
@@ -976,20 +994,21 @@ export function CanvasBoard() {
     updateEditingState(null)
   }, [updateEditingState])
 
-  const hitTestElement = useCallback(
-    (x: number, y: number): string | null => {
-      const values = Object.values(elements)
-      for (let i = values.length - 1; i >= 0; i -= 1) {
-        const element = values[i]
-        const bounds = getElementBounds(element)
-        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
-          return element.id
-        }
+const hitTestElement = useCallback(
+  (x: number, y: number): string | null => {
+    const values = Object.values(elements)
+    const ctx = getSharedMeasureContext()
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+      const element = values[i]
+      const bounds = getElementBounds(element, cameraState.zoom, ctx)
+      if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+        return element.id
       }
-      return null
-    },
-    [elements]
-  )
+    }
+    return null
+  },
+  [cameraState.zoom, elements]
+)
 
   const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
     try {
@@ -1495,8 +1514,9 @@ export function CanvasBoard() {
       const marqueeState = marqueeRef.current
       if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
-        const matchingIds = Object.values(elements)
-          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element)))
+    const measureCtx = getSharedMeasureContext()
+    const matchingIds = Object.values(elements)
+          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element, cameraState.zoom, measureCtx)))
           .map((element) => element.id)
 
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
@@ -1926,7 +1946,12 @@ export function CanvasBoard() {
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
   const editingTextLayout =
     editingState?.elementType === 'text'
-      ? getTextLayoutForContent(editingState.text, editingState.fontSize)
+      ? getTextLayoutForContent(
+          editingState.text,
+          editingState.fontSize,
+          cameraState.zoom,
+          getSharedMeasureContext()
+        )
       : null
   const editingTextBounds =
     editingState?.elementType === 'text' && editingTextElement && editingTextLayout
