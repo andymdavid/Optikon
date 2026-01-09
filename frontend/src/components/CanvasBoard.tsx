@@ -49,12 +49,21 @@ const STICKY_PADDING_Y = 14
 const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
 const TEXT_DEFAULT_FONT_SIZE = 48
 const TEXT_COLOR = '#0f172a'
-const TEXT_BOUNDS_PADDING_X = 6
-const TEXT_BOUNDS_PADDING_Y = 2
-const TEXT_BOUNDS_CHAR_WIDTH = 0.55
-const TEXT_MAX_WIDTH = 1200
+const TEXT_DEFAULT_MAX_WIDTH = 800
+const TEXT_SAFETY_INSET = 2
+const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode = 'select' | 'sticky' | 'text'
+
+type TextLayout = {
+  lines: string[]
+  lineWidths: number[]
+  maxLineWidth: number
+  totalHeight: number
+  lineHeight: number
+  ascent: number
+  descent: number
+}
 
 const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
   left: Math.min(a.x, b.x),
@@ -62,6 +71,130 @@ const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number })
   right: Math.max(a.x, b.x),
   bottom: Math.max(a.y, b.y),
 })
+
+let sharedMeasureCtx: CanvasRenderingContext2D | null = null
+const getSharedMeasureContext = () => {
+  if (sharedMeasureCtx) return sharedMeasureCtx
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  sharedMeasureCtx = canvas.getContext('2d')
+  return sharedMeasureCtx
+}
+
+const measureTextLayout = (
+  ctx: CanvasRenderingContext2D | null,
+  text: string,
+  fontSize: number,
+  maxWidth: number,
+  fontFamily: string,
+  lineHeightMultiplier: number
+): TextLayout => {
+  const normalizedText = typeof text === 'string' ? text : ''
+  if (!ctx) {
+    const lines = normalizedText.split(/\n/) || ['']
+    const fallbackLineHeight = fontSize * lineHeightMultiplier
+    const widths = lines.map((line) => line.length * (fontSize * 0.6))
+    const maxLineWidth = widths.reduce((max, width) => Math.max(max, width), 0)
+    return {
+      lines: lines.length > 0 ? lines : [''],
+      lineWidths: widths,
+      maxLineWidth,
+      totalHeight: Math.max(1, lines.length) * fallbackLineHeight,
+      lineHeight: fallbackLineHeight,
+      ascent: fontSize * 0.8,
+      descent: fontSize * 0.2,
+    }
+  }
+
+  ctx.font = `${fontSize}px ${fontFamily}`
+  const lineHeight = Math.max(1, fontSize * lineHeightMultiplier)
+  const lines: string[] = []
+  const lineWidths: number[] = []
+
+  const pushLine = (content: string) => {
+    lines.push(content)
+    lineWidths.push(ctx.measureText(content).width)
+  }
+
+  const processWordChunks = (word: string, maxWidthPx: number) => {
+    let chunk = ''
+    let trailingChunk = ''
+    for (const char of word) {
+      const nextChunk = `${chunk}${char}`
+      const width = ctx.measureText(nextChunk).width
+      if (width <= maxWidthPx || chunk === '') {
+        chunk = nextChunk
+        trailingChunk = chunk
+      } else {
+        pushLine(chunk)
+        chunk = char
+        trailingChunk = chunk
+      }
+    }
+    if (chunk) {
+      return chunk
+    }
+    return trailingChunk
+  }
+
+  const paragraphs = normalizedText.split(/\n/)
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const words = paragraph.split(/\s+/).filter(Boolean)
+    if (words.length === 0) {
+      pushLine('')
+      return
+    }
+    let current = ''
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word
+      const width = ctx.measureText(candidate).width
+      if (width <= maxWidth || current === '') {
+        current = candidate
+      } else {
+        if (current) pushLine(current)
+        const wordWidth = ctx.measureText(word).width
+        if (wordWidth <= maxWidth) {
+          current = word
+        } else {
+          current = processWordChunks(word, maxWidth)
+        }
+      }
+    }
+    if (current) pushLine(current)
+    if (paragraphIndex < paragraphs.length - 1 && paragraph.trim().length === 0) {
+      pushLine('')
+    }
+  })
+
+  if (lines.length === 0) {
+    lines.push('')
+    lineWidths.push(0)
+  }
+
+  const metrics = ctx.measureText(TEXT_MEASURE_SAMPLE)
+  const ascent = metrics.actualBoundingBoxAscent ?? fontSize * 0.8
+  const descent = metrics.actualBoundingBoxDescent ?? fontSize * 0.2
+  const maxLineWidth = lineWidths.reduce((max, width) => Math.max(max, width), 0)
+  const totalHeight = Math.max(1, lines.length) * lineHeight
+  return { lines, lineWidths, maxLineWidth, totalHeight, lineHeight, ascent, descent }
+}
+
+const getTextLayout = (element: TextElement): TextLayout => {
+  const ctx = getSharedMeasureContext()
+  return measureTextLayout(
+    ctx,
+    element.text,
+    resolveTextFontSize(element.fontSize),
+    TEXT_DEFAULT_MAX_WIDTH,
+    STICKY_FONT_FAMILY,
+    STICKY_TEXT_LINE_HEIGHT
+  )
+}
+
+const getTextLayoutForContent = (text: string, fontSize: number): TextLayout => {
+  const ctx = getSharedMeasureContext()
+  return measureTextLayout(ctx, text, fontSize, TEXT_DEFAULT_MAX_WIDTH, STICKY_FONT_FAMILY, STICKY_TEXT_LINE_HEIGHT)
+}
 
 const getStickySize = (element: StickyNoteElement) => {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -79,20 +212,9 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
 }
 
 const getTextBounds = (element: TextElement): Rect => {
-  const fontSize = resolveTextFontSize(element.fontSize)
-  const text = typeof element.text === 'string' ? element.text : ''
-  const rawLines = text.length > 0 ? text.split(/\n/) : ['']
-  const longest = rawLines.reduce((max, line) => Math.max(max, line.length), 0)
-  const baseWidth = Math.max(fontSize, longest * fontSize * TEXT_BOUNDS_CHAR_WIDTH)
-  const maxInnerWidth = Math.max(fontSize, TEXT_MAX_WIDTH - TEXT_BOUNDS_PADDING_X * 2)
-  const innerWidth = Math.min(maxInnerWidth, baseWidth)
-  const maxCharsPerLine = Math.max(1, Math.floor(innerWidth / (fontSize * TEXT_BOUNDS_CHAR_WIDTH)))
-  const wrappedLineCount = rawLines.reduce((count, line) => {
-    if (line.length === 0) return count + 1
-    return count + Math.max(1, Math.ceil(line.length / maxCharsPerLine))
-  }, 0)
-  const width = innerWidth + TEXT_BOUNDS_PADDING_X * 2
-  const height = wrappedLineCount * fontSize * STICKY_TEXT_LINE_HEIGHT + TEXT_BOUNDS_PADDING_Y * 2
+  const layout = getTextLayout(element)
+  const width = layout.maxLineWidth + TEXT_SAFETY_INSET * 2
+  const height = layout.totalHeight + TEXT_SAFETY_INSET * 2
   return {
     left: element.x,
     top: element.y,
@@ -533,27 +655,19 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
 }
 
 function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
-  const bounds = getTextBounds(element)
-  const width = (bounds.right - bounds.left) * camera.zoom
-  const height = (bounds.bottom - bounds.top) * camera.zoom
-  const screenX = (bounds.left + camera.offsetX) * camera.zoom
-  const screenY = (bounds.top + camera.offsetY) * camera.zoom
+  const layout = getTextLayout(element)
   const fontSize = resolveTextFontSize(element.fontSize) * camera.zoom
-  const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
-  const innerWidth = Math.max(0, width - TEXT_BOUNDS_PADDING_X * 2 * camera.zoom)
   ctx.save()
   ctx.fillStyle = TEXT_COLOR
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
-  ctx.textBaseline = 'top'
+  ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left'
-  const text = typeof element.text === 'string' ? element.text : ''
-  const lines = wrapText(ctx, text, innerWidth)
-  const textX = screenX + TEXT_BOUNDS_PADDING_X * camera.zoom
-  let textY = screenY + TEXT_BOUNDS_PADDING_Y * camera.zoom
-  lines.forEach((line) => {
-    ctx.fillText(line, textX, textY, innerWidth)
-    textY += lineHeight
-    if (textY - screenY > height) return
+  const offsetX = (camera.offsetX + element.x + TEXT_SAFETY_INSET) * camera.zoom
+  let offsetY = (camera.offsetY + element.y + TEXT_SAFETY_INSET) * camera.zoom + layout.ascent * camera.zoom
+  const lineHeightPx = layout.lineHeight * camera.zoom
+  layout.lines.forEach((line) => {
+    ctx.fillText(line, offsetX, offsetY)
+    offsetY += lineHeightPx
   })
   ctx.restore()
 }
@@ -1810,11 +1924,19 @@ export function CanvasBoard() {
   const editingStickyFontSizePx =
     editingState?.elementType === 'sticky' ? editingState.fontSize * cameraState.zoom : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
-  const editingTextPreview =
-    editingState?.elementType === 'text' && editingTextElement
-      ? { ...editingTextElement, text: editingState.text, fontSize: editingState.fontSize }
+  const editingTextLayout =
+    editingState?.elementType === 'text'
+      ? getTextLayoutForContent(editingState.text, editingState.fontSize)
       : null
-  const editingTextBounds = editingTextPreview ? getTextBounds(editingTextPreview) : null
+  const editingTextBounds =
+    editingState?.elementType === 'text' && editingTextElement && editingTextLayout
+      ? {
+          left: editingTextElement.x,
+          top: editingTextElement.y,
+          right: editingTextElement.x + editingTextLayout.maxLineWidth + TEXT_SAFETY_INSET * 2,
+          bottom: editingTextElement.y + editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2,
+        }
+      : null
   const editingTextRect = editingTextBounds
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
@@ -1825,8 +1947,6 @@ export function CanvasBoard() {
     : null
   const editingTextFontSizePx =
     editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
-  const editingTextPaddingX = TEXT_BOUNDS_PADDING_X * cameraState.zoom
-  const editingTextPaddingY = TEXT_BOUNDS_PADDING_Y * cameraState.zoom
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
@@ -1995,6 +2115,7 @@ export function CanvasBoard() {
         )}
       {editingState?.elementType === 'text' &&
         editingTextElement &&
+        editingTextLayout &&
         editingTextRect &&
         editingTextFontSizePx !== null && (
           <div
@@ -2004,9 +2125,6 @@ export function CanvasBoard() {
               top: editingTextRect.y,
               width: editingTextRect.width,
               height: editingTextRect.height,
-              fontSize: `${editingTextFontSizePx}px`,
-              lineHeight: STICKY_TEXT_LINE_HEIGHT,
-              padding: `${editingTextPaddingY}px ${editingTextPaddingX}px`,
             }}
             onPointerDown={(event) => event.stopPropagation()}
           >
@@ -2018,6 +2136,11 @@ export function CanvasBoard() {
               role="textbox"
               aria-multiline="true"
               spellCheck={false}
+              style={{
+                fontSize: `${editingTextFontSizePx}px`,
+                lineHeight: STICKY_TEXT_LINE_HEIGHT,
+                padding: `${TEXT_SAFETY_INSET * cameraState.zoom}px`,
+              }}
               onInput={syncEditingTextFromDom}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') {
