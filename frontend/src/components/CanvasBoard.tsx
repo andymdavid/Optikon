@@ -62,6 +62,9 @@ const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
 const RECT_DEFAULT_FILL = '#dbeafe'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
+const RECT_DEFAULT_SCREEN_SIZE = 180
+const RECT_MIN_SCALE = 0.05
+const RECT_MAX_SCALE = 40
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
@@ -1810,13 +1813,14 @@ export function CanvasBoard() {
         if (toolMode === 'rect') {
           event.preventDefault()
           const id = randomId()
+          const baseBoardSize = Math.max(RECT_MIN_SIZE, RECT_DEFAULT_SCREEN_SIZE / cameraState.zoom)
           const newElement: RectangleElement = {
             id,
             type: 'rect',
             x: boardPoint.x,
             y: boardPoint.y,
-            w: RECT_MIN_SIZE,
-            h: RECT_MIN_SIZE,
+            w: baseBoardSize,
+            h: baseBoardSize,
             fill: RECT_DEFAULT_FILL,
             stroke: RECT_DEFAULT_STROKE,
             rotation: 0,
@@ -1870,7 +1874,7 @@ export function CanvasBoard() {
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, elements, hitTestElement, hitTestResizeHandle, hitTestTransformHandle, screenToBoard, setMarquee, setSelection, toolMode]
+    [boardId, cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, hitTestElement, hitTestResizeHandle, hitTestTransformHandle, screenToBoard, setMarquee, setSelection, toolMode]
   )
 
   const handlePointerMove = useCallback(
@@ -2004,7 +2008,11 @@ export function CanvasBoard() {
             if (denom > 0.0001) {
               const dot = pointerLocal.x * handleVector.x + pointerLocal.y * handleVector.y
               const rawScale = Math.abs(dot / denom)
-              const nextScale = clamp(rawScale, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
+              const { minScale, maxScale } =
+                transformState.elementType === 'rect'
+                  ? { minScale: RECT_MIN_SCALE, maxScale: RECT_MAX_SCALE }
+                  : { minScale: TEXT_MIN_SCALE, maxScale: TEXT_MAX_SCALE }
+              const nextScale = clamp(rawScale, minScale, maxScale)
               nextElement = { ...target, scale: nextScale }
             }
           } else if (transformState.mode === 'rotate') {
