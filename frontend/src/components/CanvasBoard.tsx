@@ -351,10 +351,10 @@ const getStickyInnerSize = (element: StickyNoteElement) => {
 const getStickyFontBounds = (element: StickyNoteElement) => {
   const ratio = getStickySize(element) / STICKY_SIZE
   const max = BASE_STICKY_FONT_MAX * ratio
-  const min = BASE_STICKY_FONT_MIN * ratio
+  const min = Math.max(2, BASE_STICKY_FONT_MIN * ratio)
   return {
     max: Math.max(min, max),
-    min: Math.max(4, min),
+    min,
   }
 }
 
