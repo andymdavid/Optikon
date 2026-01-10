@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 
-import type { BoardElement, RectangleElement, StickyNoteElement, TextElement } from '@shared/boardElements'
+import type {
+  BoardElement,
+  EllipseElement,
+  RectangleElement,
+  StickyNoteElement,
+  TextElement,
+} from '@shared/boardElements'
 
 export type CameraState = {
   offsetX: number
@@ -66,7 +72,8 @@ const RECT_DEFAULT_SCREEN_SIZE = 180
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text' | 'rect'
+type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse'
+type ShapeElement = RectangleElement | EllipseElement
 
 type TextLayout = {
   lines: string[]
@@ -224,7 +231,7 @@ type TransformBounds = {
 }
 
 type TextElementBounds = TransformBounds & { layout: TextElementLayoutInfo }
-type RectElementBounds = TransformBounds
+type ShapeElementBounds = TransformBounds
 
 const getTextLayoutForContent = (
   text: string,
@@ -316,7 +323,7 @@ const getTextElementBounds = (
   return { ...bounds, layout: layoutInfo }
 }
 
-const getRectangleElementBounds = (element: RectangleElement): RectElementBounds => {
+const getShapeElementBounds = (element: ShapeElement): ShapeElementBounds => {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
@@ -330,10 +337,17 @@ const getRectangleElementBounds = (element: RectangleElement): RectElementBounds
   })
 }
 
+const getRectangleElementBounds = (element: RectangleElement): ShapeElementBounds =>
+  getShapeElementBounds(element)
+
+const getEllipseElementBounds = (element: EllipseElement): ShapeElementBounds =>
+  getShapeElementBounds(element)
+
 const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D | null): Rect => {
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
+  if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
 
@@ -432,6 +446,12 @@ const isTextElement = (element: BoardElement | null | undefined): element is Tex
 const isRectangleElement = (element: BoardElement | null | undefined): element is RectangleElement =>
   !!element && element.type === 'rect'
 
+const isEllipseElement = (element: BoardElement | null | undefined): element is EllipseElement =>
+  !!element && element.type === 'ellipse'
+
+const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
+  isRectangleElement(element) || isEllipseElement(element)
+
 type GridSpec = {
   primaryBoardSpacing: number
   primarySpacingPx: number
@@ -458,35 +478,36 @@ type TransformState =
       startBounds: TextElementBounds
     }
   | {
-      mode: 'rectScale'
+      mode: 'shapeScale'
       pointerId: number
       id: string
+      elementType: 'rect' | 'ellipse'
       handle: 'nw' | 'ne' | 'se' | 'sw'
-      startBounds: RectElementBounds
+      startBounds: ShapeElementBounds
     }
   | {
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect'
+      elementType: 'text' | 'rect' | 'ellipse'
       handle: 'e' | 'w'
-      startBounds: TextElementBounds | RectElementBounds
+      startBounds: TextElementBounds | ShapeElementBounds
     }
   | {
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect'
+      elementType: 'rect' | 'ellipse'
       handle: 'n' | 's'
-      startBounds: RectElementBounds
+      startBounds: ShapeElementBounds
     }
   | {
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect'
+      elementType: 'text' | 'rect' | 'ellipse'
       handle: 'rotate'
-      startBounds: TextElementBounds | RectElementBounds
+      startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
     }
 
@@ -667,12 +688,36 @@ function parseRectangleElement(raw: unknown): RectangleElement | null {
   }
 }
 
+function parseEllipseElement(raw: unknown): EllipseElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<EllipseElement>
+  if (element.type !== 'ellipse') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  return {
+    id: element.id,
+    type: 'ellipse',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
   if (type === 'sticky') return parseStickyElement(raw)
   if (type === 'text') return parseTextElement(raw)
   if (type === 'rect') return parseRectangleElement(raw)
+  if (type === 'ellipse') return parseEllipseElement(raw)
   return null
 }
 
@@ -912,6 +957,27 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   ctx.restore()
 }
 
+function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseElement, camera: CameraState) {
+  const bounds = getEllipseElementBounds(element)
+  ctx.save()
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  const radiusX = bounds.width / 2
+  const radiusY = bounds.height / 2
+  ctx.beginPath()
+  ctx.ellipse(0, 0, radiusX, radiusY, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -1094,13 +1160,13 @@ function drawTextSelection(
   ctx.restore()
 }
 
-function drawRectangleSelection(
+function drawShapeSelection(
   ctx: CanvasRenderingContext2D,
-  element: RectangleElement,
+  element: ShapeElement,
   camera: CameraState,
   options: { withHandles: boolean }
 ) {
-  const bounds = getRectangleElementBounds(element)
+  const bounds = getShapeElementBounds(element)
   const toScreen = (point: { x: number; y: number }) => ({
     x: (point.x + camera.offsetX) * camera.zoom,
     y: (point.y + camera.offsetY) * camera.zoom,
@@ -1166,7 +1232,11 @@ function drawElementSelection(
     return
   }
   if (isRectangleElement(element)) {
-    drawRectangleSelection(ctx, element, camera, options)
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
+  if (isEllipseElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
   }
 }
 
@@ -1195,7 +1265,7 @@ export function CanvasBoard() {
         handle: 'nw' | 'ne' | 'sw' | 'se'
       }
   >(null)
-  const rectCreationRef = useRef<
+  const shapeCreationRef = useRef<
     | null
     | {
         pointerId: number
@@ -1203,6 +1273,7 @@ export function CanvasBoard() {
         id: string
         baseSize: number
         hasDragged: boolean
+        elementType: 'rect' | 'ellipse'
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -1218,7 +1289,7 @@ export function CanvasBoard() {
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
   const interactionModeRef = useRef<
-    'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'transform' | 'rect-create'
+    'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'transform' | 'shape-create'
   >('none')
   const marqueeCandidateRef = useRef<
     | null
@@ -1443,6 +1514,15 @@ export function CanvasBoard() {
         }
         return inside
       }
+      const pointInEllipse = (point: { x: number; y: number }, element: EllipseElement) => {
+        const bounds = getEllipseElementBounds(element)
+        const local = toTextLocalCoordinates(point, bounds)
+        const rx = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
+        const ry = Math.max(RECT_MIN_SIZE / 2, bounds.height / 2)
+        if (rx <= 0 || ry <= 0) return false
+        const normalized = (local.x * local.x) / (rx * rx) + (local.y * local.y) / (ry * ry)
+        return normalized <= 1
+      }
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
         if (isTextElement(element)) {
@@ -1455,6 +1535,12 @@ export function CanvasBoard() {
         if (isRectangleElement(element)) {
           const bounds = getRectangleElementBounds(element)
           if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
+        if (isEllipseElement(element)) {
+          if (pointInEllipse({ x, y }, element)) {
             return element.id
           }
           continue
@@ -1671,19 +1757,19 @@ export function CanvasBoard() {
     (
       point: { x: number; y: number }
     ): {
-      element: TextElement | RectangleElement
-      bounds: TextElementBounds | RectElementBounds
+      element: TextElement | ShapeElement
+      bounds: TextElementBounds | ShapeElementBounds
       handle: TransformHandleSpec
     } | null => {
       const selected = selectedIdsRef.current
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!isTextElement(element) && !isRectangleElement(element)) return null
+      if (!isTextElement(element) && !isShapeElement(element)) return null
       const ctx = getSharedMeasureContext()
       const bounds = isTextElement(element)
         ? getTextElementBounds(element, ctx)
-        : getRectangleElementBounds(element)
+        : getShapeElementBounds(element)
       const handleOptions = isTextElement(element)
         ? { cornerMode: 'scale' as const, verticalMode: 'scale' as const, horizontalMode: 'width' as const }
         : { cornerMode: 'corner' as const, verticalMode: 'height' as const, horizontalMode: 'width' as const }
@@ -1765,11 +1851,12 @@ export function CanvasBoard() {
           }
         } else if (handleSpec.kind === 'corner') {
           transformStateRef.current = {
-            mode: 'rectScale',
+            mode: 'shapeScale',
             pointerId: event.pointerId,
             id: transformHandleHit.element.id,
+            elementType: transformHandleHit.element.type === 'ellipse' ? 'ellipse' : 'rect',
             handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw',
-            startBounds: transformHandleHit.bounds as RectElementBounds,
+            startBounds: transformHandleHit.bounds as ShapeElementBounds,
           }
         } else if (handleSpec.kind === 'width') {
           transformStateRef.current = {
@@ -1785,9 +1872,9 @@ export function CanvasBoard() {
             mode: 'height',
             pointerId: event.pointerId,
             id: transformHandleHit.element.id,
-            elementType: 'rect',
+            elementType: transformHandleHit.element.type === 'ellipse' ? 'ellipse' : 'rect',
             handle: handleSpec.handle as 'n' | 's',
-            startBounds: transformHandleHit.bounds as RectElementBounds,
+            startBounds: transformHandleHit.bounds as ShapeElementBounds,
           }
         } else {
           const angle = Math.atan2(
@@ -1840,31 +1927,44 @@ export function CanvasBoard() {
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
-        if (toolMode === 'rect') {
+        if (toolMode === 'rect' || toolMode === 'ellipse') {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
           const defaultHeight = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
-          const newElement: RectangleElement = {
-            id,
-            type: 'rect',
-            x: boardPoint.x,
-            y: boardPoint.y,
-            w: defaultWidth,
-            h: defaultHeight,
-            fill: RECT_DEFAULT_FILL,
-            stroke: RECT_DEFAULT_STROKE,
-            rotation: 0,
-            scale: 1,
-          }
-          rectCreationRef.current = {
+          const newElement: ShapeElement =
+            toolMode === 'rect'
+              ? {
+                  id,
+                  type: 'rect',
+                  x: boardPoint.x,
+                  y: boardPoint.y,
+                  w: defaultWidth,
+                  h: defaultHeight,
+                  fill: RECT_DEFAULT_FILL,
+                  stroke: RECT_DEFAULT_STROKE,
+                  rotation: 0,
+                }
+              : {
+                  id,
+                  type: 'ellipse',
+                  x: boardPoint.x,
+                  y: boardPoint.y,
+                  w: defaultWidth,
+                  h: defaultHeight,
+                  fill: RECT_DEFAULT_FILL,
+                  stroke: RECT_DEFAULT_STROKE,
+                  rotation: 0,
+                }
+          shapeCreationRef.current = {
             pointerId: event.pointerId,
             start: boardPoint,
             id,
             baseSize: defaultWidth,
             hasDragged: false,
+            elementType: toolMode,
           }
-          interactionModeRef.current = 'rect-create'
+          interactionModeRef.current = 'shape-create'
           suppressClickRef.current = true
           setElements((prev) => ({ ...prev, [id]: newElement }))
           setSelection(new Set([id]))
@@ -1983,8 +2083,8 @@ export function CanvasBoard() {
               const nextScale = clamp(rawScale, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
               nextElement = { ...target, scale: nextScale }
             }
-          } else if (transformState.mode === 'rectScale') {
-            if (!isRectangleElement(target)) return prev
+          } else if (transformState.mode === 'shapeScale') {
+            if (!isShapeElement(target)) return prev
             const bounds = transformState.startBounds
             const pointerLocal = toTextLocalCoordinates(boardPoint, bounds)
             const baseHalfWidth = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
@@ -2024,7 +2124,7 @@ export function CanvasBoard() {
               const newX = newCenter.x - layoutInfo.width / 2
               const newY = newCenter.y - layoutInfo.height / 2
               nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
-            } else if (transformState.elementType === 'rect' && isRectangleElement(target)) {
+            } else if (transformState.elementType !== 'text' && isShapeElement(target)) {
               const bounds = transformState.startBounds
               const minHalfWidth = RECT_MIN_SIZE / 2
               const targetHalf = direction * pointerLocal.x
@@ -2043,7 +2143,7 @@ export function CanvasBoard() {
               const newY = newCenter.y - bounds.height / 2
               nextElement = { ...target, x: newX, y: newY, w: newWidth }
             }
-          } else if (transformState.mode === 'height' && isRectangleElement(target)) {
+          } else if (transformState.mode === 'height' && isShapeElement(target)) {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
             const direction = transformState.handle === 's' ? 1 : -1
             const bounds = transformState.startBounds
@@ -2091,27 +2191,27 @@ export function CanvasBoard() {
         return
       }
 
-      if (mode === 'rect-create') {
-        const creation = rectCreationRef.current
+      if (mode === 'shape-create') {
+        const creation = shapeCreationRef.current
         if (!creation || creation.pointerId !== event.pointerId) return
         const boardPoint = screenToBoard(canvasPoint)
-        let updatedElement: RectangleElement | null = null
+        let updatedElement: ShapeElement | null = null
         setElements((prev) => {
           const target = prev[creation.id]
-          if (!target || !isRectangleElement(target)) return prev
+          if (!target || !isShapeElement(target)) return prev
           const width = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.x - creation.start.x))
           const height = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.y - creation.start.y))
           const nextX = Math.min(creation.start.x, boardPoint.x)
           const nextY = Math.min(creation.start.y, boardPoint.y)
           const updated = { ...target, x: nextX, y: nextY, w: width, h: height }
-          updatedElement = updated
+          updatedElement = updated as ShapeElement
           return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
           const dragDistanceX = Math.abs(boardPoint.x - creation.start.x)
           const dragDistanceY = Math.abs(boardPoint.y - creation.start.y)
           if (!creation.hasDragged && (dragDistanceX > RECT_MIN_SIZE || dragDistanceY > RECT_MIN_SIZE)) {
-            rectCreationRef.current = { ...creation, hasDragged: true }
+            shapeCreationRef.current = { ...creation, hasDragged: true }
           }
         }
         if (updatedElement) {
@@ -2283,15 +2383,15 @@ export function CanvasBoard() {
         return
       }
 
-      if (mode === 'rect-create') {
-        const creationState = rectCreationRef.current
-        rectCreationRef.current = null
+      if (mode === 'shape-create') {
+        const creationState = shapeCreationRef.current
+        shapeCreationRef.current = null
         suppressClickRef.current = false
         setMarquee(null)
         marqueeCandidateRef.current = null
         if (!creationState) return
         let element = elements[creationState.id]
-        if (!element || !isRectangleElement(element)) return
+        if (!element || !isShapeElement(element)) return
         sendElementsUpdate([element])
         if (boardId) {
           void persistElementCreate(boardId, element)
@@ -2475,6 +2575,10 @@ export function CanvasBoard() {
       }
       if (event.key === 'r' || event.key === 'R') {
         setToolMode((prev) => (prev === 'rect' ? 'select' : 'rect'))
+        return
+      }
+      if (event.key === 'e' || event.key === 'E') {
+        setToolMode((prev) => (prev === 'ellipse' ? 'select' : 'ellipse'))
         return
       }
       if (event.key === 'Escape') {
@@ -2715,6 +2819,8 @@ export function CanvasBoard() {
         drawTextElement(ctx, element, cameraState)
       } else if (isRectangleElement(element)) {
         drawRectangleElement(ctx, element, cameraState)
+      } else if (isEllipseElement(element)) {
+        drawEllipseElement(ctx, element, cameraState)
       }
     })
     const selectedArray = Array.from(selectedIds)
