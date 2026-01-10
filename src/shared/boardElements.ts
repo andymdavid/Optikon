@@ -69,6 +69,17 @@ export interface DiamondElement extends CanvasElement {
   rotation?: number
 }
 
+export interface TriangleElement extends CanvasElement {
+  type: 'triangle'
+  x: number
+  y: number
+  w: number
+  h: number
+  fill?: string
+  stroke?: string
+  rotation?: number
+}
+
 export type BoardElement =
   | StickyNoteElement
   | TextElement
@@ -76,3 +87,4 @@ export type BoardElement =
   | EllipseElement
   | RoundedRectElement
   | DiamondElement
+  | TriangleElement

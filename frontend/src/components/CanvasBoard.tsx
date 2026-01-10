@@ -5,6 +5,7 @@ import type {
   EllipseElement,
   RectangleElement,
   DiamondElement,
+  TriangleElement,
   RoundedRectElement,
   StickyNoteElement,
   TextElement,
@@ -75,8 +76,8 @@ const ROUND_RECT_DEFAULT_RADIUS = 12
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
-type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement | DiamondElement
+type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement | DiamondElement | TriangleElement
 
 type TextLayout = {
   lines: string[]
@@ -351,6 +352,7 @@ const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D |
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
   if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
+  if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
@@ -468,8 +470,15 @@ const isRoundedRectElement = (
 const isDiamondElement = (element: BoardElement | null | undefined): element is DiamondElement =>
   !!element && element.type === 'diamond'
 
+const isTriangleElement = (element: BoardElement | null | undefined): element is TriangleElement =>
+  !!element && element.type === 'triangle'
+
 const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
-  isRectangleElement(element) || isEllipseElement(element) || isRoundedRectElement(element) || isDiamondElement(element)
+  isRectangleElement(element) ||
+  isEllipseElement(element) ||
+  isRoundedRectElement(element) ||
+  isDiamondElement(element) ||
+  isTriangleElement(element)
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -500,7 +509,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -508,7 +517,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -516,7 +525,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -524,7 +533,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -778,6 +787,29 @@ function parseDiamondElement(raw: unknown): DiamondElement | null {
   }
 }
 
+function parseTriangleElement(raw: unknown): TriangleElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<TriangleElement>
+  if (element.type !== 'triangle') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  return {
+    id: element.id,
+    type: 'triangle',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -787,6 +819,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'ellipse') return parseEllipseElement(raw)
   if (type === 'roundRect') return parseRoundedRectElement(raw)
   if (type === 'diamond') return parseDiamondElement(raw)
+  if (type === 'triangle') return parseTriangleElement(raw)
   return null
 }
 
@@ -1103,6 +1136,30 @@ function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondEleme
   ctx.restore()
 }
 
+function drawTriangleElement(ctx: CanvasRenderingContext2D, element: TriangleElement, camera: CameraState) {
+  const bounds = getShapeElementBounds(element)
+  ctx.save()
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  const halfWidth = bounds.width / 2
+  const halfHeight = bounds.height / 2
+  ctx.beginPath()
+  ctx.moveTo(0, -halfHeight)
+  ctx.lineTo(-halfWidth, halfHeight)
+  ctx.lineTo(halfWidth, halfHeight)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -1368,6 +1425,10 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
+  if (isTriangleElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
   if (isEllipseElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
   }
@@ -1398,17 +1459,17 @@ export function CanvasBoard() {
         handle: 'nw' | 'ne' | 'sw' | 'se'
       }
   >(null)
-  const shapeCreationRef = useRef<
-    | null
-    | {
-        pointerId: number
-        start: { x: number; y: number }
-        id: string
-        baseSize: number
-        hasDragged: boolean
-        elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
-      }
-  >(null)
+const shapeCreationRef = useRef<
+  | null
+  | {
+      pointerId: number
+      start: { x: number; y: number }
+      id: string
+      baseSize: number
+      hasDragged: boolean
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+    }
+>(null)
   const transformStateRef = useRef<TransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
@@ -1666,6 +1727,23 @@ export function CanvasBoard() {
         const dy = Math.abs(local.y) / halfHeight
         return dx + dy <= 1
       }
+      const pointInTriangle = (point: { x: number; y: number }, element: TriangleElement) => {
+        const bounds = getShapeElementBounds(element)
+        const local = toTextLocalCoordinates(point, bounds)
+        const halfWidth = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
+        const halfHeight = Math.max(RECT_MIN_SIZE / 2, bounds.height / 2)
+        // Triangle vertices in local coordinates
+        const p0 = { x: 0, y: -halfHeight }
+        const p1 = { x: -halfWidth, y: halfHeight }
+        const p2 = { x: halfWidth, y: halfHeight }
+        const area = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) =>
+          Math.abs((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2)
+        const totalArea = area(p0, p1, p2)
+        const area1 = area(local, p1, p2)
+        const area2 = area(p0, local, p2)
+        const area3 = area(p0, p1, local)
+        return Math.abs(totalArea - (area1 + area2 + area3)) <= 0.0001
+      }
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
         if (isTextElement(element)) {
@@ -1691,6 +1769,12 @@ export function CanvasBoard() {
         }
         if (isDiamondElement(element)) {
           if (pointInDiamond({ x, y }, element)) {
+            return element.id
+          }
+          continue
+        }
+        if (isTriangleElement(element)) {
+          if (pointInTriangle({ x, y }, element)) {
             return element.id
           }
           continue
@@ -2006,7 +2090,7 @@ export function CanvasBoard() {
             startBounds: transformHandleHit.bounds as TextElementBounds,
           }
         } else if (handleSpec.kind === 'corner') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
           transformStateRef.current = {
             mode: 'shapeScale',
             pointerId: event.pointerId,
@@ -2025,7 +2109,7 @@ export function CanvasBoard() {
             startBounds: transformHandleHit.bounds,
           }
         } else if (handleSpec.kind === 'height') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
           transformStateRef.current = {
             mode: 'height',
             pointerId: event.pointerId,
@@ -2085,7 +2169,13 @@ export function CanvasBoard() {
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
-        if (toolMode === 'rect' || toolMode === 'ellipse' || toolMode === 'roundRect' || toolMode === 'diamond') {
+        if (
+          toolMode === 'rect' ||
+          toolMode === 'ellipse' ||
+          toolMode === 'roundRect' ||
+          toolMode === 'diamond' ||
+          toolMode === 'triangle'
+        ) {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
@@ -2131,10 +2221,22 @@ export function CanvasBoard() {
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
-          } else {
+          } else if (toolMode === 'diamond') {
             newElement = {
               id,
               type: 'diamond',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+            }
+          } else {
+            newElement = {
+              id,
+              type: 'triangle',
               x: boardPoint.x,
               y: boardPoint.y,
               w: defaultWidth,
@@ -2150,7 +2252,7 @@ export function CanvasBoard() {
             id,
             baseSize: defaultWidth,
             hasDragged: false,
-            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond',
+            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle',
           }
           interactionModeRef.current = 'shape-create'
           suppressClickRef.current = true
@@ -2777,6 +2879,10 @@ export function CanvasBoard() {
         setToolMode((prev) => (prev === 'diamond' ? 'select' : 'diamond'))
         return
       }
+      if (event.key === 'y' || event.key === 'Y') {
+        setToolMode((prev) => (prev === 'triangle' ? 'select' : 'triangle'))
+        return
+      }
       if (event.key === 'Escape') {
         setToolMode('select')
         return
@@ -3019,6 +3125,8 @@ export function CanvasBoard() {
         drawEllipseElement(ctx, element, cameraState)
       } else if (isDiamondElement(element)) {
         drawDiamondElement(ctx, element, cameraState)
+      } else if (isTriangleElement(element)) {
+        drawTriangleElement(ctx, element, cameraState)
       } else if (isRoundedRectElement(element)) {
         drawRoundedRectElement(ctx, element, cameraState)
       }
