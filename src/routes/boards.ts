@@ -67,6 +67,7 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
     "rect",
     "ellipse",
     "roundRect",
+    "diamond",
   ]
   const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
     typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"])

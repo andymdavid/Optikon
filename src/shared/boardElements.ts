@@ -58,9 +58,21 @@ export interface RoundedRectElement extends CanvasElement {
   rotation?: number
 }
 
+export interface DiamondElement extends CanvasElement {
+  type: 'diamond'
+  x: number
+  y: number
+  w: number
+  h: number
+  fill?: string
+  stroke?: string
+  rotation?: number
+}
+
 export type BoardElement =
   | StickyNoteElement
   | TextElement
   | RectangleElement
   | EllipseElement
   | RoundedRectElement
+  | DiamondElement

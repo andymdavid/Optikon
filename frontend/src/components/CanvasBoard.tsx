@@ -4,6 +4,7 @@ import type {
   BoardElement,
   EllipseElement,
   RectangleElement,
+  DiamondElement,
   RoundedRectElement,
   StickyNoteElement,
   TextElement,
@@ -74,8 +75,8 @@ const ROUND_RECT_DEFAULT_RADIUS = 12
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect'
-type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement
+type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
+type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement | DiamondElement
 
 type TextLayout = {
   lines: string[]
@@ -350,6 +351,7 @@ const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D |
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
   if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
+  if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
@@ -463,8 +465,11 @@ const isRoundedRectElement = (
   element: BoardElement | null | undefined
 ): element is RoundedRectElement => !!element && element.type === 'roundRect'
 
+const isDiamondElement = (element: BoardElement | null | undefined): element is DiamondElement =>
+  !!element && element.type === 'diamond'
+
 const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
-  isRectangleElement(element) || isEllipseElement(element) || isRoundedRectElement(element)
+  isRectangleElement(element) || isEllipseElement(element) || isRoundedRectElement(element) || isDiamondElement(element)
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -495,7 +500,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -503,7 +508,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -511,7 +516,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -519,7 +524,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -750,6 +755,29 @@ function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
   }
 }
 
+function parseDiamondElement(raw: unknown): DiamondElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<DiamondElement>
+  if (element.type !== 'diamond') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  return {
+    id: element.id,
+    type: 'diamond',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -758,6 +786,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'rect') return parseRectangleElement(raw)
   if (type === 'ellipse') return parseEllipseElement(raw)
   if (type === 'roundRect') return parseRoundedRectElement(raw)
+  if (type === 'diamond') return parseDiamondElement(raw)
   return null
 }
 
@@ -1049,6 +1078,31 @@ function drawRoundedRectElement(
   ctx.restore()
 }
 
+function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
+  const bounds = getShapeElementBounds(element)
+  ctx.save()
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  const halfWidth = bounds.width / 2
+  const halfHeight = bounds.height / 2
+  ctx.beginPath()
+  ctx.moveTo(0, -halfHeight)
+  ctx.lineTo(halfWidth, 0)
+  ctx.lineTo(0, halfHeight)
+  ctx.lineTo(-halfWidth, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -1310,6 +1364,10 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
+  if (isDiamondElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
   if (isEllipseElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
   }
@@ -1348,7 +1406,7 @@ export function CanvasBoard() {
         id: string
         baseSize: number
         hasDragged: boolean
-        elementType: 'rect' | 'ellipse' | 'roundRect'
+        elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond'
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -1598,6 +1656,16 @@ export function CanvasBoard() {
         const normalized = (local.x * local.x) / (rx * rx) + (local.y * local.y) / (ry * ry)
         return normalized <= 1
       }
+      const pointInDiamond = (point: { x: number; y: number }, element: DiamondElement) => {
+        const bounds = getShapeElementBounds(element)
+        const local = toTextLocalCoordinates(point, bounds)
+        const halfWidth = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
+        const halfHeight = Math.max(RECT_MIN_SIZE / 2, bounds.height / 2)
+        if (halfWidth <= 0 || halfHeight <= 0) return false
+        const dx = Math.abs(local.x) / halfWidth
+        const dy = Math.abs(local.y) / halfHeight
+        return dx + dy <= 1
+      }
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
         if (isTextElement(element)) {
@@ -1617,6 +1685,12 @@ export function CanvasBoard() {
         if (isRoundedRectElement(element)) {
           const bounds = getShapeElementBounds(element)
           if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
+        if (isDiamondElement(element)) {
+          if (pointInDiamond({ x, y }, element)) {
             return element.id
           }
           continue
@@ -1932,11 +2006,12 @@ export function CanvasBoard() {
             startBounds: transformHandleHit.bounds as TextElementBounds,
           }
         } else if (handleSpec.kind === 'corner') {
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond'
           transformStateRef.current = {
             mode: 'shapeScale',
             pointerId: event.pointerId,
             id: transformHandleHit.element.id,
-            elementType: transformHandleHit.element.type === 'ellipse' ? 'ellipse' : 'rect',
+            elementType: shapeType,
             handle: handleSpec.handle as 'nw' | 'ne' | 'se' | 'sw',
             startBounds: transformHandleHit.bounds as ShapeElementBounds,
           }
@@ -1950,11 +2025,12 @@ export function CanvasBoard() {
             startBounds: transformHandleHit.bounds,
           }
         } else if (handleSpec.kind === 'height') {
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond'
           transformStateRef.current = {
             mode: 'height',
             pointerId: event.pointerId,
             id: transformHandleHit.element.id,
-            elementType: transformHandleHit.element.type === 'ellipse' ? 'ellipse' : 'rect',
+            elementType: shapeType,
             handle: handleSpec.handle as 'n' | 's',
             startBounds: transformHandleHit.bounds as ShapeElementBounds,
           }
@@ -2009,7 +2085,7 @@ export function CanvasBoard() {
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
-        if (toolMode === 'rect' || toolMode === 'ellipse' || toolMode === 'roundRect') {
+        if (toolMode === 'rect' || toolMode === 'ellipse' || toolMode === 'roundRect' || toolMode === 'diamond') {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
@@ -2042,7 +2118,7 @@ export function CanvasBoard() {
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
-          } else {
+          } else if (toolMode === 'roundRect') {
             newElement = {
               id,
               type: 'roundRect',
@@ -2055,6 +2131,18 @@ export function CanvasBoard() {
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
+          } else {
+            newElement = {
+              id,
+              type: 'diamond',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+            }
           }
           shapeCreationRef.current = {
             pointerId: event.pointerId,
@@ -2062,7 +2150,7 @@ export function CanvasBoard() {
             id,
             baseSize: defaultWidth,
             hasDragged: false,
-            elementType: toolMode,
+            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond',
           }
           interactionModeRef.current = 'shape-create'
           suppressClickRef.current = true
@@ -2685,6 +2773,10 @@ export function CanvasBoard() {
         setToolMode((prev) => (prev === 'roundRect' ? 'select' : 'roundRect'))
         return
       }
+      if (event.key === 'd' || event.key === 'D') {
+        setToolMode((prev) => (prev === 'diamond' ? 'select' : 'diamond'))
+        return
+      }
       if (event.key === 'Escape') {
         setToolMode('select')
         return
@@ -2925,6 +3017,8 @@ export function CanvasBoard() {
         drawRectangleElement(ctx, element, cameraState)
       } else if (isEllipseElement(element)) {
         drawEllipseElement(ctx, element, cameraState)
+      } else if (isDiamondElement(element)) {
+        drawDiamondElement(ctx, element, cameraState)
       } else if (isRoundedRectElement(element)) {
         drawRoundedRectElement(ctx, element, cameraState)
       }
