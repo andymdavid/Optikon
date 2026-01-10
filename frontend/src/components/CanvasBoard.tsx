@@ -1931,7 +1931,10 @@ export function CanvasBoard() {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
-          const defaultHeight = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
+          const defaultHeight =
+            toolMode === 'ellipse'
+              ? defaultWidth
+              : Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
           const newElement: ShapeElement =
             toolMode === 'rect'
               ? {
