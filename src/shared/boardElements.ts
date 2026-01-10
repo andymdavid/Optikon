@@ -46,4 +46,21 @@ export interface EllipseElement extends CanvasElement {
   rotation?: number
 }
 
-export type BoardElement = StickyNoteElement | TextElement | RectangleElement | EllipseElement
+export interface RoundedRectElement extends CanvasElement {
+  type: 'roundRect'
+  x: number
+  y: number
+  w: number
+  h: number
+  r?: number
+  fill?: string
+  stroke?: string
+  rotation?: number
+}
+
+export type BoardElement =
+  | StickyNoteElement
+  | TextElement
+  | RectangleElement
+  | EllipseElement
+  | RoundedRectElement

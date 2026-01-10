@@ -4,6 +4,7 @@ import type {
   BoardElement,
   EllipseElement,
   RectangleElement,
+  RoundedRectElement,
   StickyNoteElement,
   TextElement,
 } from '@shared/boardElements'
@@ -69,11 +70,12 @@ const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
 const RECT_DEFAULT_SCREEN_SIZE = 180
+const ROUND_RECT_DEFAULT_RADIUS = 12
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse'
-type ShapeElement = RectangleElement | EllipseElement
+type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect'
+type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement
 
 type TextLayout = {
   lines: string[]
@@ -347,6 +349,7 @@ const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D |
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
+  if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   return { left: element.x, top: element.y, right: element.x, bottom: element.y }
 }
@@ -431,6 +434,13 @@ const resolveTextRotation = (value: unknown) => {
   return 0
 }
 
+const resolveRoundedRectRadius = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, value)
+  }
+  return ROUND_RECT_DEFAULT_RADIUS
+}
+
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
@@ -449,8 +459,12 @@ const isRectangleElement = (element: BoardElement | null | undefined): element i
 const isEllipseElement = (element: BoardElement | null | undefined): element is EllipseElement =>
   !!element && element.type === 'ellipse'
 
+const isRoundedRectElement = (
+  element: BoardElement | null | undefined
+): element is RoundedRectElement => !!element && element.type === 'roundRect'
+
 const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
-  isRectangleElement(element) || isEllipseElement(element)
+  isRectangleElement(element) || isEllipseElement(element) || isRoundedRectElement(element)
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -481,7 +495,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse'
+      elementType: 'rect' | 'ellipse' | 'roundRect'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -489,7 +503,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -497,7 +511,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse'
+      elementType: 'rect' | 'ellipse' | 'roundRect'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -505,7 +519,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -711,6 +725,31 @@ function parseEllipseElement(raw: unknown): EllipseElement | null {
   }
 }
 
+function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<RoundedRectElement>
+  if (element.type !== 'roundRect') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  const radiusValue = resolveRoundedRectRadius(element.r)
+  return {
+    id: element.id,
+    type: 'roundRect',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    r: radiusValue,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -718,6 +757,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'text') return parseTextElement(raw)
   if (type === 'rect') return parseRectangleElement(raw)
   if (type === 'ellipse') return parseEllipseElement(raw)
+  if (type === 'roundRect') return parseRoundedRectElement(raw)
   return null
 }
 
@@ -973,6 +1013,37 @@ function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseEleme
   const radiusY = bounds.height / 2
   ctx.beginPath()
   ctx.ellipse(0, 0, radiusX, radiusY, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
+const getRoundedRectRadius = (element: RoundedRectElement, width: number, height: number) => {
+  const requested = resolveRoundedRectRadius(element.r)
+  return Math.min(requested, width / 2, height / 2)
+}
+
+function drawRoundedRectElement(
+  ctx: CanvasRenderingContext2D,
+  element: RoundedRectElement,
+  camera: CameraState
+) {
+  const bounds = getShapeElementBounds(element)
+  ctx.save()
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  const width = bounds.width
+  const height = bounds.height
+  const radius = getRoundedRectRadius(element, width, height)
+  ctx.beginPath()
+  drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
   ctx.fill()
   ctx.stroke()
   ctx.restore()
@@ -1235,6 +1306,10 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
+  if (isRoundedRectElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
   if (isEllipseElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
   }
@@ -1273,7 +1348,7 @@ export function CanvasBoard() {
         id: string
         baseSize: number
         hasDragged: boolean
-        elementType: 'rect' | 'ellipse'
+        elementType: 'rect' | 'ellipse' | 'roundRect'
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -1534,6 +1609,13 @@ export function CanvasBoard() {
         }
         if (isRectangleElement(element)) {
           const bounds = getRectangleElementBounds(element)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
+        if (isRoundedRectElement(element)) {
+          const bounds = getShapeElementBounds(element)
           if (pointInPolygon({ x, y }, bounds.corners)) {
             return element.id
           }
@@ -1927,38 +2009,53 @@ export function CanvasBoard() {
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
-        if (toolMode === 'rect' || toolMode === 'ellipse') {
+        if (toolMode === 'rect' || toolMode === 'ellipse' || toolMode === 'roundRect') {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
-          const defaultHeight =
-            toolMode === 'ellipse'
-              ? defaultWidth
-              : Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
-          const newElement: ShapeElement =
-            toolMode === 'rect'
-              ? {
-                  id,
-                  type: 'rect',
-                  x: boardPoint.x,
-                  y: boardPoint.y,
-                  w: defaultWidth,
-                  h: defaultHeight,
-                  fill: RECT_DEFAULT_FILL,
-                  stroke: RECT_DEFAULT_STROKE,
-                  rotation: 0,
-                }
-              : {
-                  id,
-                  type: 'ellipse',
-                  x: boardPoint.x,
-                  y: boardPoint.y,
-                  w: defaultWidth,
-                  h: defaultHeight,
-                  fill: RECT_DEFAULT_FILL,
-                  stroke: RECT_DEFAULT_STROKE,
-                  rotation: 0,
-                }
+          const isEllipseTool = toolMode === 'ellipse'
+          const defaultHeight = isEllipseTool
+            ? defaultWidth
+            : Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
+          let newElement: ShapeElement
+          if (toolMode === 'rect') {
+            newElement = {
+              id,
+              type: 'rect',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+            }
+          } else if (isEllipseTool) {
+            newElement = {
+              id,
+              type: 'ellipse',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+            }
+          } else {
+            newElement = {
+              id,
+              type: 'roundRect',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              r: ROUND_RECT_DEFAULT_RADIUS,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+            }
+          }
           shapeCreationRef.current = {
             pointerId: event.pointerId,
             start: boardPoint,
@@ -2584,6 +2681,10 @@ export function CanvasBoard() {
         setToolMode((prev) => (prev === 'ellipse' ? 'select' : 'ellipse'))
         return
       }
+      if (event.key === 'o' || event.key === 'O') {
+        setToolMode((prev) => (prev === 'roundRect' ? 'select' : 'roundRect'))
+        return
+      }
       if (event.key === 'Escape') {
         setToolMode('select')
         return
@@ -2824,6 +2925,8 @@ export function CanvasBoard() {
         drawRectangleElement(ctx, element, cameraState)
       } else if (isEllipseElement(element)) {
         drawEllipseElement(ctx, element, cameraState)
+      } else if (isRoundedRectElement(element)) {
+        drawRoundedRectElement(ctx, element, cameraState)
       }
     })
     const selectedArray = Array.from(selectedIds)
