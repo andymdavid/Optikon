@@ -1289,7 +1289,8 @@ function drawSpeechBubbleElement(
   ctx.stroke()
   ctx.save()
   ctx.globalCompositeOperation = 'destination-out'
-  ctx.lineWidth = 2 / scaleFactor + 0.2
+  ctx.lineWidth = 2 / scaleFactor + 1
+  ctx.lineCap = 'butt'
   ctx.beginPath()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
   ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
