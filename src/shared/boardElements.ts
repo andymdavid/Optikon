@@ -98,6 +98,27 @@ export interface SpeechBubbleElement extends CanvasElement {
   tail?: SpeechBubbleTail
 }
 
+export type ConnectorAnchor = 'top' | 'right' | 'bottom' | 'left' | 'center'
+
+export interface LineEndpointBinding {
+  elementId: string
+  anchor: ConnectorAnchor
+}
+
+export interface LineElement extends CanvasElement {
+  type: 'line'
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  stroke?: string
+  strokeWidth?: number
+  startArrow?: boolean
+  endArrow?: boolean
+  startBinding?: LineEndpointBinding
+  endBinding?: LineEndpointBinding
+}
+
 export type BoardElement =
   | StickyNoteElement
   | TextElement
@@ -107,3 +128,4 @@ export type BoardElement =
   | DiamondElement
   | TriangleElement
   | SpeechBubbleElement
+  | LineElement

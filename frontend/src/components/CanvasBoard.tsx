@@ -10,6 +10,9 @@ import type {
   RoundedRectElement,
   StickyNoteElement,
   TextElement,
+  LineElement,
+  LineEndpointBinding,
+  ConnectorAnchor,
 } from '@shared/boardElements'
 
 export type CameraState = {
@@ -77,6 +80,17 @@ const ROUND_RECT_DEFAULT_RADIUS = 12
 const SPEECH_BUBBLE_CORNER_RATIO = 0.22
 const SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET = 0.35
 const SPEECH_BUBBLE_DEFAULT_TAIL_RATIO = 0.18
+const LINE_DEFAULT_STROKE = '#2563eb'
+const LINE_DEFAULT_STROKE_WIDTH = 4
+const LINE_ARROW_MIN_SCREEN = 10
+const LINE_ARROW_MAX_SCREEN = 18
+const LINE_ARROW_WIDTH_FACTOR = 0.6
+const LINE_HIT_RADIUS_PX = 12
+const LINE_SNAP_DISTANCE_PX = 24
+const LINE_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left', 'center']
+const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left']
+const CONNECTOR_HANDLE_RADIUS_PX = 3
+const CONNECTOR_HANDLE_OFFSET_PX = 12
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
@@ -90,6 +104,8 @@ type ToolMode =
   | 'diamond'
   | 'triangle'
   | 'speechBubble'
+  | 'line'
+  | 'arrow'
 type ShapeElement =
   | RectangleElement
   | EllipseElement
@@ -97,6 +113,205 @@ type ShapeElement =
   | DiamondElement
   | TriangleElement
   | SpeechBubbleElement
+type LineElementBounds = {
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  center: { x: number; y: number }
+  length: number
+  aabb: Rect
+  strokeWidth: number
+}
+
+type LineEndpointKey = 'start' | 'end'
+
+const getAxisAlignedAnchorPoint = (rect: Rect, anchor: ConnectorAnchor) => {
+  const centerX = (rect.left + rect.right) / 2
+  const centerY = (rect.top + rect.bottom) / 2
+  switch (anchor) {
+    case 'top':
+      return { x: centerX, y: rect.top }
+    case 'bottom':
+      return { x: centerX, y: rect.bottom }
+    case 'left':
+      return { x: rect.left, y: centerY }
+    case 'right':
+      return { x: rect.right, y: centerY }
+    default:
+      return { x: centerX, y: centerY }
+  }
+}
+
+const getTransformAnchorPoint = (bounds: TransformBounds, anchor: ConnectorAnchor) => {
+  const { corners, center } = bounds
+  const midpoint = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  })
+  switch (anchor) {
+    case 'top':
+      return midpoint(corners[0], corners[1])
+    case 'right':
+      return midpoint(corners[1], corners[2])
+    case 'bottom':
+      return midpoint(corners[2], corners[3])
+    case 'left':
+      return midpoint(corners[3], corners[0])
+    default:
+      return center
+  }
+}
+
+const getElementAnchorDetails = (
+  element: BoardElement,
+  anchor: ConnectorAnchor,
+  options?: { ctx?: CanvasRenderingContext2D | null }
+): { point: { x: number; y: number }; center: { x: number; y: number } } | null => {
+  if (isStickyElement(element)) {
+    const bounds = getStickyBounds(element)
+    const point = getAxisAlignedAnchorPoint(bounds, anchor)
+    const center = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 }
+    return { point, center }
+  }
+  const ctx = options?.ctx ?? null
+  if (isTextElement(element)) {
+    const textBounds = getTextElementBounds(element, ctx)
+    const point = getTransformAnchorPoint(textBounds, anchor)
+    return { point, center: textBounds.center }
+  }
+  if (isShapeElement(element)) {
+    const shapeBounds = getShapeElementBounds(element)
+    const point = getTransformAnchorPoint(shapeBounds, anchor)
+    return { point, center: shapeBounds.center }
+  }
+  return null
+}
+
+const getElementAnchorPoint = (
+  element: BoardElement,
+  anchor: ConnectorAnchor,
+  options?: { ctx?: CanvasRenderingContext2D | null }
+) => getElementAnchorDetails(element, anchor, options)?.point ?? null
+
+const resolveLineEndpointPosition = (
+  element: LineElement,
+  key: LineEndpointKey,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+) => {
+  const binding = key === 'start' ? element.startBinding : element.endBinding
+  if (binding && options?.resolveElement) {
+    const target = options.resolveElement(binding.elementId)
+    if (target) {
+      const ctx = options.measureCtx ?? null
+      const anchorPoint = getElementAnchorPoint(target, binding.anchor, { ctx })
+      if (anchorPoint) return anchorPoint
+    }
+  }
+  return key === 'start'
+    ? { x: element.x1, y: element.y1 }
+    : { x: element.x2, y: element.y2 }
+}
+
+const getResolvedLineEndpoints = (
+  element: LineElement,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+) => {
+  const measureCtx = options?.measureCtx ?? null
+  const resolver = options?.resolveElement
+  const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
+  const end = resolveLineEndpointPosition(element, 'end', { resolveElement: resolver, measureCtx })
+  return { start, end }
+}
+
+const findNearestAnchorBinding = (
+  point: { x: number; y: number },
+  elements: ElementMap,
+  excludeId: string,
+  camera: CameraState,
+  measureCtx: CanvasRenderingContext2D | null
+): { binding: LineEndpointBinding; position: { x: number; y: number } } | null => {
+  const threshold = LINE_SNAP_DISTANCE_PX / Math.max(0.01, camera.zoom)
+  let best: { binding: LineEndpointBinding; position: { x: number; y: number }; distance: number } | null = null
+  const anchorCtx = measureCtx ?? null
+  Object.values(elements).forEach((element) => {
+    if (!element || element.id === excludeId) return
+    if (!isStickyElement(element) && !isTextElement(element) && !isShapeElement(element)) return
+    LINE_ANCHORS.forEach((anchor) => {
+      const details = getElementAnchorDetails(element, anchor, { ctx: anchorCtx })
+      const position = details?.point
+      if (!position) return
+      const distance = Math.hypot(point.x - position.x, point.y - position.y)
+      if (distance > threshold) return
+      if (!best || distance < best.distance) {
+        best = {
+          binding: { elementId: element.id, anchor },
+          position,
+          distance,
+        }
+      }
+    })
+  })
+  if (!best) return null
+  const result = best as { binding: LineEndpointBinding; position: { x: number; y: number } }
+  return { binding: result.binding, position: result.position }
+}
+
+type ConnectorHandleSpec = {
+  element: BoardElement
+  anchor: ConnectorAnchor
+  board: { x: number; y: number }
+  screen: { x: number; y: number }
+}
+
+const getConnectorAnchorHandles = (
+  element: BoardElement,
+  camera: CameraState,
+  measureCtx: CanvasRenderingContext2D | null
+): ConnectorHandleSpec[] => {
+  if (!isStickyElement(element) && !isTextElement(element) && !isShapeElement(element)) return []
+  const handles: ConnectorHandleSpec[] = []
+  const ctx = measureCtx ?? null
+  VISIBLE_CONNECTOR_ANCHORS.forEach((anchor) => {
+    const details = getElementAnchorDetails(element, anchor, { ctx })
+    if (!details) return
+    const anchorPoint = details.point
+    const dirX = details.point.x - details.center.x
+    const dirY = details.point.y - details.center.y
+    const length = Math.hypot(dirX, dirY)
+    const offset = (CONNECTOR_HANDLE_OFFSET_PX + CONNECTOR_HANDLE_RADIUS_PX) / Math.max(0.01, camera.zoom)
+    const boardOffset = length > 1e-5 ? { x: (dirX / length) * offset, y: (dirY / length) * offset } : { x: 0, y: 0 }
+    const markerBoard = { x: anchorPoint.x + boardOffset.x, y: anchorPoint.y + boardOffset.y }
+    const screen = {
+      x: (markerBoard.x + camera.offsetX) * camera.zoom,
+      y: (markerBoard.y + camera.offsetY) * camera.zoom,
+    }
+    handles.push({ element, anchor, board: anchorPoint, screen })
+  })
+  return handles
+}
+
+const drawConnectorAnchors = (
+  ctx: CanvasRenderingContext2D,
+  element: BoardElement,
+  camera: CameraState,
+  measureCtx: CanvasRenderingContext2D | null,
+  highlight: { elementId: string; anchor: ConnectorAnchor } | null
+) => {
+  const handles = getConnectorAnchorHandles(element, camera, measureCtx)
+  if (handles.length === 0) return
+  handles.forEach((handle) => {
+    ctx.save()
+    const active =
+      highlight && highlight.elementId === handle.element.id && highlight.anchor === handle.anchor
+    ctx.fillStyle = active ? '#ffffff' : ACCENT_COLOR
+    ctx.strokeStyle = active ? ACCENT_COLOR : '#ffffff'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(handle.screen.x, handle.screen.y, CONNECTOR_HANDLE_RADIUS_PX, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+  })
+}
 
 type TextLayout = {
   lines: string[]
@@ -366,7 +581,43 @@ const getRectangleElementBounds = (element: RectangleElement): ShapeElementBound
 const getEllipseElementBounds = (element: EllipseElement): ShapeElementBounds =>
   getShapeElementBounds(element)
 
-const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D | null): Rect => {
+const getLineStrokeWidth = (element: LineElement) => {
+  if (typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)) {
+    return Math.max(0.5, element.strokeWidth)
+  }
+  return LINE_DEFAULT_STROKE_WIDTH
+}
+
+const getLineElementBounds = (
+  element: LineElement,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+): LineElementBounds => {
+  const { start, end } = getResolvedLineEndpoints(element, options)
+  const center = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+  const strokeWidth = getLineStrokeWidth(element)
+  const padding = strokeWidth / 2
+  const aabb = {
+    left: Math.min(start.x, end.x) - padding,
+    right: Math.max(start.x, end.x) + padding,
+    top: Math.min(start.y, end.y) - padding,
+    bottom: Math.max(start.y, end.y) + padding,
+  }
+  const length = Math.hypot(end.x - start.x, end.y - start.y)
+  return { start, end, center, length, aabb, strokeWidth }
+}
+
+const computeArrowLength = (screenStrokeWidth: number, maxLength: number) => {
+  if (maxLength <= 0) return 0
+  const clampedStroke = Math.max(1, screenStrokeWidth)
+  const desiredLength = clamp(clampedStroke * 4, LINE_ARROW_MIN_SCREEN, LINE_ARROW_MAX_SCREEN)
+  return Math.min(desiredLength, maxLength * 0.8)
+}
+
+const getElementBounds = (
+  element: BoardElement,
+  ctx: CanvasRenderingContext2D | null,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+): Rect => {
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
@@ -374,7 +625,8 @@ const getElementBounds = (element: BoardElement, ctx: CanvasRenderingContext2D |
   if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
-  return { left: element.x, top: element.y, right: element.x, bottom: element.y }
+  if (isLineElement(element)) return getLineElementBounds(element, options).aabb
+  return { left: 0, top: 0, right: 0, bottom: 0 }
 }
 
 const getStickyPadding = (element: StickyNoteElement) => {
@@ -473,6 +725,22 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 
+const pointToSegmentDistance = (
+  point: { x: number; y: number },
+  start: { x: number; y: number },
+  end: { x: number; y: number }
+) => {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq <= 1e-12) {
+    return Math.hypot(point.x - start.x, point.y - start.y)
+  }
+  const t = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSq, 0, 1)
+  const proj = { x: start.x + t * dx, y: start.y + t * dy }
+  return Math.hypot(point.x - proj.x, point.y - proj.y)
+}
+
 const isStickyElement = (element: BoardElement | null | undefined): element is StickyNoteElement =>
   !!element && element.type === 'sticky'
 
@@ -506,6 +774,9 @@ const isShapeElement = (element: BoardElement | null | undefined): element is Sh
   isDiamondElement(element) ||
   isTriangleElement(element) ||
   isSpeechBubbleElement(element)
+
+const isLineElement = (element: BoardElement | null | undefined): element is LineElement =>
+  !!element && element.type === 'line'
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -675,7 +946,8 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (typeof element.id !== 'string') return null
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   if (typeof element.text !== 'string') return null
-  const size = getStickySize({ ...element, size: element.size ?? STICKY_SIZE })
+  const rawSize = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
+  const size = Math.max(STICKY_MIN_SIZE, rawSize)
   const provisional: StickyNoteElement = {
     id: element.id,
     type: 'sticky',
@@ -848,15 +1120,19 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
   const tailSpec = element.tail
+  const defaultTailSize = Math.max(RECT_MIN_SIZE / 2, Math.min(width, height) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
   const tail = tailSpec
-    ? {
+    ? ({
         side:
           tailSpec.side === 'top' || tailSpec.side === 'left' || tailSpec.side === 'right'
             ? tailSpec.side
             : 'bottom',
         offset: clampTailOffset(tailSpec.offset),
-        size: typeof tailSpec.size === 'number' ? Math.max(RECT_MIN_SIZE / 2, tailSpec.size) : undefined,
-      }
+        size:
+          typeof tailSpec.size === 'number'
+            ? Math.max(RECT_MIN_SIZE / 2, tailSpec.size)
+            : defaultTailSize,
+      } satisfies SpeechBubbleTail)
     : undefined
   const bubble: SpeechBubbleElement = {
     id: element.id,
@@ -873,6 +1149,50 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
   return applySpeechBubbleTailSizing(bubble, width, height)
 }
 
+const isConnectorAnchor = (value: unknown): value is ConnectorAnchor =>
+  value === 'top' || value === 'right' || value === 'bottom' || value === 'left' || value === 'center'
+
+const parseLineEndpointBindingField = (value: unknown): LineEndpointBinding | undefined => {
+  if (!value || typeof value !== 'object') return undefined
+  const binding = value as Partial<LineEndpointBinding>
+  if (typeof binding.elementId !== 'string') return undefined
+  if (!isConnectorAnchor(binding.anchor)) return undefined
+  return { elementId: binding.elementId, anchor: binding.anchor }
+}
+
+function parseLineElement(raw: unknown): LineElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<LineElement>
+  if (element.type !== 'line') return null
+  if (typeof element.id !== 'string') return null
+  if (
+    typeof element.x1 !== 'number' ||
+    typeof element.y1 !== 'number' ||
+    typeof element.x2 !== 'number' ||
+    typeof element.y2 !== 'number'
+  ) {
+    return null
+  }
+  const strokeWidth =
+    typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)
+      ? Math.max(0.5, element.strokeWidth)
+      : LINE_DEFAULT_STROKE_WIDTH
+  return {
+    id: element.id,
+    type: 'line',
+    x1: element.x1,
+    y1: element.y1,
+    x2: element.x2,
+    y2: element.y2,
+    stroke: typeof element.stroke === 'string' ? element.stroke : LINE_DEFAULT_STROKE,
+    strokeWidth,
+    startArrow: !!element.startArrow,
+    endArrow: !!element.endArrow,
+    startBinding: parseLineEndpointBindingField(element.startBinding) ?? undefined,
+    endBinding: parseLineEndpointBindingField(element.endBinding) ?? undefined,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -884,6 +1204,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'diamond') return parseDiamondElement(raw)
   if (type === 'triangle') return parseTriangleElement(raw)
   if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
+  if (type === 'line') return parseLineElement(raw)
   return null
 }
 
@@ -1197,6 +1518,103 @@ function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondEleme
   ctx.closePath()
   ctx.fill()
   ctx.stroke()
+  ctx.restore()
+}
+
+const getLineStrokeColor = (element: LineElement) => element.stroke ?? LINE_DEFAULT_STROKE
+
+const drawLineArrowhead = (
+  ctx: CanvasRenderingContext2D,
+  tip: { x: number; y: number },
+  origin: { x: number; y: number },
+  strokeColor: string,
+  screenStrokeWidth: number,
+  arrowLength: number
+) => {
+  if (arrowLength <= 1e-3) return
+  const dx = origin.x - tip.x
+  const dy = origin.y - tip.y
+  const length = Math.hypot(dx, dy)
+  if (length <= 1e-3) return
+  const ux = dx / length
+  const uy = dy / length
+  const clampedStroke = Math.max(1, screenStrokeWidth)
+  const cappedLength = Math.min(arrowLength, clamp(clampedStroke * 4, LINE_ARROW_MIN_SCREEN, LINE_ARROW_MAX_SCREEN))
+  const arrowWidth = cappedLength * LINE_ARROW_WIDTH_FACTOR
+  const baseX = tip.x + ux * cappedLength
+  const baseY = tip.y + uy * cappedLength
+  const perpX = -uy
+  const perpY = ux
+  ctx.beginPath()
+  ctx.moveTo(tip.x, tip.y)
+  ctx.lineTo(baseX + perpX * (arrowWidth / 2), baseY + perpY * (arrowWidth / 2))
+  ctx.lineTo(baseX - perpX * (arrowWidth / 2), baseY - perpY * (arrowWidth / 2))
+  ctx.closePath()
+  ctx.fillStyle = strokeColor
+  ctx.fill()
+}
+
+function drawLineElement(
+  ctx: CanvasRenderingContext2D,
+  element: LineElement,
+  camera: CameraState,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+) {
+  const strokeWidth = getLineStrokeWidth(element)
+  const screenStrokeWidth = Math.max(1, strokeWidth * camera.zoom)
+  const { start: startBoard, end: endBoard } = getResolvedLineEndpoints(element, options)
+  const start = {
+    x: (startBoard.x + camera.offsetX) * camera.zoom,
+    y: (startBoard.y + camera.offsetY) * camera.zoom,
+  }
+  const end = {
+    x: (endBoard.x + camera.offsetX) * camera.zoom,
+    y: (endBoard.y + camera.offsetY) * camera.zoom,
+  }
+  const strokeColor = getLineStrokeColor(element)
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const lineLength = Math.hypot(dx, dy)
+  let startTrim = 0
+  let endTrim = 0
+  if (lineLength > 0) {
+    if (element.startArrow) {
+      startTrim = computeArrowLength(screenStrokeWidth, lineLength)
+    }
+    if (element.endArrow) {
+      endTrim = computeArrowLength(screenStrokeWidth, lineLength)
+    }
+    if (startTrim + endTrim > lineLength) {
+      const scale = lineLength / (startTrim + endTrim)
+      startTrim *= scale
+      endTrim *= scale
+    }
+  }
+  const ux = lineLength > 0 ? dx / lineLength : 0
+  const uy = lineLength > 0 ? dy / lineLength : 0
+  const lineStart = {
+    x: start.x + ux * startTrim,
+    y: start.y + uy * startTrim,
+  }
+  const lineEnd = {
+    x: end.x - ux * endTrim,
+    y: end.y - uy * endTrim,
+  }
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.strokeStyle = strokeColor
+  ctx.lineWidth = screenStrokeWidth
+  ctx.beginPath()
+  ctx.moveTo(lineStart.x, lineStart.y)
+  ctx.lineTo(lineEnd.x, lineEnd.y)
+  ctx.stroke()
+  if (element.startArrow && startTrim > 0) {
+    drawLineArrowhead(ctx, start, lineStart, strokeColor, screenStrokeWidth, startTrim)
+  }
+  if (element.endArrow && endTrim > 0) {
+    drawLineArrowhead(ctx, end, lineEnd, strokeColor, screenStrokeWidth, endTrim)
+  }
   ctx.restore()
 }
 
@@ -1613,11 +2031,55 @@ function drawShapeSelection(
   ctx.restore()
 }
 
+function drawLineSelection(
+  ctx: CanvasRenderingContext2D,
+  element: LineElement,
+  camera: CameraState,
+  options: { withHandles: boolean },
+  resolveElement?: (id: string) => BoardElement | undefined,
+  measureCtx?: CanvasRenderingContext2D | null
+) {
+  const { start: startBoard, end: endBoard } = getResolvedLineEndpoints(element, { resolveElement, measureCtx })
+  const start = {
+    x: (startBoard.x + camera.offsetX) * camera.zoom,
+    y: (startBoard.y + camera.offsetY) * camera.zoom,
+  }
+  const end = {
+    x: (endBoard.x + camera.offsetX) * camera.zoom,
+    y: (endBoard.y + camera.offsetY) * camera.zoom,
+  }
+  const baseWidth = Math.max(1, getLineStrokeWidth(element) * camera.zoom)
+  ctx.save()
+  ctx.strokeStyle = ACCENT_COLOR
+  ctx.lineWidth = baseWidth + 6
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(start.x, start.y)
+  ctx.lineTo(end.x, end.y)
+  ctx.stroke()
+  if (options.withHandles) {
+    const drawHandle = (point: { x: number; y: number }) => {
+      ctx.beginPath()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = ACCENT_COLOR
+      ctx.lineWidth = 1
+      ctx.arc(point.x, point.y, RESIZE_HANDLE_RADIUS, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    drawHandle(start)
+    drawHandle(end)
+  }
+  ctx.restore()
+}
+
 function drawElementSelection(
   ctx: CanvasRenderingContext2D,
   element: BoardElement,
   camera: CameraState,
-  options: { withHandles: boolean }
+  options: { withHandles: boolean },
+  resolveElement?: (id: string) => BoardElement | undefined,
+  measureCtx?: CanvasRenderingContext2D | null
 ) {
   if (isStickyElement(element)) {
     drawStickySelection(ctx, element, camera, options)
@@ -1625,6 +2087,10 @@ function drawElementSelection(
   }
   if (isTextElement(element)) {
     drawTextSelection(ctx, element, camera, options)
+    return
+  }
+  if (isLineElement(element)) {
+    drawLineSelection(ctx, element, camera, options, resolveElement, measureCtx)
     return
   }
   if (isRectangleElement(element)) {
@@ -1664,7 +2130,7 @@ export function CanvasBoard() {
         offsetY?: number
         pointerId: number
         startPointer: { x: number; y: number }
-        startPositions: Record<string, { x: number; y: number }>
+        startPositions: Record<string, { x: number; y: number; x2?: number; y2?: number }>
       }
     | null
   >(null)
@@ -1675,6 +2141,15 @@ export function CanvasBoard() {
         pointerId: number
         anchor: { x: number; y: number }
         handle: 'nw' | 'ne' | 'sw' | 'se'
+      }
+  >(null)
+  const lineHandleStateRef = useRef<
+    | null
+    | {
+        id: string
+        pointerId: number
+        handle: 'start' | 'end'
+        candidateBinding: LineEndpointBinding | null
       }
   >(null)
 const shapeCreationRef = useRef<
@@ -1688,6 +2163,17 @@ const shapeCreationRef = useRef<
       elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
     }
 >(null)
+  const lineCreationRef = useRef<
+    | null
+    | {
+        pointerId: number
+        id: string
+        start: { x: number; y: number }
+        hasDragged: boolean
+        startBinding: LineEndpointBinding | null
+        endBinding: LineEndpointBinding | null
+      }
+  >(null)
   const transformStateRef = useRef<TransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
@@ -1701,7 +2187,16 @@ const shapeCreationRef = useRef<
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
   const interactionModeRef = useRef<
-    'none' | 'pan' | 'drag' | 'marquee' | 'marqueeCandidate' | 'resize' | 'transform' | 'shape-create'
+    | 'none'
+    | 'pan'
+    | 'drag'
+    | 'marquee'
+    | 'marqueeCandidate'
+    | 'resize'
+    | 'transform'
+    | 'shape-create'
+    | 'line-create'
+    | 'line-handle'
   >('none')
   const marqueeCandidateRef = useRef<
     | null
@@ -1733,6 +2228,9 @@ const shapeCreationRef = useRef<
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
   const [toolMode, setToolMode] = useState<ToolMode>('select')
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
+  const [connectorHighlight, setConnectorHighlight] = useState<
+    { elementId: string; anchor: ConnectorAnchor } | null
+  >(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -1742,6 +2240,17 @@ const shapeCreationRef = useRef<
     },
     []
   )
+
+  const updateConnectorHighlight = useCallback((binding: LineEndpointBinding | null) => {
+    if (!binding) {
+      setConnectorHighlight((prev) => (prev ? null : prev))
+      return
+    }
+    setConnectorHighlight((prev) => {
+      if (prev && prev.elementId === binding.elementId && prev.anchor === binding.anchor) return prev
+      return { elementId: binding.elementId, anchor: binding.anchor }
+    })
+  }, [])
 
   const getMeasureContext = useCallback(() => {
     if (!measurementCtxRef.current) {
@@ -1965,6 +2474,19 @@ const shapeCreationRef = useRef<
       }
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
+        if (isLineElement(element)) {
+          const tolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
+          const measureCtx = getSharedMeasureContext()
+          const { start, end } = getResolvedLineEndpoints(element, {
+            resolveElement: (elementId) => elements[elementId],
+            measureCtx,
+          })
+          const distance = pointToSegmentDistance({ x, y }, start, end)
+          if (distance <= tolerance) {
+            return element.id
+          }
+          continue
+        }
         if (isTextElement(element)) {
           const bounds = getTextElementBounds(element, ctx)
           if (pointInPolygon({ x, y }, bounds.corners)) {
@@ -2011,14 +2533,17 @@ const shapeCreationRef = useRef<
           }
           continue
         }
-        const aabb = getElementBounds(element, ctx)
+        const aabb = getElementBounds(element, ctx, {
+          resolveElement: (id) => elements[id],
+          measureCtx: ctx,
+        })
         if (x >= aabb.left && x <= aabb.right && y >= aabb.top && y <= aabb.bottom) {
           return element.id
         }
       }
       return null
     },
-    [elements]
+    [cameraState.zoom, elements]
   )
 
   const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
@@ -2219,6 +2744,63 @@ const shapeCreationRef = useRef<
     [cameraState, elements]
   )
 
+  const hitTestLineHandle = useCallback(
+    (
+      point: { x: number; y: number }
+    ): { element: LineElement; handle: 'start' | 'end' } | null => {
+      const selected = selectedIdsRef.current
+      if (selected.size !== 1) return null
+      const [id] = Array.from(selected)
+      const element = elements[id]
+      if (!isLineElement(element)) return null
+      const measureCtx = getSharedMeasureContext()
+      const { start, end } = getResolvedLineEndpoints(element, {
+        resolveElement: (elementId) => elements[elementId],
+        measureCtx,
+      })
+      const handles: Array<{ handle: 'start' | 'end'; x: number; y: number }> = [
+        {
+          handle: 'start',
+          x: (start.x + cameraState.offsetX) * cameraState.zoom,
+          y: (start.y + cameraState.offsetY) * cameraState.zoom,
+        },
+        {
+          handle: 'end',
+          x: (end.x + cameraState.offsetX) * cameraState.zoom,
+          y: (end.y + cameraState.offsetY) * cameraState.zoom,
+        },
+      ]
+      for (const handle of handles) {
+        const distance = Math.hypot(point.x - handle.x, point.y - handle.y)
+        if (distance <= RESIZE_HANDLE_HIT_RADIUS) {
+          return { element, handle: handle.handle }
+        }
+      }
+      return null
+    },
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
+  )
+
+  const hitTestConnectorAnchor = useCallback(
+    (point: { x: number; y: number }): { element: BoardElement; anchor: ConnectorAnchor; board: { x: number; y: number } } | null => {
+      const measureCtx = getSharedMeasureContext()
+      const values = Object.values(elements)
+      for (let index = values.length - 1; index >= 0; index -= 1) {
+        const element = values[index]
+        if (!element || isLineElement(element)) continue
+        const handles = getConnectorAnchorHandles(element, cameraState, measureCtx)
+        for (const handle of handles) {
+          const distance = Math.hypot(point.x - handle.screen.x, point.y - handle.screen.y)
+          if (distance <= CONNECTOR_HANDLE_RADIUS_PX + 4) {
+            return { element: handle.element, anchor: handle.anchor, board: handle.board }
+          }
+        }
+      }
+      return null
+    },
+    [cameraState, elements]
+  )
+
   const hitTestTransformHandle = useCallback(
     (
       point: { x: number; y: number }
@@ -2392,6 +2974,43 @@ const shapeCreationRef = useRef<
         }
         return
       }
+      if (toolMode === 'select') {
+        const lineHandleHit = hitTestLineHandle(canvasPoint)
+        if (lineHandleHit) {
+          event.preventDefault()
+          suppressClickRef.current = true
+          interactionModeRef.current = 'line-handle'
+          const measureCtx = getSharedMeasureContext()
+          setElements((prev) => {
+            const target = prev[lineHandleHit.element.id]
+            if (!target || !isLineElement(target)) return prev
+            const resolved = getResolvedLineEndpoints(target, {
+              resolveElement: (elementId) => prev[elementId],
+              measureCtx,
+            })
+            let updated: LineElement
+            if (lineHandleHit.handle === 'start') {
+              updated = { ...target, startBinding: undefined, x1: resolved.start.x, y1: resolved.start.y }
+            } else {
+              updated = { ...target, endBinding: undefined, x2: resolved.end.x, y2: resolved.end.y }
+            }
+            return { ...prev, [target.id]: updated }
+          })
+          lineHandleStateRef.current = {
+            id: lineHandleHit.element.id,
+            pointerId: event.pointerId,
+            handle: lineHandleHit.handle,
+            candidateBinding:
+              lineHandleHit.handle === 'start'
+                ? lineHandleHit.element.startBinding ?? null
+                : lineHandleHit.element.endBinding ?? null,
+          }
+          if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }
+          return
+        }
+      }
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
@@ -2501,6 +3120,81 @@ const shapeCreationRef = useRef<
           setSelection(new Set([id]))
           return
         }
+        if (toolMode === 'line' || toolMode === 'arrow') {
+          const anchorHit = hitTestConnectorAnchor(canvasPoint)
+          if (anchorHit) {
+            event.preventDefault()
+            const id = randomId()
+            const startBinding: LineEndpointBinding = { elementId: anchorHit.element.id, anchor: anchorHit.anchor }
+            const startPoint = anchorHit.board
+            const newElement: LineElement = {
+              id,
+              type: 'line',
+              x1: startPoint.x,
+              y1: startPoint.y,
+              x2: startPoint.x,
+              y2: startPoint.y,
+              stroke: LINE_DEFAULT_STROKE,
+              strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
+              startArrow: false,
+              endArrow: toolMode === 'arrow',
+              startBinding,
+            }
+            lineCreationRef.current = {
+              pointerId: event.pointerId,
+              id,
+              start: startPoint,
+              hasDragged: false,
+              startBinding,
+              endBinding: null,
+            }
+            interactionModeRef.current = 'line-create'
+            suppressClickRef.current = true
+            setElements((prev) => ({ ...prev, [id]: newElement }))
+            setSelection(new Set([id]))
+            if (event.currentTarget.setPointerCapture) {
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }
+            return
+          }
+          event.preventDefault()
+          const id = randomId()
+          const measureCtx = getSharedMeasureContext()
+          const startSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
+          const startPosition = startSnap?.position ?? boardPoint
+          let newElement: LineElement = {
+            id,
+            type: 'line',
+            x1: startPosition.x,
+            y1: startPosition.y,
+            x2: startPosition.x,
+            y2: startPosition.y,
+            stroke: LINE_DEFAULT_STROKE,
+            strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
+            startArrow: false,
+            endArrow: toolMode === 'arrow',
+          }
+          const startBinding = startSnap?.binding ?? null
+          if (startSnap) {
+            newElement = { ...newElement, startBinding: startSnap.binding }
+          }
+          lineCreationRef.current = {
+            pointerId: event.pointerId,
+            id,
+            start: startPosition,
+            hasDragged: false,
+            startBinding,
+            endBinding: null,
+          }
+          interactionModeRef.current = 'line-create'
+          suppressClickRef.current = true
+          setElements((prev) => ({ ...prev, [id]: newElement }))
+          setSelection(new Set([id]))
+          if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }
+          return
+        }
         dragStateRef.current = null
         marqueeCandidateRef.current = { startBoard: boardPoint, startScreen: canvasPoint, shift: event.shiftKey }
         setMarquee(null)
@@ -2528,11 +3222,15 @@ const shapeCreationRef = useRef<
       }
 
       const dragIds = Array.from(nextSelection)
-      const startPositions: Record<string, { x: number; y: number }> = {}
+      const startPositions: Record<string, { x: number; y: number; x2?: number; y2?: number }> = {}
       dragIds.forEach((id) => {
         const element = elements[id]
         if (element) {
-          startPositions[id] = { x: element.x, y: element.y }
+          if (isLineElement(element)) {
+            startPositions[id] = { x: element.x1, y: element.y1, x2: element.x2, y2: element.y2 }
+          } else {
+            startPositions[id] = { x: element.x, y: element.y }
+          }
         }
       })
       dragStateRef.current = {
@@ -2542,7 +3240,21 @@ const shapeCreationRef = useRef<
         startPositions,
       }
     },
-    [boardId, cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, hitTestElement, hitTestResizeHandle, hitTestTransformHandle, screenToBoard, setMarquee, setSelection, toolMode]
+    [
+      boardId,
+      cameraState.offsetX,
+      cameraState.offsetY,
+      cameraState.zoom,
+      elements,
+      hitTestElement,
+      hitTestLineHandle,
+      hitTestResizeHandle,
+      hitTestTransformHandle,
+      screenToBoard,
+      setMarquee,
+      setSelection,
+      toolMode,
+    ]
   )
 
   const handlePointerMove = useCallback(
@@ -2591,6 +3303,38 @@ const shapeCreationRef = useRef<
               }
             : prev
         )
+        return
+      }
+
+      if (mode === 'line-handle') {
+        const lineHandleState = lineHandleStateRef.current
+        if (!lineHandleState || lineHandleState.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        const measureCtx = getSharedMeasureContext()
+        const snap = findNearestAnchorBinding(boardPoint, elements, lineHandleState.id, cameraState, measureCtx)
+        const targetPoint = snap?.position ?? boardPoint
+        let updatedLine: LineElement | null = null
+        setElements((prev) => {
+          const target = prev[lineHandleState.id]
+          if (!target || !isLineElement(target)) return prev
+          const next: LineElement =
+            lineHandleState.handle === 'start'
+              ? { ...target, x1: targetPoint.x, y1: targetPoint.y }
+              : { ...target, x2: targetPoint.x, y2: targetPoint.y }
+          updatedLine = next
+          return { ...prev, [lineHandleState.id]: next }
+        })
+        if (lineHandleStateRef.current) {
+          lineHandleStateRef.current = { ...lineHandleStateRef.current, candidateBinding: snap?.binding ?? null }
+        }
+        updateConnectorHighlight(snap?.binding ?? null)
+        if (updatedLine) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedLine])
+            lastBroadcastRef.current = now
+          }
+        }
         return
       }
 
@@ -2701,6 +3445,7 @@ const shapeCreationRef = useRef<
             shapeNext = withSpeechBubbleTail(shapeNext, bounds.width, newHeight)
             nextElement = shapeNext
           } else if (transformState.mode === 'rotate') {
+            if (!isTextElement(target) && !isShapeElement(target)) return prev
             const dx = boardPoint.x - transformState.startBounds.center.x
             const dy = boardPoint.y - transformState.startBounds.center.y
             if (Math.abs(dx) + Math.abs(dy) >= 0.0001) {
@@ -2711,7 +3456,8 @@ const shapeCreationRef = useRef<
               if (Math.abs(snapped - nextRotation) <= TEXT_ROTATION_SNAP_EPSILON) {
                 nextRotation = snapped
               }
-              nextElement = { ...target, rotation: nextRotation }
+              const rotTarget = target
+              nextElement = { ...rotTarget, rotation: nextRotation }
             }
           }
           if (!nextElement) return prev
@@ -2762,6 +3508,42 @@ const shapeCreationRef = useRef<
         return
       }
 
+      if (mode === 'line-create') {
+        const creation = lineCreationRef.current
+        if (!creation || creation.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        const measureCtx = getSharedMeasureContext()
+        const snap = findNearestAnchorBinding(boardPoint, elements, creation.id, cameraState, measureCtx)
+        const targetPoint = snap?.position ?? boardPoint
+        let nextLine: LineElement | null = null
+        setElements((prev) => {
+          const target = prev[creation.id]
+          if (!target || !isLineElement(target)) return prev
+          const updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
+          nextLine = updated
+          return { ...prev, [creation.id]: updated }
+        })
+        if (nextLine) {
+          const dragDistance = Math.hypot(
+            targetPoint.x - creation.start.x,
+            targetPoint.y - creation.start.y
+          )
+          if (!creation.hasDragged && dragDistance > RECT_MIN_SIZE / 4) {
+            lineCreationRef.current = { ...creation, hasDragged: true }
+          }
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([nextLine])
+            lastBroadcastRef.current = now
+          }
+        }
+        if (lineCreationRef.current) {
+          lineCreationRef.current = { ...lineCreationRef.current, endBinding: snap?.binding ?? null }
+        }
+        updateConnectorHighlight(snap?.binding ?? null)
+        return
+      }
+
       const resizeState = resizeStateRef.current
       if (mode === 'resize' && resizeState && resizeState.pointerId === event.pointerId) {
         const boardPoint = screenToBoard(canvasPoint)
@@ -2769,7 +3551,7 @@ const shapeCreationRef = useRef<
         const ctx = getMeasureContext()
         setElements((prev) => {
           const target = prev[resizeState.id]
-          if (!target) return prev
+          if (!target || !isStickyElement(target)) return prev
           const anchor = resizeState.anchor
           const deltaX = boardPoint.x - anchor.x
           const deltaY = boardPoint.y - anchor.y
@@ -2794,7 +3576,7 @@ const shapeCreationRef = useRef<
               nextY = anchor.y
               break
           }
-          const resized = { ...target, x: nextX, y: nextY, size }
+          const resized: StickyNoteElement = { ...target, x: nextX, y: nextY, size }
           const inner = getStickyInnerSize(resized)
           const bounds = getStickyFontBounds(resized)
           const fitted = ctx
@@ -2827,7 +3609,27 @@ const shapeCreationRef = useRef<
           const start = dragState.startPositions[id]
           const existing = next[id]
           if (!start || !existing) continue
-          const updated = { ...existing, x: start.x + deltaX, y: start.y + deltaY }
+          let updated: BoardElement | null = null
+          if (isLineElement(existing)) {
+            if (typeof start.x2 !== 'number' || typeof start.y2 !== 'number') {
+              updated = existing
+            } else {
+              const startBindingActive =
+                !!existing.startBinding && !!prev[existing.startBinding.elementId]
+              const endBindingActive =
+                !!existing.endBinding && !!prev[existing.endBinding.elementId]
+              let lineNext: LineElement = existing
+              if (!startBindingActive) {
+                lineNext = { ...lineNext, x1: start.x + deltaX, y1: start.y + deltaY }
+              }
+              if (!endBindingActive) {
+                lineNext = { ...lineNext, x2: start.x2 + deltaX, y2: start.y2 + deltaY }
+              }
+              updated = lineNext
+            }
+          } else {
+            updated = { ...existing, x: start.x + deltaX, y: start.y + deltaY }
+          }
           next[id] = updated
           updatedElements.push(updated)
           changed = true
@@ -2937,12 +3739,86 @@ const shapeCreationRef = useRef<
         return
       }
 
+      if (mode === 'line-handle') {
+        const lineHandleState = lineHandleStateRef.current
+        lineHandleStateRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!lineHandleState) return
+        const element = elements[lineHandleState.id]
+        if (!element || !isLineElement(element)) return
+        const binding = lineHandleState.candidateBinding ?? null
+        const updated =
+          lineHandleState.handle === 'start'
+            ? { ...element, startBinding: binding ?? undefined }
+            : { ...element, endBinding: binding ?? undefined }
+        setElements((prev) => ({ ...prev, [updated.id]: updated }))
+        sendElementsUpdate([updated])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [updated])
+        }
+        updateConnectorHighlight(null)
+        return
+      }
+
+      if (mode === 'line-create') {
+        const creationState = lineCreationRef.current
+        lineCreationRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!creationState) return
+        const element = elements[creationState.id]
+        const removeDraft = () => {
+          setElements((prev) => {
+            if (!prev[creationState.id]) return prev
+            const next = { ...prev }
+            delete next[creationState.id]
+            return next
+          })
+          clearSelection()
+        }
+        if (!element || !isLineElement(element)) {
+          removeDraft()
+          return
+        }
+        const startBinding = creationState.startBinding
+        const endBinding = creationState.endBinding
+        const nextElement: LineElement = {
+          ...element,
+          startBinding: startBinding ?? undefined,
+          endBinding: endBinding ?? undefined,
+        }
+        const finalElement = nextElement
+        setElements((prev) => ({ ...prev, [finalElement.id]: finalElement }))
+        const length = Math.hypot(finalElement.x2 - finalElement.x1, finalElement.y2 - finalElement.y1)
+        if (!creationState.hasDragged && length < RECT_MIN_SIZE / 4) {
+          removeDraft()
+          return
+        }
+        sendElementsUpdate([finalElement])
+        if (boardId) {
+          void persistElementCreate(boardId, finalElement)
+        }
+        updateConnectorHighlight(null)
+        return
+      }
+
       const marqueeState = marqueeRef.current
       if (mode === 'marquee' && marqueeState && marqueeState.start && marqueeState.current) {
         const selectionRect = normalizeRect(marqueeState.start, marqueeState.current)
     const measureCtx = getSharedMeasureContext()
     const matchingIds = Object.values(elements)
-          .filter((element) => rectsIntersect(selectionRect, getElementBounds(element, measureCtx)))
+          .filter((element) =>
+            rectsIntersect(
+              selectionRect,
+              getElementBounds(element, measureCtx, {
+                resolveElement: (id) => elements[id],
+                measureCtx,
+              })
+            )
+          )
           .map((element) => element.id)
 
         console.log('[marquee]', { marqueeRect: selectionRect, selectedCount: matchingIds.length, total: Object.keys(elements).length })
@@ -2950,7 +3826,13 @@ const shapeCreationRef = useRef<
           const sample = Object.values(elements)[0]
           if (sample) {
             const sampleCtx = getSharedMeasureContext()
-            console.log('[marquee sample]', getElementBounds(sample, sampleCtx))
+            console.log(
+              '[marquee sample]',
+              getElementBounds(sample, sampleCtx, {
+                resolveElement: (id) => elements[id],
+                measureCtx: sampleCtx,
+              })
+            )
           }
         }
 
@@ -3135,6 +4017,14 @@ const shapeCreationRef = useRef<
         setToolMode((prev) => (prev === 'triangle' ? 'select' : 'triangle'))
         return
       }
+      if (event.key === 'l' || event.key === 'L') {
+        setToolMode((prev) => (prev === 'line' ? 'select' : 'line'))
+        return
+      }
+      if (event.key === 'a' || event.key === 'A') {
+        setToolMode((prev) => (prev === 'arrow' ? 'select' : 'arrow'))
+        return
+      }
       if (event.key === 'Escape') {
         setToolMode('select')
         return
@@ -3160,6 +4050,12 @@ const shapeCreationRef = useRef<
   useEffect(() => {
     setSelection(new Set())
   }, [boardId, setSelection])
+
+  useEffect(() => {
+    if (toolMode !== 'line' && toolMode !== 'arrow') {
+      setConnectorHighlight((prev) => (prev ? null : prev))
+    }
+  }, [toolMode])
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds
@@ -3364,6 +4260,9 @@ const shapeCreationRef = useRef<
     ctx.fillRect(0, 0, cssWidth, cssHeight)
     drawBoardGrid(ctx, cameraState, cssWidth, cssHeight)
     const values = Object.values(elements)
+    const sharedMeasureCtx = getSharedMeasureContext()
+    const resolveElement = (id: string) => elements[id]
+  const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     values.forEach((element) => {
       if (isStickyElement(element)) {
@@ -3383,6 +4282,11 @@ const shapeCreationRef = useRef<
         drawSpeechBubbleElement(ctx, element, cameraState)
       } else if (isRoundedRectElement(element)) {
         drawRoundedRectElement(ctx, element, cameraState)
+      } else if (isLineElement(element)) {
+        drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
+      }
+      if (showConnectorAnchors && !isLineElement(element)) {
+        drawConnectorAnchors(ctx, element, cameraState, sharedMeasureCtx, connectorHighlight)
       }
     })
     const selectedArray = Array.from(selectedIds)
@@ -3399,9 +4303,16 @@ const shapeCreationRef = useRef<
       ) {
         selectionElement = { ...element, text: editingState.text, fontSize: editingState.fontSize }
       }
-      drawElementSelection(ctx, selectionElement, cameraState, { withHandles })
+      drawElementSelection(
+        ctx,
+        selectionElement,
+        cameraState,
+        { withHandles },
+        resolveElement,
+        sharedMeasureCtx
+      )
     })
-  }, [cameraState, editingState, elements, selectedIds])
+  }, [cameraState, connectorHighlight, editingState, elements, selectedIds, toolMode])
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
@@ -3436,7 +4347,7 @@ const shapeCreationRef = useRef<
             editingTextElement.y + editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2,
         }
       : null
-  const editingTextRect = editingTextBounds
+  const editingTextRect = editingTextBounds && editingTextLayout
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,

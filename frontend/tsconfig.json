@@ -4,12 +4,8 @@
     "types": [],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../src/*"]
+      "@shared/*": ["../src/shared/*"]
     }
   },
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
+  "include": ["src", "vite.config.ts"]
 }

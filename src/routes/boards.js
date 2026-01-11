@@ -46,7 +46,16 @@ export async function handleBoardElementCreate(req, boardId) {
         return jsonResponse({ message: "Board not found." }, 404);
     }
     const body = (await safeJson(req));
-    const allowedElementTypes = ["sticky", "text", "rect"];
+    const allowedElementTypes = [
+        "sticky",
+        "text",
+        "rect",
+        "ellipse",
+        "roundRect",
+        "diamond",
+        "triangle",
+        "speechBubble",
+    ];
     const isAllowedType = (value) => typeof value === "string" && allowedElementTypes.includes(value);
     if (!body?.type || !isAllowedType(body.type) || !body.element || typeof body.element.id !== "string") {
         return jsonResponse({ message: "Invalid element payload." }, 400);
