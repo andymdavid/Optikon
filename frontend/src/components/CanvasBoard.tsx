@@ -1226,6 +1226,63 @@ const withSpeechBubbleTail = (element: ShapeElement, width: number, height: numb
   return applySpeechBubbleTailSizing(element, width, height)
 }
 
+type TailSegment = {
+  side: SpeechBubbleTail['side']
+  baseStart: { x: number; y: number }
+  baseEnd: { x: number; y: number }
+  tip: { x: number; y: number }
+}
+
+const computeTailSegment = (
+  tail: SpeechBubbleTail,
+  width: number,
+  height: number,
+  radius: number
+): TailSegment => {
+  const left = -width / 2
+  const right = width / 2
+  const top = -height / 2
+  const bottom = height / 2
+  if (tail.side === 'left' || tail.side === 'right') {
+    const available = height - radius * 2
+    const baseSpan = Math.min(Math.max(tail.size, RECT_MIN_SIZE / 2), Math.max(RECT_MIN_SIZE / 2, available))
+    const centerY = clamp(
+      top + height * tail.offset,
+      top + radius + baseSpan / 2,
+      bottom - radius - baseSpan / 2
+    )
+    const baseStartY = centerY - baseSpan / 2
+    const baseEndY = centerY + baseSpan / 2
+    const edgeX = tail.side === 'right' ? right : left
+    const tipX = edgeX + (tail.side === 'right' ? 1 : -1) * tail.size * 1.2
+    const tipY = centerY - baseSpan * 0.25
+    return {
+      side: tail.side,
+      baseStart: { x: edgeX, y: baseStartY },
+      baseEnd: { x: edgeX, y: baseEndY },
+      tip: { x: tipX, y: tipY },
+    }
+  }
+  const available = width - radius * 2
+  const baseSpan = Math.min(Math.max(tail.size, RECT_MIN_SIZE / 2), Math.max(RECT_MIN_SIZE / 2, available))
+  const centerX = clamp(
+    left + width * tail.offset,
+    left + radius + baseSpan / 2,
+    right - radius - baseSpan / 2
+  )
+  const baseStartX = centerX - baseSpan / 2
+  const baseEndX = centerX + baseSpan / 2
+  const edgeY = tail.side === 'top' ? top : bottom
+  const tipY = edgeY + (tail.side === 'top' ? -1 : 1) * tail.size * 1.2
+  const tipX = centerX - baseSpan * 0.25
+  return {
+    side: tail.side,
+    baseStart: { x: baseStartX, y: edgeY },
+    baseEnd: { x: baseEndX, y: edgeY },
+    tip: { x: tipX, y: tipY },
+  }
+}
+
 const getSpeechBubbleCornerRadius = (width: number, height: number) => {
   const base = Math.min(width, height) * SPEECH_BUBBLE_CORNER_RATIO
   return Math.min(base, width / 2, height / 2)
@@ -1248,38 +1305,7 @@ function drawSpeechBubbleElement(
   const height = bounds.height
   const radius = getSpeechBubbleCornerRadius(width, height)
   const tail = getSpeechBubbleTail(element, width, height)
-  const tailBaseLength = tail.size
-  const tailOffset = tail.offset
-  const horizontalMin = -width / 2 + radius
-  const horizontalMax = width / 2 - radius
-  const verticalMin = -height / 2 + radius
-  const verticalMax = height / 2 - radius
-  const clampBaseX = (value: number, span: number) => clamp(value, horizontalMin, horizontalMax - span)
-  const clampBaseY = (value: number, span: number) => clamp(value, verticalMin, verticalMax - span)
-  const tailPoints = (() => {
-    if (tail.side === 'left' || tail.side === 'right') {
-      const direction = tail.side === 'right' ? 1 : -1
-      const available = height - radius * 2
-      const baseSpan = Math.min(tailBaseLength * 0.9, Math.max(RECT_MIN_SIZE / 2, available))
-      const rawBaseY = -height / 2 + height * tailOffset - baseSpan / 2
-      const baseY = clampBaseY(rawBaseY, baseSpan)
-      const baseX = direction === 1 ? width / 2 : -width / 2
-      const baseStart = { x: baseX, y: direction === 1 ? baseY : baseY + baseSpan }
-      const baseEnd = { x: baseX, y: direction === 1 ? baseY + baseSpan : baseY }
-      const tip = { x: baseStart.x + direction * tailBaseLength, y: baseStart.y }
-      return { baseStart, baseEnd, tip }
-    }
-    const direction = tail.side === 'top' ? -1 : 1
-    const available = width - radius * 2
-    const baseSpan = Math.min(tailBaseLength * 0.9, Math.max(RECT_MIN_SIZE / 2, available))
-    const rawBaseX = -width / 2 + width * tailOffset - baseSpan / 2
-    const baseX = clampBaseX(rawBaseX, baseSpan)
-    const baseY = direction === 1 ? height / 2 : -height / 2
-    const baseStart = { x: baseX, y: baseY }
-    const baseEnd = { x: baseX + baseSpan, y: baseY }
-    const tip = { x: baseStart.x, y: baseY + direction * tailBaseLength }
-    return { baseStart, baseEnd, tip }
-  })()
+  const tailSegment = computeTailSegment(tail, width, height, radius)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
   const lineWidth = 2 / scaleFactor
@@ -1290,31 +1316,31 @@ function drawSpeechBubbleElement(
   const bottom = height / 2
   ctx.beginPath()
   ctx.moveTo(left + radius, top)
-  if (tail.side === 'top') {
-    ctx.lineTo(tailPoints.baseStart.x, top)
-    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-    ctx.lineTo(tailPoints.baseEnd.x, top)
+  if (tailSegment.side === 'top') {
+    ctx.lineTo(tailSegment.baseStart.x, top)
+    ctx.lineTo(tailSegment.tip.x, tailSegment.tip.y)
+    ctx.lineTo(tailSegment.baseEnd.x, top)
   }
   ctx.lineTo(right - radius, top)
   ctx.arcTo(right, top, right, top + radius, radius)
-  if (tail.side === 'right') {
-    ctx.lineTo(right, tailPoints.baseStart.y)
-    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-    ctx.lineTo(right, tailPoints.baseEnd.y)
+  if (tailSegment.side === 'right') {
+    ctx.lineTo(right, tailSegment.baseStart.y)
+    ctx.lineTo(tailSegment.tip.x, tailSegment.tip.y)
+    ctx.lineTo(right, tailSegment.baseEnd.y)
   }
   ctx.lineTo(right, bottom - radius)
   ctx.arcTo(right, bottom, right - radius, bottom, radius)
-  if (tail.side === 'bottom') {
-    ctx.lineTo(tailPoints.baseStart.x, bottom)
-    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-    ctx.lineTo(tailPoints.baseEnd.x, bottom)
+  if (tailSegment.side === 'bottom') {
+    ctx.lineTo(tailSegment.baseStart.x, bottom)
+    ctx.lineTo(tailSegment.tip.x, tailSegment.tip.y)
+    ctx.lineTo(tailSegment.baseEnd.x, bottom)
   }
   ctx.lineTo(left + radius, bottom)
   ctx.arcTo(left, bottom, left, bottom - radius, radius)
-  if (tail.side === 'left') {
-    ctx.lineTo(left, tailPoints.baseStart.y)
-    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-    ctx.lineTo(left, tailPoints.baseEnd.y)
+  if (tailSegment.side === 'left') {
+    ctx.lineTo(left, tailSegment.baseStart.y)
+    ctx.lineTo(tailSegment.tip.x, tailSegment.tip.y)
+    ctx.lineTo(left, tailSegment.baseEnd.y)
   }
   ctx.lineTo(left, top + radius)
   ctx.arcTo(left, top, left + radius, top, radius)
