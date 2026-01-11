@@ -1301,6 +1301,10 @@ function drawSpeechBubbleElement(
   ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
   ctx.closePath()
   ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
+  ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
   ctx.stroke()
   ctx.restore()
 }
