@@ -1253,6 +1253,16 @@ function drawSpeechBubbleElement(
   ctx.lineWidth = 2 / scaleFactor
   ctx.beginPath()
   drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
+  ctx.fill()
+  ctx.stroke()
+  ctx.save()
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.lineWidth = 2 / scaleFactor + 0.2
+  ctx.beginPath()
+  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
+  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
+  ctx.stroke()
+  ctx.restore()
   const tailBaseLength = tail.size
   const tailOffset = tail.offset
   const horizontalMin = -width / 2 + radius
@@ -1264,25 +1274,28 @@ function drawSpeechBubbleElement(
   const tailPoints = (() => {
     if (tail.side === 'left' || tail.side === 'right') {
       const direction = tail.side === 'right' ? 1 : -1
-      const baseSpan = Math.min(tailBaseLength * 0.9, height - radius * 2)
-      const rawBaseY = -height / 2 + height * tailOffset
+      const available = height - radius * 2
+      const baseSpan = Math.min(tailBaseLength * 0.9, Math.max(RECT_MIN_SIZE / 2, available))
+      const rawBaseY = -height / 2 + height * tailOffset - baseSpan / 2
       const baseY = clampBaseY(rawBaseY, baseSpan)
       const baseX = direction === 1 ? width / 2 : -width / 2
-      const tip = { x: baseX + direction * tailBaseLength, y: baseY }
-      const baseStart = { x: baseX, y: baseY }
-      const baseEnd = { x: baseX, y: baseY + baseSpan * (direction === 1 ? 1 : -1) }
+      const baseStart = { x: baseX, y: direction === 1 ? baseY : baseY + baseSpan }
+      const baseEnd = { x: baseX, y: direction === 1 ? baseY + baseSpan : baseY }
+      const tip = { x: baseStart.x + direction * tailBaseLength, y: baseStart.y }
       return { baseStart, baseEnd, tip }
     }
     const direction = tail.side === 'top' ? -1 : 1
-    const baseSpan = Math.min(tailBaseLength * 0.9, width - radius * 2)
-    const rawBaseX = -width / 2 + width * tailOffset
+    const available = width - radius * 2
+    const baseSpan = Math.min(tailBaseLength * 0.9, Math.max(RECT_MIN_SIZE / 2, available))
+    const rawBaseX = -width / 2 + width * tailOffset - baseSpan / 2
     const baseX = clampBaseX(rawBaseX, baseSpan)
     const baseY = direction === 1 ? height / 2 : -height / 2
     const baseStart = { x: baseX, y: baseY }
     const baseEnd = { x: baseX + baseSpan, y: baseY }
-    const tip = { x: baseX, y: baseY + direction * tailBaseLength }
+    const tip = { x: baseStart.x, y: baseY + direction * tailBaseLength }
     return { baseStart, baseEnd, tip }
   })()
+  ctx.beginPath()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
   ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
   ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
