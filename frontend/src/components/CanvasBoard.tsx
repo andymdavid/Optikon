@@ -1282,19 +1282,21 @@ function drawSpeechBubbleElement(
   })()
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
+  const lineWidth = 2 / scaleFactor
+  ctx.lineWidth = lineWidth
   ctx.beginPath()
   drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
   ctx.fill()
   ctx.stroke()
   ctx.save()
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.lineWidth = 2 / scaleFactor + 1
-  ctx.lineCap = 'butt'
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.beginPath()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
   ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
-  ctx.stroke()
+  ctx.lineTo(tailPoints.baseEnd.x + (tailPoints.tip.x - tailPoints.baseEnd.x) * 0.001, tailPoints.baseEnd.y)
+  ctx.lineTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
+  ctx.fill()
   ctx.restore()
   ctx.beginPath()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
