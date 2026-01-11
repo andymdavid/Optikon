@@ -1248,21 +1248,6 @@ function drawSpeechBubbleElement(
   const height = bounds.height
   const radius = getSpeechBubbleCornerRadius(width, height)
   const tail = getSpeechBubbleTail(element, width, height)
-  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
-  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
-  ctx.beginPath()
-  drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
-  ctx.fill()
-  ctx.stroke()
-  ctx.save()
-  ctx.globalCompositeOperation = 'destination-out'
-  ctx.lineWidth = 2 / scaleFactor + 0.2
-  ctx.beginPath()
-  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
-  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
-  ctx.stroke()
-  ctx.restore()
   const tailBaseLength = tail.size
   const tailOffset = tail.offset
   const horizontalMin = -width / 2 + radius
@@ -1295,6 +1280,21 @@ function drawSpeechBubbleElement(
     const tip = { x: baseStart.x, y: baseY + direction * tailBaseLength }
     return { baseStart, baseEnd, tip }
   })()
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  ctx.beginPath()
+  drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
+  ctx.fill()
+  ctx.stroke()
+  ctx.save()
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.lineWidth = 2 / scaleFactor + 0.2
+  ctx.beginPath()
+  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
+  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
+  ctx.stroke()
+  ctx.restore()
   ctx.beginPath()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
   ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
