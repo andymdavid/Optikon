@@ -80,6 +80,24 @@ export interface TriangleElement extends CanvasElement {
   rotation?: number
 }
 
+export interface SpeechBubbleTail {
+  side: 'bottom' | 'top' | 'left' | 'right'
+  offset: number
+  size: number
+}
+
+export interface SpeechBubbleElement extends CanvasElement {
+  type: 'speechBubble'
+  x: number
+  y: number
+  w: number
+  h: number
+  fill?: string
+  stroke?: string
+  rotation?: number
+  tail?: SpeechBubbleTail
+}
+
 export type BoardElement =
   | StickyNoteElement
   | TextElement
@@ -88,3 +106,4 @@ export type BoardElement =
   | RoundedRectElement
   | DiamondElement
   | TriangleElement
+  | SpeechBubbleElement

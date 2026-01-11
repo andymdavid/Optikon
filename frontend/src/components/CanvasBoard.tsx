@@ -6,6 +6,7 @@ import type {
   RectangleElement,
   DiamondElement,
   TriangleElement,
+  SpeechBubbleElement,
   RoundedRectElement,
   StickyNoteElement,
   TextElement,
@@ -73,11 +74,28 @@ const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
 const RECT_DEFAULT_SCREEN_SIZE = 180
 const ROUND_RECT_DEFAULT_RADIUS = 12
+const SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET = 0.6
+const SPEECH_BUBBLE_DEFAULT_TAIL_RATIO = 0.15
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
-type ToolMode = 'select' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
-type ShapeElement = RectangleElement | EllipseElement | RoundedRectElement | DiamondElement | TriangleElement
+type ToolMode =
+  | 'select'
+  | 'sticky'
+  | 'text'
+  | 'rect'
+  | 'ellipse'
+  | 'roundRect'
+  | 'diamond'
+  | 'triangle'
+  | 'speechBubble'
+type ShapeElement =
+  | RectangleElement
+  | EllipseElement
+  | RoundedRectElement
+  | DiamondElement
+  | TriangleElement
+  | SpeechBubbleElement
 
 type TextLayout = {
   lines: string[]
@@ -445,6 +463,9 @@ const resolveRoundedRectRadius = (value: unknown) => {
   return ROUND_RECT_DEFAULT_RADIUS
 }
 
+const clampTailOffset = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? clamp(value, 0, 1) : SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET
+
 const smoothstep = (edge0: number, edge1: number, x: number) => {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
@@ -473,12 +494,17 @@ const isDiamondElement = (element: BoardElement | null | undefined): element is 
 const isTriangleElement = (element: BoardElement | null | undefined): element is TriangleElement =>
   !!element && element.type === 'triangle'
 
+const isSpeechBubbleElement = (
+  element: BoardElement | null | undefined
+): element is SpeechBubbleElement => !!element && element.type === 'speechBubble'
+
 const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
   isRectangleElement(element) ||
   isEllipseElement(element) ||
   isRoundedRectElement(element) ||
   isDiamondElement(element) ||
-  isTriangleElement(element)
+  isTriangleElement(element) ||
+  isSpeechBubbleElement(element)
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -509,7 +535,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -517,7 +543,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -525,7 +551,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -533,7 +559,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -810,6 +836,41 @@ function parseTriangleElement(raw: unknown): TriangleElement | null {
   }
 }
 
+function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<SpeechBubbleElement>
+  if (element.type !== 'speechBubble') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  const tailSpec = element.tail
+  const tail = tailSpec
+    ? {
+        side:
+          tailSpec.side === 'top' || tailSpec.side === 'left' || tailSpec.side === 'right'
+            ? tailSpec.side
+            : 'bottom',
+        offset: clampTailOffset(tailSpec.offset),
+        size: typeof tailSpec.size === 'number' ? Math.max(RECT_MIN_SIZE / 2, tailSpec.size) : undefined,
+      }
+    : undefined
+  return {
+    id: element.id,
+    type: 'speechBubble',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
+    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
+    rotation,
+    tail,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -820,6 +881,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'roundRect') return parseRoundedRectElement(raw)
   if (type === 'diamond') return parseDiamondElement(raw)
   if (type === 'triangle') return parseTriangleElement(raw)
+  if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
   return null
 }
 
@@ -1080,7 +1142,7 @@ function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseEleme
   ctx.restore()
 }
 
-const getRoundedRectRadius = (element: RoundedRectElement, width: number, height: number) => {
+const getRoundedRectRadius = (element: { r?: number }, width: number, height: number) => {
   const requested = resolveRoundedRectRadius(element.r)
   return Math.min(requested, width / 2, height / 2)
 }
@@ -1130,6 +1192,95 @@ function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondEleme
   ctx.lineTo(halfWidth, 0)
   ctx.lineTo(0, halfHeight)
   ctx.lineTo(-halfWidth, 0)
+  ctx.closePath()
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
+type SpeechBubbleTail = Required<SpeechBubbleElement>['tail']
+
+const getSpeechBubbleTail = (element: SpeechBubbleElement, width: number, height: number) => {
+  const defaultSize = Math.max(RECT_MIN_SIZE / 2, Math.min(width, height) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
+  return {
+    side: element.tail?.side ?? 'bottom',
+    offset: element.tail ? clampTailOffset(element.tail.offset) : SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET,
+    size: typeof element.tail?.size === 'number' ? Math.max(RECT_MIN_SIZE / 2, element.tail.size) : defaultSize,
+  } satisfies SpeechBubbleTail
+}
+
+const applySpeechBubbleTailSizing = (
+  element: SpeechBubbleElement,
+  width: number,
+  height: number
+): SpeechBubbleElement => {
+  const tail = getSpeechBubbleTail(element, width, height)
+  const size = Math.max(RECT_MIN_SIZE / 2, Math.min(width, height) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
+  return { ...element, tail: { ...tail, size } }
+}
+
+const withSpeechBubbleTail = (element: ShapeElement, width: number, height: number): ShapeElement => {
+  if (!isSpeechBubbleElement(element)) return element
+  return applySpeechBubbleTailSizing(element, width, height)
+}
+
+function drawSpeechBubbleElement(
+  ctx: CanvasRenderingContext2D,
+  element: SpeechBubbleElement,
+  camera: CameraState
+) {
+  const bounds = getShapeElementBounds(element)
+  ctx.save()
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  const width = bounds.width
+  const height = bounds.height
+  const radius = getRoundedRectRadius(element, width, height)
+  const tail = getSpeechBubbleTail(element, width, height)
+  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
+  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
+  ctx.lineWidth = 2 / scaleFactor
+  ctx.beginPath()
+  drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
+  const tailBaseLength = tail.size
+  const tailOffset = tail.offset
+  const attachPoint = (side: SpeechBubbleTail['side']) => {
+    switch (side) {
+      case 'top':
+        return {
+          baseStart: { x: -width / 2 + width * tailOffset - tailBaseLength / 2, y: -height / 2 },
+          baseEnd: { x: -width / 2 + width * tailOffset + tailBaseLength / 2, y: -height / 2 },
+          tip: { x: -width / 2 + width * tailOffset, y: -height / 2 - tailBaseLength },
+        }
+      case 'left':
+        return {
+          baseStart: { x: -width / 2, y: -height / 2 + height * tailOffset - tailBaseLength / 2 },
+          baseEnd: { x: -width / 2, y: -height / 2 + height * tailOffset + tailBaseLength / 2 },
+          tip: { x: -width / 2 - tailBaseLength, y: -height / 2 + height * tailOffset },
+        }
+      case 'right':
+        return {
+          baseStart: { x: width / 2, y: -height / 2 + height * tailOffset - tailBaseLength / 2 },
+          baseEnd: { x: width / 2, y: -height / 2 + height * tailOffset + tailBaseLength / 2 },
+          tip: { x: width / 2 + tailBaseLength, y: -height / 2 + height * tailOffset },
+        }
+      case 'bottom':
+      default:
+        return {
+          baseStart: { x: -width / 2 + width * tailOffset - tailBaseLength / 2, y: height / 2 },
+          baseEnd: { x: -width / 2 + width * tailOffset + tailBaseLength / 2, y: height / 2 },
+          tip: { x: -width / 2 + width * tailOffset, y: height / 2 + tailBaseLength },
+        }
+    }
+  }
+  const tailPoints = attachPoint(tail.side)
+  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
+  ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
   ctx.closePath()
   ctx.fill()
   ctx.stroke()
@@ -1429,6 +1580,10 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
+  if (isSpeechBubbleElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
   if (isEllipseElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
   }
@@ -1467,7 +1622,7 @@ const shapeCreationRef = useRef<
       id: string
       baseSize: number
       hasDragged: boolean
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
     }
 >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -1742,7 +1897,8 @@ const shapeCreationRef = useRef<
         const area1 = area(local, p1, p2)
         const area2 = area(p0, local, p2)
         const area3 = area(p0, p1, local)
-        return Math.abs(totalArea - (area1 + area2 + area3)) <= 0.0001
+        const epsilon = Math.max(0.0001, totalArea * 0.001)
+        return Math.abs(totalArea - (area1 + area2 + area3)) <= epsilon
       }
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
@@ -1769,6 +1925,13 @@ const shapeCreationRef = useRef<
         }
         if (isDiamondElement(element)) {
           if (pointInDiamond({ x, y }, element)) {
+            return element.id
+          }
+          continue
+        }
+        if (isSpeechBubbleElement(element)) {
+          const bounds = getShapeElementBounds(element)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
             return element.id
           }
           continue
@@ -2090,7 +2253,7 @@ const shapeCreationRef = useRef<
             startBounds: transformHandleHit.bounds as TextElementBounds,
           }
         } else if (handleSpec.kind === 'corner') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
           transformStateRef.current = {
             mode: 'shapeScale',
             pointerId: event.pointerId,
@@ -2109,7 +2272,7 @@ const shapeCreationRef = useRef<
             startBounds: transformHandleHit.bounds,
           }
         } else if (handleSpec.kind === 'height') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle'
+          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
           transformStateRef.current = {
             mode: 'height',
             pointerId: event.pointerId,
@@ -2174,7 +2337,8 @@ const shapeCreationRef = useRef<
           toolMode === 'ellipse' ||
           toolMode === 'roundRect' ||
           toolMode === 'diamond' ||
-          toolMode === 'triangle'
+          toolMode === 'triangle' ||
+          toolMode === 'speechBubble'
         ) {
           event.preventDefault()
           const id = randomId()
@@ -2233,6 +2397,20 @@ const shapeCreationRef = useRef<
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
+          } else if (toolMode === 'speechBubble') {
+            const baseTailSize = Math.max(RECT_MIN_SIZE / 2, Math.min(defaultWidth, defaultHeight) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
+            newElement = {
+              id,
+              type: 'speechBubble',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: defaultWidth,
+              h: defaultHeight,
+              fill: RECT_DEFAULT_FILL,
+              stroke: RECT_DEFAULT_STROKE,
+              rotation: 0,
+              tail: { side: 'bottom', offset: SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET, size: baseTailSize },
+            }
           } else {
             newElement = {
               id,
@@ -2252,7 +2430,7 @@ const shapeCreationRef = useRef<
             id,
             baseSize: defaultWidth,
             hasDragged: false,
-            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle',
+            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble',
           }
           interactionModeRef.current = 'shape-create'
           suppressClickRef.current = true
@@ -2388,7 +2566,9 @@ const shapeCreationRef = useRef<
             const newCenter = bounds.center
             const newX = newCenter.x - newWidth / 2
             const newY = newCenter.y - newHeight / 2
-            nextElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
+            let shapeNext: ShapeElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
+            shapeNext = withSpeechBubbleTail(shapeNext, newWidth, newHeight)
+            nextElement = shapeNext
           } else if (transformState.mode === 'width') {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
             const direction = transformState.handle === 'e' ? 1 : -1
@@ -2431,7 +2611,9 @@ const shapeCreationRef = useRef<
               }
               const newX = newCenter.x - newWidth / 2
               const newY = newCenter.y - bounds.height / 2
-              nextElement = { ...target, x: newX, y: newY, w: newWidth }
+              let shapeNext: ShapeElement = { ...target, x: newX, y: newY, w: newWidth }
+              shapeNext = withSpeechBubbleTail(shapeNext, newWidth, bounds.height)
+              nextElement = shapeNext
             }
           } else if (transformState.mode === 'height' && isShapeElement(target)) {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
@@ -2452,7 +2634,9 @@ const shapeCreationRef = useRef<
             }
             const newX = newCenter.x - bounds.width / 2
             const newY = newCenter.y - newHeight / 2
-            nextElement = { ...target, x: newX, y: newY, h: newHeight }
+            let shapeNext: ShapeElement = { ...target, x: newX, y: newY, h: newHeight }
+            shapeNext = withSpeechBubbleTail(shapeNext, bounds.width, newHeight)
+            nextElement = shapeNext
           } else if (transformState.mode === 'rotate') {
             const dx = boardPoint.x - transformState.startBounds.center.x
             const dy = boardPoint.y - transformState.startBounds.center.y
@@ -2493,8 +2677,9 @@ const shapeCreationRef = useRef<
           const height = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.y - creation.start.y))
           const nextX = Math.min(creation.start.x, boardPoint.x)
           const nextY = Math.min(creation.start.y, boardPoint.y)
-          const updated = { ...target, x: nextX, y: nextY, w: width, h: height }
-          updatedElement = updated as ShapeElement
+          let updated: ShapeElement = { ...target, x: nextX, y: nextY, w: width, h: height }
+          updated = withSpeechBubbleTail(updated, width, height)
+          updatedElement = updated
           return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
@@ -2879,6 +3064,10 @@ const shapeCreationRef = useRef<
         setToolMode((prev) => (prev === 'diamond' ? 'select' : 'diamond'))
         return
       }
+      if (event.key === 'b' || event.key === 'B') {
+        setToolMode((prev) => (prev === 'speechBubble' ? 'select' : 'speechBubble'))
+        return
+      }
       if (event.key === 'y' || event.key === 'Y') {
         setToolMode((prev) => (prev === 'triangle' ? 'select' : 'triangle'))
         return
@@ -3127,6 +3316,8 @@ const shapeCreationRef = useRef<
         drawDiamondElement(ctx, element, cameraState)
       } else if (isTriangleElement(element)) {
         drawTriangleElement(ctx, element, cameraState)
+      } else if (isSpeechBubbleElement(element)) {
+        drawSpeechBubbleElement(ctx, element, cameraState)
       } else if (isRoundedRectElement(element)) {
         drawRoundedRectElement(ctx, element, cameraState)
       }
