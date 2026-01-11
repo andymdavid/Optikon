@@ -161,6 +161,56 @@ const getTransformAnchorPoint = (bounds: TransformBounds, anchor: ConnectorAncho
   }
 }
 
+const rotatePoint = (
+  point: { x: number; y: number },
+  center: { x: number; y: number },
+  rotation: number
+) => {
+  if (!rotation) return { ...point }
+  const dx = point.x - center.x
+  const dy = point.y - center.y
+  const cos = Math.cos(rotation)
+  const sin = Math.sin(rotation)
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos,
+  }
+}
+
+const getTriangleAnchorDetails = (
+  element: TriangleElement,
+  anchor: ConnectorAnchor
+): { point: { x: number; y: number }; center: { x: number; y: number } } => {
+  const width = Math.max(RECT_MIN_SIZE, element.w)
+  const height = Math.max(RECT_MIN_SIZE, element.h)
+  const center = { x: element.x + width / 2, y: element.y + height / 2 }
+  const rotation = resolveTextRotation(element.rotation)
+  const top = rotatePoint({ x: element.x + width / 2, y: element.y }, center, rotation)
+  const leftBase = rotatePoint({ x: element.x, y: element.y + height }, center, rotation)
+  const rightBase = rotatePoint({ x: element.x + width, y: element.y + height }, center, rotation)
+  const baseMid = rotatePoint({ x: element.x + width / 2, y: element.y + height }, center, rotation)
+  const midpoint = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  })
+  switch (anchor) {
+    case 'top':
+      return { point: top, center }
+    case 'bottom':
+      return { point: baseMid, center }
+    case 'left': {
+      const point = midpoint(top, leftBase)
+      return { point, center }
+    }
+    case 'right': {
+      const point = midpoint(top, rightBase)
+      return { point, center }
+    }
+    default:
+      return { point: center, center }
+  }
+}
+
 const getElementAnchorDetails = (
   element: BoardElement,
   anchor: ConnectorAnchor,
@@ -173,6 +223,9 @@ const getElementAnchorDetails = (
     return { point, center }
   }
   const ctx = options?.ctx ?? null
+  if (isTriangleElement(element)) {
+    return getTriangleAnchorDetails(element, anchor)
+  }
   if (isTextElement(element)) {
     const textBounds = getTextElementBounds(element, ctx)
     const point = getTransformAnchorPoint(textBounds, anchor)
@@ -2049,9 +2102,10 @@ function drawLineSelection(
     y: (endBoard.y + camera.offsetY) * camera.zoom,
   }
   const baseWidth = Math.max(1, getLineStrokeWidth(element) * camera.zoom)
+  const selectionWidth = Math.max(2, baseWidth + 2)
   ctx.save()
   ctx.strokeStyle = ACCENT_COLOR
-  ctx.lineWidth = baseWidth + 6
+  ctx.lineWidth = selectionWidth
   ctx.lineCap = 'round'
   ctx.beginPath()
   ctx.moveTo(start.x, start.y)
