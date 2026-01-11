@@ -1284,30 +1284,42 @@ function drawSpeechBubbleElement(
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
   const lineWidth = 2 / scaleFactor
   ctx.lineWidth = lineWidth
+  const left = -width / 2
+  const right = width / 2
+  const top = -height / 2
+  const bottom = height / 2
   ctx.beginPath()
-  drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
-  ctx.fill()
-  ctx.stroke()
-  ctx.save()
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
-  ctx.beginPath()
-  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
-  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
-  ctx.lineTo(tailPoints.baseEnd.x + (tailPoints.tip.x - tailPoints.baseEnd.x) * 0.001, tailPoints.baseEnd.y)
-  ctx.lineTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
-  ctx.fill()
-  ctx.restore()
-  ctx.beginPath()
-  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
-  ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
+  ctx.moveTo(left + radius, top)
+  if (tail.side === 'top') {
+    ctx.lineTo(tailPoints.baseStart.x, top)
+    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+    ctx.lineTo(tailPoints.baseEnd.x, top)
+  }
+  ctx.lineTo(right - radius, top)
+  ctx.arcTo(right, top, right, top + radius, radius)
+  if (tail.side === 'right') {
+    ctx.lineTo(right, tailPoints.baseStart.y)
+    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+    ctx.lineTo(right, tailPoints.baseEnd.y)
+  }
+  ctx.lineTo(right, bottom - radius)
+  ctx.arcTo(right, bottom, right - radius, bottom, radius)
+  if (tail.side === 'bottom') {
+    ctx.lineTo(tailPoints.baseStart.x, bottom)
+    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+    ctx.lineTo(tailPoints.baseEnd.x, bottom)
+  }
+  ctx.lineTo(left + radius, bottom)
+  ctx.arcTo(left, bottom, left, bottom - radius, radius)
+  if (tail.side === 'left') {
+    ctx.lineTo(left, tailPoints.baseStart.y)
+    ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
+    ctx.lineTo(left, tailPoints.baseEnd.y)
+  }
+  ctx.lineTo(left, top + radius)
+  ctx.arcTo(left, top, left + radius, top, radius)
   ctx.closePath()
   ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
-  ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
-  ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
   ctx.stroke()
   ctx.restore()
 }
