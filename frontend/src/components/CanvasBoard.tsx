@@ -74,8 +74,9 @@ const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
 const RECT_DEFAULT_SCREEN_SIZE = 180
 const ROUND_RECT_DEFAULT_RADIUS = 12
-const SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET = 0.6
-const SPEECH_BUBBLE_DEFAULT_TAIL_RATIO = 0.15
+const SPEECH_BUBBLE_CORNER_RATIO = 0.22
+const SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET = 0.35
+const SPEECH_BUBBLE_DEFAULT_TAIL_RATIO = 0.18
 const TEXT_DEBUG_BOUNDS = false
 const TEXT_MEASURE_SAMPLE = 'Mg'
 type Rect = { left: number; top: number; right: number; bottom: number }
@@ -857,7 +858,7 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
         size: typeof tailSpec.size === 'number' ? Math.max(RECT_MIN_SIZE / 2, tailSpec.size) : undefined,
       }
     : undefined
-  return {
+  const bubble: SpeechBubbleElement = {
     id: element.id,
     type: 'speechBubble',
     x: element.x,
@@ -869,6 +870,7 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
     rotation,
     tail,
   }
+  return applySpeechBubbleTailSizing(bubble, width, height)
 }
 
 function parseBoardElement(raw: unknown): BoardElement | null {
@@ -1224,6 +1226,11 @@ const withSpeechBubbleTail = (element: ShapeElement, width: number, height: numb
   return applySpeechBubbleTailSizing(element, width, height)
 }
 
+const getSpeechBubbleCornerRadius = (width: number, height: number) => {
+  const base = Math.min(width, height) * SPEECH_BUBBLE_CORNER_RATIO
+  return Math.min(base, width / 2, height / 2)
+}
+
 function drawSpeechBubbleElement(
   ctx: CanvasRenderingContext2D,
   element: SpeechBubbleElement,
@@ -1239,7 +1246,7 @@ function drawSpeechBubbleElement(
   ctx.scale(scaleFactor, scaleFactor)
   const width = bounds.width
   const height = bounds.height
-  const radius = getRoundedRectRadius(element, width, height)
+  const radius = getSpeechBubbleCornerRadius(width, height)
   const tail = getSpeechBubbleTail(element, width, height)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
@@ -1248,36 +1255,34 @@ function drawSpeechBubbleElement(
   drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
   const tailBaseLength = tail.size
   const tailOffset = tail.offset
-  const attachPoint = (side: SpeechBubbleTail['side']) => {
-    switch (side) {
-      case 'top':
-        return {
-          baseStart: { x: -width / 2 + width * tailOffset - tailBaseLength / 2, y: -height / 2 },
-          baseEnd: { x: -width / 2 + width * tailOffset + tailBaseLength / 2, y: -height / 2 },
-          tip: { x: -width / 2 + width * tailOffset, y: -height / 2 - tailBaseLength },
-        }
-      case 'left':
-        return {
-          baseStart: { x: -width / 2, y: -height / 2 + height * tailOffset - tailBaseLength / 2 },
-          baseEnd: { x: -width / 2, y: -height / 2 + height * tailOffset + tailBaseLength / 2 },
-          tip: { x: -width / 2 - tailBaseLength, y: -height / 2 + height * tailOffset },
-        }
-      case 'right':
-        return {
-          baseStart: { x: width / 2, y: -height / 2 + height * tailOffset - tailBaseLength / 2 },
-          baseEnd: { x: width / 2, y: -height / 2 + height * tailOffset + tailBaseLength / 2 },
-          tip: { x: width / 2 + tailBaseLength, y: -height / 2 + height * tailOffset },
-        }
-      case 'bottom':
-      default:
-        return {
-          baseStart: { x: -width / 2 + width * tailOffset - tailBaseLength / 2, y: height / 2 },
-          baseEnd: { x: -width / 2 + width * tailOffset + tailBaseLength / 2, y: height / 2 },
-          tip: { x: -width / 2 + width * tailOffset, y: height / 2 + tailBaseLength },
-        }
+  const horizontalMin = -width / 2 + radius
+  const horizontalMax = width / 2 - radius
+  const verticalMin = -height / 2 + radius
+  const verticalMax = height / 2 - radius
+  const clampBaseX = (value: number, span: number) => clamp(value, horizontalMin, horizontalMax - span)
+  const clampBaseY = (value: number, span: number) => clamp(value, verticalMin, verticalMax - span)
+  const tailPoints = (() => {
+    if (tail.side === 'left' || tail.side === 'right') {
+      const direction = tail.side === 'right' ? 1 : -1
+      const baseSpan = Math.min(tailBaseLength * 0.9, height - radius * 2)
+      const rawBaseY = -height / 2 + height * tailOffset
+      const baseY = clampBaseY(rawBaseY, baseSpan)
+      const baseX = direction === 1 ? width / 2 : -width / 2
+      const tip = { x: baseX + direction * tailBaseLength, y: baseY }
+      const baseStart = { x: baseX, y: baseY }
+      const baseEnd = { x: baseX, y: baseY + baseSpan * (direction === 1 ? 1 : -1) }
+      return { baseStart, baseEnd, tip }
     }
-  }
-  const tailPoints = attachPoint(tail.side)
+    const direction = tail.side === 'top' ? -1 : 1
+    const baseSpan = Math.min(tailBaseLength * 0.9, width - radius * 2)
+    const rawBaseX = -width / 2 + width * tailOffset
+    const baseX = clampBaseX(rawBaseX, baseSpan)
+    const baseY = direction === 1 ? height / 2 : -height / 2
+    const baseStart = { x: baseX, y: baseY }
+    const baseEnd = { x: baseX + baseSpan, y: baseY }
+    const tip = { x: baseX, y: baseY + direction * tailBaseLength }
+    return { baseStart, baseEnd, tip }
+  })()
   ctx.moveTo(tailPoints.baseStart.x, tailPoints.baseStart.y)
   ctx.lineTo(tailPoints.tip.x, tailPoints.tip.y)
   ctx.lineTo(tailPoints.baseEnd.x, tailPoints.baseEnd.y)
