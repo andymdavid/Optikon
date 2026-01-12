@@ -108,6 +108,14 @@ export interface SpeechBubbleElement extends CanvasElement {
   tail?: SpeechBubbleTail
 }
 
+export interface CommentElement extends CanvasElement {
+  type: 'comment'
+  x: number
+  y: number
+  text: string
+  elementId?: string
+}
+
 export type ConnectorAnchor = 'top' | 'right' | 'bottom' | 'left' | 'center'
 
 export interface LineEndpointBinding {
@@ -142,3 +150,4 @@ export type BoardElement =
   | TriangleElement
   | SpeechBubbleElement
   | LineElement
+  | CommentElement
