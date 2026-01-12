@@ -2400,6 +2400,25 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
+  if (isCommentElement(element)) {
+    const boardPosition = resolveElement
+      ? getCommentBoardPosition(element as CommentElement, {
+          resolveElement,
+          measureCtx: measureCtx ?? null,
+        })
+      : { x: element.x, y: element.y }
+    const screenX = (boardPosition.x + camera.offsetX) * camera.zoom
+    const screenY = (boardPosition.y + camera.offsetY) * camera.zoom
+    const radius = 12
+    ctx.save()
+    ctx.strokeStyle = ACCENT_COLOR
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
   if (isRectangleElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
     return
@@ -2817,6 +2836,7 @@ const shapeCreationRef = useRef<
         const epsilon = Math.max(0.0001, totalArea * 0.001)
         return Math.abs(totalArea - (area1 + area2 + area3)) <= epsilon
       }
+      const commentRadius = 10 / Math.max(0.01, cameraState.zoom)
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
         if (isLineElement(element)) {
@@ -2901,6 +2921,14 @@ const shapeCreationRef = useRef<
         }
         if (isEllipseElement(element)) {
           if (pointInEllipse({ x, y }, element)) {
+            return element.id
+          }
+          continue
+        }
+        if (isCommentElement(element)) {
+          const dx = x - element.x
+          const dy = y - element.y
+          if (Math.hypot(dx, dy) <= commentRadius) {
             return element.id
           }
           continue
