@@ -94,7 +94,7 @@ const FRAME_TITLE_FONT_MIN = 10
 const FRAME_TITLE_FONT_MAX = 20
 const FRAME_TITLE_COLOR = '#0f172a'
 const FRAME_TITLE_HIT_HEIGHT = 24
-const getFrameTitleScreenFontSize = (zoom: number) => {
+function getFrameTitleScreenFontSize(zoom: number) {
   const normalizedZoom = clamp(zoom, 0.4, 3)
   const adjusted = FRAME_TITLE_FONT_SIZE / Math.pow(normalizedZoom, 0.55)
   return clamp(adjusted, FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
@@ -155,7 +155,7 @@ type LineElementBounds = {
 
 type LineEndpointKey = 'start' | 'end'
 
-const getAxisAlignedAnchorPoint = (rect: Rect, anchor: ConnectorAnchor) => {
+function getAxisAlignedAnchorPoint(rect: Rect, anchor: ConnectorAnchor) {
   const centerX = (rect.left + rect.right) / 2
   const centerY = (rect.top + rect.bottom) / 2
   switch (anchor) {
@@ -172,7 +172,7 @@ const getAxisAlignedAnchorPoint = (rect: Rect, anchor: ConnectorAnchor) => {
   }
 }
 
-const getTransformAnchorPoint = (bounds: TransformBounds, anchor: ConnectorAnchor) => {
+function getTransformAnchorPoint(bounds: TransformBounds, anchor: ConnectorAnchor) {
   const { corners, center } = bounds
   const midpoint = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
     x: (a.x + b.x) / 2,
@@ -192,11 +192,11 @@ const getTransformAnchorPoint = (bounds: TransformBounds, anchor: ConnectorAncho
   }
 }
 
-const rotatePoint = (
+function rotatePoint(
   point: { x: number; y: number },
   center: { x: number; y: number },
   rotation: number
-) => {
+) {
   if (!rotation) return { ...point }
   const dx = point.x - center.x
   const dy = point.y - center.y
@@ -208,10 +208,10 @@ const rotatePoint = (
   }
 }
 
-const getTriangleAnchorDetails = (
+function getTriangleAnchorDetails(
   element: TriangleElement,
   anchor: ConnectorAnchor
-): { point: { x: number; y: number }; center: { x: number; y: number } } => {
+): { point: { x: number; y: number }; center: { x: number; y: number } } {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const center = { x: element.x + width / 2, y: element.y + height / 2 }
@@ -242,11 +242,11 @@ const getTriangleAnchorDetails = (
   }
 }
 
-const getElementAnchorDetails = (
+function getElementAnchorDetails(
   element: BoardElement,
   anchor: ConnectorAnchor,
   options?: { ctx?: CanvasRenderingContext2D | null }
-): { point: { x: number; y: number }; center: { x: number; y: number } } | null => {
+): { point: { x: number; y: number }; center: { x: number; y: number } } | null {
   if (isStickyElement(element)) {
     const bounds = getStickyBounds(element)
     const point = getAxisAlignedAnchorPoint(bounds, anchor)
@@ -270,17 +270,19 @@ const getElementAnchorDetails = (
   return null
 }
 
-const getElementAnchorPoint = (
+function getElementAnchorPoint(
   element: BoardElement,
   anchor: ConnectorAnchor,
   options?: { ctx?: CanvasRenderingContext2D | null }
-) => getElementAnchorDetails(element, anchor, options)?.point ?? null
+) {
+  return getElementAnchorDetails(element, anchor, options)?.point ?? null
+}
 
-const resolveLineEndpointPosition = (
+function resolveLineEndpointPosition(
   element: LineElement,
   key: LineEndpointKey,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
-) => {
+) {
   const binding = key === 'start' ? element.startBinding : element.endBinding
   if (binding && options?.resolveElement) {
     const target = options.resolveElement(binding.elementId)
@@ -295,10 +297,10 @@ const resolveLineEndpointPosition = (
     : { x: element.x2, y: element.y2 }
 }
 
-const getResolvedLineEndpoints = (
+function getResolvedLineEndpoints(
   element: LineElement,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
-) => {
+) {
   const measureCtx = options?.measureCtx ?? null
   const resolver = options?.resolveElement
   const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
@@ -306,13 +308,13 @@ const getResolvedLineEndpoints = (
   return { start, end, points: element.points ?? [] }
 }
 
-const findNearestAnchorBinding = (
+function findNearestAnchorBinding(
   point: { x: number; y: number },
   elements: ElementMap,
   excludeId: string,
   camera: CameraState,
   measureCtx: CanvasRenderingContext2D | null
-): { binding: LineEndpointBinding; position: { x: number; y: number } } | null => {
+): { binding: LineEndpointBinding; position: { x: number; y: number } } | null {
   const threshold = LINE_SNAP_DISTANCE_PX / Math.max(0.01, camera.zoom)
   let best: { binding: LineEndpointBinding; position: { x: number; y: number }; distance: number } | null = null
   const anchorCtx = measureCtx ?? null
@@ -339,18 +341,18 @@ const findNearestAnchorBinding = (
   return { binding, position }
 }
 
-const getLinePathPoints = (
+function getLinePathPoints(
   element: LineElement,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
-) => {
+) {
   const { start, end, points } = getResolvedLineEndpoints(element, options)
   return [start, ...points, end]
 }
 
-const pointToMultiSegmentDistance = (
+function pointToMultiSegmentDistance(
   point: { x: number; y: number },
   path: Array<{ x: number; y: number }>
-) => {
+) {
   if (path.length < 2) return Infinity
   let best = Infinity
   for (let index = 0; index < path.length - 1; index += 1) {
@@ -362,16 +364,16 @@ const pointToMultiSegmentDistance = (
   return best
 }
 
-const getSegmentOrientation = (
+function getSegmentOrientation(
   a: { x: number; y: number },
   b: { x: number; y: number }
-): 'horizontal' | 'vertical' => {
+): 'horizontal' | 'vertical' {
   const dx = Math.abs(b.x - a.x)
   const dy = Math.abs(b.y - a.y)
   return dx >= dy ? 'horizontal' : 'vertical'
 }
 
-const createOrthogonalPoints = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+function createOrthogonalPoints(start: { x: number; y: number }, end: { x: number; y: number }) {
   const points: Array<{ x: number; y: number }> = []
   const deltaY = end.y - start.y
   const deltaX = end.x - start.x
@@ -392,11 +394,11 @@ type ConnectorHandleSpec = {
   screen: { x: number; y: number }
 }
 
-const getConnectorAnchorHandles = (
+function getConnectorAnchorHandles(
   element: BoardElement,
   camera: CameraState,
   measureCtx: CanvasRenderingContext2D | null
-): ConnectorHandleSpec[] => {
+): ConnectorHandleSpec[] {
   if (!isStickyElement(element) && !isTextElement(element) && !isFrameLikeElement(element)) return []
   const handles: ConnectorHandleSpec[] = []
   const ctx = measureCtx ?? null
@@ -419,13 +421,13 @@ const getConnectorAnchorHandles = (
   return handles
 }
 
-const drawConnectorAnchors = (
+function drawConnectorAnchors(
   ctx: CanvasRenderingContext2D,
   element: BoardElement,
   camera: CameraState,
   measureCtx: CanvasRenderingContext2D | null,
   highlight: { elementId: string; anchor: ConnectorAnchor } | null
-) => {
+) {
   const handles = getConnectorAnchorHandles(element, camera, measureCtx)
   if (handles.length === 0) return
   handles.forEach((handle) => {
@@ -456,12 +458,14 @@ type TextLayout = {
   maxWidthPx: number
 }
 
-const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number }): Rect => ({
-  left: Math.min(a.x, b.x),
-  top: Math.min(a.y, b.y),
-  right: Math.max(a.x, b.x),
-  bottom: Math.max(a.y, b.y),
-})
+function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number }): Rect {
+  return {
+    left: Math.min(a.x, b.x),
+    top: Math.min(a.y, b.y),
+    right: Math.max(a.x, b.x),
+    bottom: Math.max(a.y, b.y),
+  }
+}
 
 let sharedMeasureCtx: CanvasRenderingContext2D | null = null
 function getSharedMeasureContext() {
@@ -623,9 +627,9 @@ function getTextElementLayout(
   return { layout, wrapWidth, width, height, inset }
 }
 
-const computeTransformBounds = (
+function computeTransformBounds(
   base: { x: number; y: number; width: number; height: number; rotation: number; scale: number }
-): TransformBounds => {
+): TransformBounds {
   const center = {
     x: base.x + base.width / 2,
     y: base.y + base.height / 2,
@@ -660,12 +664,12 @@ const computeTransformBounds = (
   return { center, rotation: base.rotation, scale: base.scale, width: base.width, height: base.height, corners, aabb }
 }
 
-const getStickySize = (element: StickyNoteElement) => {
+function getStickySize(element: StickyNoteElement) {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
   return Math.max(STICKY_MIN_SIZE, size)
 }
 
-const getStickyBounds = (element: StickyNoteElement): Rect => {
+function getStickyBounds(element: StickyNoteElement): Rect {
   const size = getStickySize(element)
   return {
     left: element.x,
@@ -675,10 +679,10 @@ const getStickyBounds = (element: StickyNoteElement): Rect => {
   }
 }
 
-const getTextElementBounds = (
+function getTextElementBounds(
   element: TextElement,
   ctx: CanvasRenderingContext2D | null
-): TextElementBounds => {
+): TextElementBounds {
   const layoutInfo = getTextElementLayout(element, ctx)
   const rotation = resolveTextRotation(element.rotation)
   const scale = resolveTextScale(element.scale)
@@ -693,10 +697,11 @@ const getTextElementBounds = (
   return { ...bounds, layout: layoutInfo }
 }
 
-const resolveShapeMinSize = (element: { type: BoardElement['type'] }) =>
-  element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+function resolveShapeMinSize(element: { type: BoardElement['type'] }) {
+  return element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+}
 
-const getShapeElementBounds = (element: ShapeElement | FrameElement): ShapeElementBounds => {
+function getShapeElementBounds(element: ShapeElement | FrameElement): ShapeElementBounds {
   const minSize = resolveShapeMinSize(element)
   const width = Math.max(minSize, element.w)
   const height = Math.max(minSize, element.h)
@@ -711,23 +716,25 @@ const getShapeElementBounds = (element: ShapeElement | FrameElement): ShapeEleme
   })
 }
 
-const getRectangleElementBounds = (element: RectangleElement): ShapeElementBounds =>
-  getShapeElementBounds(element)
+function getRectangleElementBounds(element: RectangleElement): ShapeElementBounds {
+  return getShapeElementBounds(element)
+}
 
-const getEllipseElementBounds = (element: EllipseElement): ShapeElementBounds =>
-  getShapeElementBounds(element)
+function getEllipseElementBounds(element: EllipseElement): ShapeElementBounds {
+  return getShapeElementBounds(element)
+}
 
-const getLineStrokeWidth = (element: LineElement) => {
+function getLineStrokeWidth(element: LineElement) {
   if (typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)) {
     return Math.max(0.5, element.strokeWidth)
   }
   return LINE_DEFAULT_STROKE_WIDTH
 }
 
-const getLineElementBounds = (
+function getLineElementBounds(
   element: LineElement,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
-): LineElementBounds => {
+): LineElementBounds {
   const { start, end, points } = getResolvedLineEndpoints(element, options)
   const center = {
     x: (start.x + end.x) / 2,
@@ -753,18 +760,18 @@ const getLineElementBounds = (
   return { start, end, points, center, length, aabb, strokeWidth }
 }
 
-const computeArrowLength = (screenStrokeWidth: number, maxLength: number) => {
+function computeArrowLength(screenStrokeWidth: number, maxLength: number) {
   if (maxLength <= 0) return 0
   const clampedStroke = Math.max(1, screenStrokeWidth)
   const desiredLength = clamp(clampedStroke * 4, LINE_ARROW_MIN_SCREEN, LINE_ARROW_MAX_SCREEN)
   return Math.min(desiredLength, maxLength * 0.8)
 }
 
-const getElementBounds = (
+function getElementBounds(
   element: BoardElement,
   ctx: CanvasRenderingContext2D | null,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
-): Rect => {
+): Rect {
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
@@ -777,7 +784,7 @@ const getElementBounds = (
   return { left: 0, top: 0, right: 0, bottom: 0 }
 }
 
-const getStickyPadding = (element: StickyNoteElement) => {
+function getStickyPadding(element: StickyNoteElement) {
   const size = getStickySize(element)
   const scale = size / STICKY_SIZE
   const paddingX = Math.max(2, STICKY_PADDING_X * scale)
@@ -785,7 +792,7 @@ const getStickyPadding = (element: StickyNoteElement) => {
   return { paddingX, paddingY }
 }
 
-const getStickyInnerSize = (element: StickyNoteElement) => {
+function getStickyInnerSize(element: StickyNoteElement) {
   const size = getStickySize(element)
   const { paddingX, paddingY } = getStickyPadding(element)
   return {
@@ -794,7 +801,7 @@ const getStickyInnerSize = (element: StickyNoteElement) => {
   }
 }
 
-const getStickyFontBounds = (element: StickyNoteElement) => {
+function getStickyFontBounds(element: StickyNoteElement) {
   const ratio = getStickySize(element) / STICKY_SIZE
   const max = BASE_STICKY_FONT_MAX * ratio
   const min = Math.max(2, BASE_STICKY_FONT_MIN * ratio)
@@ -804,14 +811,18 @@ const getStickyFontBounds = (element: StickyNoteElement) => {
   }
 }
 
-const clampFontSizeForElement = (element: StickyNoteElement, fontSize: number) => {
+function clampFontSizeForElement(element: StickyNoteElement, fontSize: number) {
   const { min, max } = getStickyFontBounds(element)
   return clamp(fontSize, min, max)
 }
 
-const getElementFontSize = (element: StickyNoteElement) => resolveStickyFontSize(element.fontSize)
+function getElementFontSize(element: StickyNoteElement) {
+  return resolveStickyFontSize(element.fontSize)
+}
 
-const rectsIntersect = (a: Rect, b: Rect) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
+function rectsIntersect(a: Rect, b: Rect) {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
+}
 const DRAG_THROTTLE_MS = 50
 const MIN_ZOOM = 0.2
 const MAX_ZOOM = 3
@@ -866,20 +877,21 @@ function resolveRoundedRectRadius(value: unknown) {
   return ROUND_RECT_DEFAULT_RADIUS
 }
 
-const clampTailOffset = (value: unknown) =>
-  typeof value === 'number' && Number.isFinite(value) ? clamp(value, 0, 1) : SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET
+function clampTailOffset(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? clamp(value, 0, 1) : SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET
+}
 
-const smoothstep = (edge0: number, edge1: number, x: number) => {
+function smoothstep(edge0: number, edge1: number, x: number) {
   if (edge0 === edge1) return x >= edge1 ? 1 : 0
   const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
   return t * t * (3 - 2 * t)
 }
 
-const pointToSegmentDistance = (
+function pointToSegmentDistance(
   point: { x: number; y: number },
   start: { x: number; y: number },
   end: { x: number; y: number }
-) => {
+) {
   const dx = end.x - start.x
   const dy = end.y - start.y
   const lengthSq = dx * dx + dy * dy
@@ -899,45 +911,60 @@ function isTextElement(element: BoardElement | null | undefined): element is Tex
   return !!element && element.type === 'text'
 }
 
-const isRectangleElement = (element: BoardElement | null | undefined): element is RectangleElement =>
-  !!element && element.type === 'rect'
+function isRectangleElement(element: BoardElement | null | undefined): element is RectangleElement {
+  return !!element && element.type === 'rect'
+}
 
-const isEllipseElement = (element: BoardElement | null | undefined): element is EllipseElement =>
-  !!element && element.type === 'ellipse'
+function isEllipseElement(element: BoardElement | null | undefined): element is EllipseElement {
+  return !!element && element.type === 'ellipse'
+}
 
-const isRoundedRectElement = (
+function isRoundedRectElement(
   element: BoardElement | null | undefined
-): element is RoundedRectElement => !!element && element.type === 'roundRect'
+): element is RoundedRectElement {
+  return !!element && element.type === 'roundRect'
+}
 
-const isDiamondElement = (element: BoardElement | null | undefined): element is DiamondElement =>
-  !!element && element.type === 'diamond'
+function isDiamondElement(element: BoardElement | null | undefined): element is DiamondElement {
+  return !!element && element.type === 'diamond'
+}
 
-const isTriangleElement = (element: BoardElement | null | undefined): element is TriangleElement =>
-  !!element && element.type === 'triangle'
+function isTriangleElement(element: BoardElement | null | undefined): element is TriangleElement {
+  return !!element && element.type === 'triangle'
+}
 
-const isSpeechBubbleElement = (
+function isSpeechBubbleElement(
   element: BoardElement | null | undefined
-): element is SpeechBubbleElement => !!element && element.type === 'speechBubble'
+): element is SpeechBubbleElement {
+  return !!element && element.type === 'speechBubble'
+}
 
-const isShapeElement = (element: BoardElement | null | undefined): element is ShapeElement =>
-  isRectangleElement(element) ||
-  isEllipseElement(element) ||
-  isRoundedRectElement(element) ||
-  isDiamondElement(element) ||
-  isTriangleElement(element) ||
-  isSpeechBubbleElement(element)
+function isShapeElement(element: BoardElement | null | undefined): element is ShapeElement {
+  return (
+    isRectangleElement(element) ||
+    isEllipseElement(element) ||
+    isRoundedRectElement(element) ||
+    isDiamondElement(element) ||
+    isTriangleElement(element) ||
+    isSpeechBubbleElement(element)
+  )
+}
 
-const isFrameElement = (element: BoardElement | null | undefined): element is FrameElement =>
-  !!element && element.type === 'frame'
+function isFrameElement(element: BoardElement | null | undefined): element is FrameElement {
+  return !!element && element.type === 'frame'
+}
 
-const isFrameLikeElement = (
+function isFrameLikeElement(
   element: BoardElement | null | undefined
-): element is FrameOrShapeElement => isShapeElement(element) || isFrameElement(element)
+): element is FrameOrShapeElement {
+  return isShapeElement(element) || isFrameElement(element)
+}
 
-const isCommentElement = (element: BoardElement | null | undefined): element is CommentElement =>
-  !!element && element.type === 'comment'
+function isCommentElement(element: BoardElement | null | undefined): element is CommentElement {
+  return !!element && element.type === 'comment'
+}
 
-const getFrameLabelRect = (element: FrameElement, camera: CameraState) => {
+function getFrameLabelRect(element: FrameElement, camera: CameraState) {
   const width = Math.max(0, element.w * camera.zoom)
   const x = (element.x + camera.offsetX) * camera.zoom
   const y = (element.y + camera.offsetY) * camera.zoom
@@ -949,10 +976,13 @@ const getFrameLabelRect = (element: FrameElement, camera: CameraState) => {
   }
 }
 
-const getCommentBoardPosition = (element: CommentElement) => ({ x: element.x, y: element.y })
+function getCommentBoardPosition(element: CommentElement) {
+  return { x: element.x, y: element.y }
+}
 
-const isLineElement = (element: BoardElement | null | undefined): element is LineElement =>
-  !!element && element.type === 'line'
+function isLineElement(element: BoardElement | null | undefined): element is LineElement {
+  return !!element && element.type === 'line'
+}
 
 type GridSpec = {
   primaryBoardSpacing: number
@@ -1113,7 +1143,9 @@ function logOutbound(message: unknown) {
   console.log('[ws out]', message)
 }
 
-const randomId = () => Math.random().toString(36).slice(2, 10)
+function randomId() {
+  return Math.random().toString(36).slice(2, 10)
+}
 
 function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1348,10 +1380,11 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
   return applySpeechBubbleTailSizing(bubble, width, height)
 }
 
-const isConnectorAnchor = (value: unknown): value is ConnectorAnchor =>
-  value === 'top' || value === 'right' || value === 'bottom' || value === 'left' || value === 'center'
+function isConnectorAnchor(value: unknown): value is ConnectorAnchor {
+  return value === 'top' || value === 'right' || value === 'bottom' || value === 'left' || value === 'center'
+}
 
-const parseLineEndpointBindingField = (value: unknown): LineEndpointBinding | undefined => {
+function parseLineEndpointBindingField(value: unknown): LineEndpointBinding | undefined {
   if (!value || typeof value !== 'object') return undefined
   const binding = value as Partial<LineEndpointBinding>
   if (typeof binding.elementId !== 'string') return undefined
@@ -1497,13 +1530,13 @@ function wrapText(
   return lines.length === 0 ? [''] : lines
 }
 
-const fontFitsSticky = (
+function fontFitsSticky(
   ctx: CanvasRenderingContext2D,
   text: string,
   fontSize: number,
   maxWidth: number,
   maxHeight: number
-) => {
+) {
   if (!text || text.trim().length === 0) return true
   ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
   const lines = wrapText(ctx, text, maxWidth, true)
@@ -1516,14 +1549,14 @@ const fontFitsSticky = (
   return true
 }
 
-const fitFontSize = (
+function fitFontSize(
   ctx: CanvasRenderingContext2D,
   text: string,
   innerWidth: number,
   innerHeight: number,
   maxFontSize: number,
   minFontSize: number
-) => {
+) {
   if (innerWidth <= 0 || innerHeight <= 0) return minFontSize
   const sanitizedMax = Math.max(minFontSize, maxFontSize)
   let low = minFontSize
@@ -1542,7 +1575,7 @@ const fitFontSize = (
   return clamp(Math.min(best, sanitizedMax), minFontSize, sanitizedMax)
 }
 
-const getStickyScreenRect = (element: StickyNoteElement, camera: CameraState) => {
+function getStickyScreenRect(element: StickyNoteElement, camera: CameraState) {
   const size = getStickySize(element) * camera.zoom
   return {
     x: (element.x + camera.offsetX) * camera.zoom,
@@ -1551,7 +1584,7 @@ const getStickyScreenRect = (element: StickyNoteElement, camera: CameraState) =>
   }
 }
 
-const getSelectionFrameRect = (element: StickyNoteElement, camera: CameraState) => {
+function getSelectionFrameRect(element: StickyNoteElement, camera: CameraState) {
   const rect = getStickyScreenRect(element, camera)
   return {
     x: rect.x - SELECTION_FRAME_PADDING,
@@ -1560,11 +1593,11 @@ const getSelectionFrameRect = (element: StickyNoteElement, camera: CameraState) 
   }
 }
 
-const drawStickyShadow = (
+function drawStickyShadow(
   ctx: CanvasRenderingContext2D,
   rect: { x: number; y: number; width: number; height: number },
   radius: number
-) => {
+) {
   const passes = [
     { blur: 12, offsetY: 8, alpha: 0.18 },
     { blur: 20, offsetY: 18, alpha: 0.12 },
@@ -1695,7 +1728,7 @@ function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseEleme
   ctx.restore()
 }
 
-const getRoundedRectRadius = (element: { r?: number }, width: number, height: number) => {
+function getRoundedRectRadius(element: { r?: number }, width: number, height: number) {
   const requested = resolveRoundedRectRadius(element.r)
   return Math.min(requested, width / 2, height / 2)
 }
@@ -1807,16 +1840,18 @@ function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondEleme
   ctx.restore()
 }
 
-const getLineStrokeColor = (element: LineElement) => element.stroke ?? LINE_DEFAULT_STROKE
+function getLineStrokeColor(element: LineElement) {
+  return element.stroke ?? LINE_DEFAULT_STROKE
+}
 
-const drawLineArrowhead = (
+function drawLineArrowhead(
   ctx: CanvasRenderingContext2D,
   tip: { x: number; y: number },
   origin: { x: number; y: number },
   strokeColor: string,
   screenStrokeWidth: number,
   arrowLength: number
-) => {
+) {
   if (arrowLength <= 1e-3) return
   const dx = origin.x - tip.x
   const dy = origin.y - tip.y
@@ -1950,7 +1985,7 @@ function drawLineElement(
 
 type SpeechBubbleTail = Required<SpeechBubbleElement>['tail']
 
-const getSpeechBubbleTail = (element: SpeechBubbleElement, width: number, height: number) => {
+function getSpeechBubbleTail(element: SpeechBubbleElement, width: number, height: number) {
   const defaultSize = Math.max(RECT_MIN_SIZE / 2, Math.min(width, height) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
   return {
     side: element.tail?.side ?? 'bottom',
@@ -1959,17 +1994,17 @@ const getSpeechBubbleTail = (element: SpeechBubbleElement, width: number, height
   } satisfies SpeechBubbleTail
 }
 
-const applySpeechBubbleTailSizing = (
+function applySpeechBubbleTailSizing(
   element: SpeechBubbleElement,
   width: number,
   height: number
-): SpeechBubbleElement => {
+): SpeechBubbleElement {
   const tail = getSpeechBubbleTail(element, width, height)
   const size = Math.max(RECT_MIN_SIZE / 2, Math.min(width, height) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
   return { ...element, tail: { ...tail, size } }
 }
 
-const withSpeechBubbleTail = (element: ShapeElement, width: number, height: number): ShapeElement => {
+function withSpeechBubbleTail(element: ShapeElement, width: number, height: number): ShapeElement {
   if (!isSpeechBubbleElement(element)) return element
   return applySpeechBubbleTailSizing(element, width, height)
 }
@@ -1981,12 +2016,12 @@ type TailSegment = {
   tip: { x: number; y: number }
 }
 
-const computeTailSegment = (
+function computeTailSegment(
   tail: SpeechBubbleTail,
   width: number,
   height: number,
   radius: number
-): TailSegment => {
+): TailSegment {
   const left = -width / 2
   const right = width / 2
   const top = -height / 2
@@ -2031,7 +2066,7 @@ const computeTailSegment = (
   }
 }
 
-const getSpeechBubbleCornerRadius = (width: number, height: number) => {
+function getSpeechBubbleCornerRadius(width: number, height: number) {
   const base = Math.min(width, height) * SPEECH_BUBBLE_CORNER_RATIO
   return Math.min(base, width / 2, height / 2)
 }
@@ -2161,10 +2196,10 @@ type TransformHandleSpec = {
   anchor?: { x: number; y: number }
 }
 
-const getTransformHandleSpecs = (
+function getTransformHandleSpecs(
   bounds: TransformBounds,
   options: { cornerMode: 'scale' | 'corner'; verticalMode: 'height' | 'scale'; horizontalMode: 'width' }
-): TransformHandleSpec[] => {
+): TransformHandleSpec[] {
   const specs: TransformHandleSpec[] = []
   const cornerHandles: Array<{ handle: 'nw' | 'ne' | 'se' | 'sw'; index: number }> = [
     { handle: 'nw', index: 0 },
