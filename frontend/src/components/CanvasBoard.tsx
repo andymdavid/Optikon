@@ -462,7 +462,7 @@ const normalizeRect = (a: { x: number; y: number }, b: { x: number; y: number })
 })
 
 let sharedMeasureCtx: CanvasRenderingContext2D | null = null
-const getSharedMeasureContext = () => {
+function getSharedMeasureContext() {
   if (sharedMeasureCtx) return sharedMeasureCtx
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
@@ -470,14 +470,14 @@ const getSharedMeasureContext = () => {
   return sharedMeasureCtx
 }
 
-const measureTextLayout = (
+function measureTextLayout(
   ctx: CanvasRenderingContext2D | null,
   text: string,
   fontSizePx: number,
   maxWidthPx: number,
   fontFamily: string,
   lineHeightMultiplier: number
-): TextLayout => {
+): TextLayout {
   const normalizedText = typeof text === 'string' ? text : ''
   if (!ctx) {
     const lines = normalizedText.split(/\n/) || ['']
@@ -599,12 +599,14 @@ type TransformBounds = {
 type TextElementBounds = TransformBounds & { layout: TextElementLayoutInfo }
 type ShapeElementBounds = TransformBounds
 
-const getTextLayoutForContent = (
+function getTextLayoutForContent(
   text: string,
   fontSize: number,
   wrapWidth: number,
   ctx: CanvasRenderingContext2D | null
-): TextLayout => measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
+): TextLayout {
+  return measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
+}
 
 function getTextElementLayout(
   element: TextElement,
@@ -820,42 +822,42 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-const resolveStickyFontSize = (value: unknown) => {
+function resolveStickyFontSize(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.max(1, value)
   }
   return BASE_STICKY_FONT_MAX
 }
 
-const resolveTextFontSize = (value: unknown) => {
+function resolveTextFontSize(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.max(1, value)
   }
   return TEXT_DEFAULT_FONT_SIZE
 }
 
-const resolveTextWrapWidth = (value: unknown) => {
+function resolveTextWrapWidth(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return clamp(value, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
   }
   return TEXT_DEFAULT_MAX_WIDTH
 }
 
-const resolveTextScale = (value: unknown) => {
+function resolveTextScale(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return clamp(value, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
   }
   return 1
 }
 
-const resolveTextRotation = (value: unknown) => {
+function resolveTextRotation(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
   }
   return 0
 }
 
-const resolveRoundedRectRadius = (value: unknown) => {
+function resolveRoundedRectRadius(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.max(0, value)
   }
@@ -2208,10 +2210,10 @@ function toTextLocalCoordinates(point: { x: number; y: number }, bounds: Transfo
   }
 }
 
-const getTextHandleLocalPosition = (
+function getTextHandleLocalPosition(
   handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
   bounds: TransformBounds
-) => {
+) {
   const halfWidth = bounds.width / 2
   const halfHeight = bounds.height / 2
   switch (handle) {
