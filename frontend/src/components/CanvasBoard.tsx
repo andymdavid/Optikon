@@ -2983,7 +2983,7 @@ const shapeCreationRef = useRef<
       const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: element.type, element } satisfies { type: string; element: BoardElement }),
+        body: JSON.stringify({ element } satisfies { element: BoardElement }),
       })
       if (!response.ok) throw new Error('Failed to persist element')
     } catch (error) {

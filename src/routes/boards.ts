@@ -59,8 +59,7 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
-
-  const body = (await safeJson(req)) as { type?: string; element?: SharedBoardElement } | null;
+  const body = (await safeJson(req)) as { element?: SharedBoardElement } | null;
   const allowedElementTypes: Array<SharedBoardElement["type"]> = [
     "sticky",
     "text",
@@ -72,24 +71,30 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
     "diamond",
     "triangle",
     "speechBubble",
-  ]
+  ];
   const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
-    typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"])
+    typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"]);
 
-  if (!body?.type || !isAllowedType(body.type) || !body.element || typeof body.element.id !== "string") {
+  const element = body?.element ?? null;
+  if (!element || typeof element !== "object") {
+    console.warn("[boards] invalid element payload: missing element", body);
+    return jsonResponse({ message: "Invalid element payload." }, 400);
+  }
+  if (typeof element.id !== "string" || !element.id.trim()) {
+    console.warn("[boards] invalid element payload: missing id", body);
+    return jsonResponse({ message: "Invalid element payload." }, 400);
+  }
+  if (!isAllowedType(element.type)) {
+    console.warn("[boards] invalid element payload: unsupported type", body);
     return jsonResponse({ message: "Invalid element payload." }, 400);
   }
 
-  if (body.element.type !== body.type) {
-    return jsonResponse({ message: "Element type mismatch." }, 400);
-  }
-
-  const element = createBoardElementRecord(boardId, body.element);
-  if (!element) {
+  const elementRecord = createBoardElementRecord(boardId, element);
+  if (!elementRecord) {
     return jsonResponse({ message: "Unable to create element." }, 500);
   }
 
-  return jsonResponse({ ok: true, id: element.id }, 201);
+  return jsonResponse({ ok: true, id: elementRecord.id }, 201);
 }
 
 export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: string) {
