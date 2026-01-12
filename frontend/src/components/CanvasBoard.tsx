@@ -816,7 +816,9 @@ function logInbound(message: unknown) {
   console.log('[ws in]', message)
 }
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
 
 const resolveStickyFontSize = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
