@@ -2589,6 +2589,7 @@ const shapeCreationRef = useRef<
   const [connectorHighlight, setConnectorHighlight] = useState<
     { elementId: string; anchor: ConnectorAnchor } | null
   >(null)
+  const [commentPopoverVisible, setCommentPopoverVisible] = useState(false)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -2798,6 +2799,12 @@ const shapeCreationRef = useRef<
         const nextTitle = current.text.trim() ? current.text.trim() : 'Frame'
         if (target.title === nextTitle) return prev
         updatedElement = { ...target, title: nextTitle }
+        return { ...prev, [current.id]: updatedElement }
+      }
+      if (isCommentElement(target)) {
+        const nextText = current.text
+        if (target.text === nextText) return prev
+        updatedElement = { ...target, text: nextText }
         return { ...prev, [current.id]: updatedElement }
       }
       return prev
@@ -3729,6 +3736,9 @@ const shapeCreationRef = useRef<
         setMarquee(null)
         interactionModeRef.current = 'marqueeCandidate'
         return
+      }
+      if (isCommentElement(hitElement)) {
+        setCommentPopoverVisible(true)
       }
       event.preventDefault()
       suppressClickRef.current = true
@@ -4754,6 +4764,30 @@ const shapeCreationRef = useRef<
   }, [boardId, elements, getMeasureContext, persistElementsUpdate, sendElementsUpdate])
 
   useEffect(() => {
+    if (selectedCommentData && (!editingState || editingState.elementType !== 'comment')) {
+      setCommentPopoverVisible(true)
+      return
+    }
+    if (!selectedCommentData) {
+      setCommentPopoverVisible(false)
+    }
+  }, [editingState, selectedCommentData])
+
+  useEffect(() => {
+    if (!commentPopoverVisible) return
+    const handlePointerDown = (event: PointerEvent) => {
+      if (commentPopoverRef.current && commentPopoverRef.current.contains(event.target as Node)) {
+        return
+      }
+      setCommentPopoverVisible(false)
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [commentPopoverVisible])
+
+  useEffect(() => {
     if (!boardId) return
     let cancelled = false
 
@@ -5027,8 +5061,31 @@ const shapeCreationRef = useRef<
     editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
   const editingFrameElement = isFrameElement(editingElement) ? editingElement : null
   const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
+  const editingCommentElement = isCommentElement(editingElement) ? editingElement : null
+  const editingCommentRect = editingCommentElement
+    ? {
+        x: (editingCommentElement.x + cameraState.offsetX) * cameraState.zoom + 12,
+        y: (editingCommentElement.y + cameraState.offsetY) * cameraState.zoom - 40,
+        width: 220,
+        height: 110,
+      }
+    : null
   const editingFrameFontSizePx =
     editingState?.elementType === 'frame' ? getFrameTitleScreenFontSize(cameraState.zoom) : null
+
+  const selectedCommentData = useMemo(() => {
+    if (selectedIds.size !== 1) return null
+    const [candidateId] = Array.from(selectedIds)
+    const candidate = elements[candidateId]
+    if (!isCommentElement(candidate)) return null
+    return {
+      comment: candidate,
+      screen: {
+        x: (candidate.x + cameraState.offsetX) * cameraState.zoom,
+        y: (candidate.y + cameraState.offsetY) * cameraState.zoom,
+      },
+    }
+  }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, selectedIds])
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
@@ -5125,6 +5182,35 @@ const shapeCreationRef = useRef<
         onPointerCancel={handlePointerCancel}
         onDoubleClick={handleCanvasDoubleClick}
       />
+      {selectedCommentData && commentPopoverVisible && (!editingState || editingState.elementType !== 'comment') && (
+        <div
+          ref={commentPopoverRef}
+          className="comment-popover"
+          style={{
+            position: 'absolute',
+            left: selectedCommentData.screen.x + 14,
+            top: selectedCommentData.screen.y - 20,
+            minWidth: 180,
+            maxWidth: 240,
+            background: '#ffffff',
+            border: '1px solid rgba(15,23,42,0.2)',
+            borderRadius: 6,
+            padding: '8px 10px',
+            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.18)',
+            cursor: 'text',
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => beginEditingComment(selectedCommentData.comment)}
+        >
+          {selectedCommentData.comment.text ? (
+            <div style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'pre-wrap' }}>
+              {selectedCommentData.comment.text}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'rgba(15,23,42,0.5)' }}>Add a comment…</div>
+          )}
+        </div>
+      )}
       {marquee && (
         <div
           className="marquee-selection"
@@ -5297,6 +5383,50 @@ const shapeCreationRef = useRef<
             />
           </div>
         )}
+      {editingState?.elementType === 'comment' && editingCommentElement && editingCommentRect && (
+        <div
+          className="canvas-board__text-editor"
+          style={{
+            left: editingCommentRect.x,
+            top: editingCommentRect.y,
+            width: editingCommentRect.width,
+            height: editingCommentRect.height,
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div
+            ref={editingContentRef}
+            className="canvas-board__text-editor-content"
+            contentEditable
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            spellCheck={false}
+            style={{ fontSize: '13px', lineHeight: 1.35, padding: `${TEXT_SAFETY_INSET}px` }}
+            onInput={syncEditingTextFromDom}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelEditing()
+                return
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                commitEditing()
+              }
+            }}
+            onBlur={() => {
+              commitEditing()
+            }}
+            onPaste={(event) => {
+              event.preventDefault()
+              const text = event.clipboardData?.getData('text/plain') ?? ''
+              insertPlainText(text)
+            }}
+          />
+        </div>
+      )}
     </section>
   )
 }
+  const commentPopoverRef = useRef<HTMLDivElement | null>(null)
