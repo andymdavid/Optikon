@@ -2193,7 +2193,7 @@ const getTransformHandleSpecs = (
   return specs
 }
 
-const toTextLocalCoordinates = (point: { x: number; y: number }, bounds: TransformBounds) => {
+function toTextLocalCoordinates(point: { x: number; y: number }, bounds: TransformBounds) {
   const dx = point.x - bounds.center.x
   const dy = point.y - bounds.center.y
   const cos = Math.cos(bounds.rotation)
