@@ -3317,6 +3317,25 @@ const shapeCreationRef = useRef<
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
+      if (toolMode === 'comment') {
+        event.preventDefault()
+        suppressClickRef.current = true
+        const id = randomId()
+        const element: CommentElement = {
+          id,
+          type: 'comment',
+          x: boardPoint.x,
+          y: boardPoint.y,
+          text: '',
+        }
+        upsertElement(element)
+        sendElementUpdate(element)
+        setSelection(new Set([id]))
+        if (boardId) {
+          void persistElementCreate(boardId, element)
+        }
+        return
+      }
       const transformHandleHit = toolMode === 'select' ? hitTestTransformHandle(canvasPoint) : null
       if (transformHandleHit) {
         event.preventDefault()
@@ -4616,6 +4635,10 @@ const shapeCreationRef = useRef<
       }
       if (event.key === 'k' || event.key === 'K') {
         setToolMode((prev) => (prev === 'elbow' ? 'select' : 'elbow'))
+        return
+      }
+      if (event.key === 'c' || event.key === 'C') {
+        setToolMode((prev) => (prev === 'comment' ? 'select' : 'comment'))
         return
       }
       if (event.key === 'Escape') {
