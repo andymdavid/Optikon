@@ -92,6 +92,8 @@ const FRAME_TITLE_FONT_MIN = 12
 const FRAME_TITLE_FONT_MAX = 28
 const FRAME_TITLE_COLOR = '#0f172a'
 const FRAME_TITLE_HIT_HEIGHT = 28
+const getFrameTitleScreenFontSize = (zoom: number) =>
+  clamp(FRAME_TITLE_FONT_SIZE / clamp(zoom, 0.35, 3), FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
 const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
@@ -948,8 +950,8 @@ type EditingState = {
   id: string
   text: string
   originalText: string
-  fontSize: number
-  elementType: 'sticky' | 'text'
+  fontSize?: number
+  elementType: 'sticky' | 'text' | 'frame'
 }
 
 type TransformState =
@@ -1689,7 +1691,12 @@ function drawRoundedRectElement(
   ctx.restore()
 }
 
-function drawFrameElement(ctx: CanvasRenderingContext2D, element: FrameElement, camera: CameraState) {
+function drawFrameElement(
+  ctx: CanvasRenderingContext2D,
+  element: FrameElement,
+  camera: CameraState,
+  options?: { hideLabel?: boolean }
+) {
   const bounds = getShapeElementBounds(element)
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
   const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
@@ -1711,17 +1718,18 @@ function drawFrameElement(ctx: CanvasRenderingContext2D, element: FrameElement, 
 
   // Draw title in screen space so it stays legible across zoom levels.
   const labelRect = getFrameLabelRect(element, camera)
-  ctx.save()
-  const normalizedZoom = clamp(camera.zoom, 0.35, 3)
-  const screenFontSize = clamp(FRAME_TITLE_FONT_SIZE / normalizedZoom, FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
-  ctx.fillStyle = FRAME_TITLE_COLOR
-  ctx.font = `${screenFontSize}px ${STICKY_FONT_FAMILY}`
-  ctx.textBaseline = 'bottom'
-  ctx.textAlign = 'left'
-  const textY = labelRect.y + labelRect.height
-  const title = element.title && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
-  ctx.fillText(title, labelRect.x, textY, Math.max(0, labelRect.width))
-  ctx.restore()
+  if (!options?.hideLabel) {
+    ctx.save()
+    const screenFontSize = getFrameTitleScreenFontSize(camera.zoom)
+    ctx.fillStyle = FRAME_TITLE_COLOR
+    ctx.font = `${screenFontSize}px ${STICKY_FONT_FAMILY}`
+    ctx.textBaseline = 'bottom'
+    ctx.textAlign = 'left'
+    const textY = labelRect.y + labelRect.height
+    const title = element.title && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
+    ctx.fillText(title, labelRect.x, textY, Math.max(0, labelRect.width))
+    ctx.restore()
+  }
 }
 
 function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
@@ -2678,6 +2686,22 @@ const shapeCreationRef = useRef<
     [releaseClickSuppression, setSelection, updateEditingState]
   )
 
+  const beginEditingFrame = useCallback(
+    (element: FrameElement) => {
+      suppressClickRef.current = true
+      releaseClickSuppression()
+      setSelection(new Set([element.id]))
+      const title = element.title?.trim() ? element.title : 'Frame'
+      updateEditingState({
+        id: element.id,
+        elementType: 'frame',
+        text: title,
+        originalText: title,
+      })
+    },
+    [releaseClickSuppression, setSelection, updateEditingState]
+  )
+
   const commitEditing = useCallback(() => {
     const current = editingStateRef.current
     if (!current) return
@@ -2698,6 +2722,12 @@ const shapeCreationRef = useRef<
         updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
         return { ...prev, [current.id]: updatedElement }
       }
+      if (isFrameElement(target)) {
+        const nextTitle = current.text.trim() ? current.text.trim() : 'Frame'
+        if (target.title === nextTitle) return prev
+        updatedElement = { ...target, title: nextTitle }
+        return { ...prev, [current.id]: updatedElement }
+      }
       return prev
     })
     if (updatedElement) {
@@ -2712,30 +2742,6 @@ const shapeCreationRef = useRef<
     if (!editingStateRef.current) return
     updateEditingState(null)
   }, [updateEditingState])
-
-  const renameFrameTitle = useCallback(
-    (element: FrameElement) => {
-      if (typeof window === 'undefined') return
-      const next = window.prompt('Frame title', element.title ?? 'Frame')
-      if (next === null) return
-      const normalized = next.trim() ? next.trim() : 'Frame'
-      if (normalized === element.title) return
-      let updatedElement: FrameElement | null = null
-      setElements((prev) => {
-        const target = prev[element.id]
-        if (!target || !isFrameElement(target)) return prev
-        updatedElement = { ...target, title: normalized }
-        return { ...prev, [target.id]: updatedElement }
-      })
-      if (updatedElement) {
-        sendElementsUpdate([updatedElement])
-        if (boardId) {
-          void persistElementsUpdate(boardId, [updatedElement])
-        }
-      }
-    },
-    [boardId, persistElementsUpdate, sendElementsUpdate]
-  )
 
   const hitTestElement = useCallback(
     (x: number, y: number): string | null => {
@@ -3058,10 +3064,10 @@ const shapeCreationRef = useRef<
       } else if (isTextElement(hitElement)) {
         beginEditingText(hitElement)
       } else if (isFrameElement(hitElement)) {
-        renameFrameTitle(hitElement)
+        beginEditingFrame(hitElement)
       }
     },
-    [beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, renameFrameTitle, screenToBoard]
+    [beginEditingFrame, beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, screenToBoard]
   )
 
   // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
@@ -4802,9 +4808,10 @@ const shapeCreationRef = useRef<
     const resolveElement = (id: string) => elements[id]
     const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
+    const editingFrameId = editingState?.elementType === 'frame' ? editingState.id : null
     const renderElement = (element: BoardElement) => {
       if (isFrameElement(element)) {
-        drawFrameElement(ctx, element, cameraState)
+        drawFrameElement(ctx, element, cameraState, { hideLabel: editingFrameId === element.id })
       } else if (isStickyElement(element)) {
         drawSticky(ctx, element, cameraState)
       } else if (isTextElement(element)) {
@@ -4901,6 +4908,10 @@ const shapeCreationRef = useRef<
     : null
   const editingTextFontSizePx =
     editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
+  const editingFrameElement = isFrameElement(editingElement) ? editingElement : null
+  const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
+  const editingFrameFontSizePx =
+    editingState?.elementType === 'frame' ? getFrameTitleScreenFontSize(cameraState.zoom) : null
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
@@ -5096,6 +5107,55 @@ const shapeCreationRef = useRef<
                 fontSize: `${editingTextFontSizePx}px`,
                 lineHeight: TEXT_LINE_HEIGHT,
                 padding: `${TEXT_SAFETY_INSET}px`,
+              }}
+              onInput={syncEditingTextFromDom}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  commitEditing()
+                }
+              }}
+              onBlur={() => {
+                commitEditing()
+              }}
+              onPaste={(event) => {
+                event.preventDefault()
+                const text = event.clipboardData?.getData('text/plain') ?? ''
+                insertPlainText(text)
+              }}
+            />
+          </div>
+        )}
+      {editingState?.elementType === 'frame' &&
+        editingFrameElement &&
+        editingFrameLabelRect &&
+        editingFrameFontSizePx !== null && (
+          <div
+            className="canvas-board__text-editor"
+            style={{
+              left: editingFrameLabelRect.x,
+              top: editingFrameLabelRect.y,
+              width: editingFrameLabelRect.width,
+              height: editingFrameLabelRect.height,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div
+              ref={editingContentRef}
+              className="canvas-board__text-editor-content"
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="false"
+              spellCheck={false}
+              style={{
+                fontSize: `${editingFrameFontSizePx}px`,
+                lineHeight: 1.2,
               }}
               onInput={syncEditingTextFromDom}
               onKeyDown={(event) => {
