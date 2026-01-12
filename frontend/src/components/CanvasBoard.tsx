@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 
+console.log("CANVASBOARD_BUILD", "4e3d65c")
+
 declare global {
   interface HTMLElementEventMap {
     gesturestart: Event
@@ -3980,7 +3982,13 @@ const shapeCreationRef = useRef<
               const targetHalf = direction * pointerLocal.x
               const newHalfWidth = Math.max(minHalfWidth, targetHalf)
               const newWidth = newHalfWidth * 2
-              const newWrapWidth = clamp(newWidth - inset * 2, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
+              const rawWrap = newWidth - inset * 2
+              const newWrapWidth =
+                rawWrap < TEXT_MIN_WRAP_WIDTH
+                  ? TEXT_MIN_WRAP_WIDTH
+                  : rawWrap > TEXT_MAX_WRAP_WIDTH
+                    ? TEXT_MAX_WRAP_WIDTH
+                    : rawWrap
               const baseHalfWidth = bounds.width / 2
               const deltaHalf = newHalfWidth - baseHalfWidth
               const cos = Math.cos(bounds.rotation)
