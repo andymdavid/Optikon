@@ -5429,4 +5429,3 @@ const shapeCreationRef = useRef<
     </section>
   )
 }
-  const commentPopoverRef = useRef<HTMLDivElement | null>(null)
