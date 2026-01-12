@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
+
+declare global {
+  interface HTMLElementEventMap {
+    gesturestart: Event
+    gesturechange: Event
+    gestureend: Event
+  }
+}
 
 import type {
   BoardElement,
@@ -106,6 +114,7 @@ type ToolMode =
   | 'speechBubble'
   | 'line'
   | 'arrow'
+  | 'elbow'
 type ShapeElement =
   | RectangleElement
   | EllipseElement
@@ -116,6 +125,7 @@ type ShapeElement =
 type LineElementBounds = {
   start: { x: number; y: number }
   end: { x: number; y: number }
+  points: Array<{ x: number; y: number }>
   center: { x: number; y: number }
   length: number
   aabb: Rect
@@ -272,7 +282,7 @@ const getResolvedLineEndpoints = (
   const resolver = options?.resolveElement
   const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
   const end = resolveLineEndpointPosition(element, 'end', { resolveElement: resolver, measureCtx })
-  return { start, end }
+  return { start, end, points: element.points ?? [] }
 }
 
 const findNearestAnchorBinding = (
@@ -304,8 +314,54 @@ const findNearestAnchorBinding = (
     })
   })
   if (!best) return null
-  const result = best as { binding: LineEndpointBinding; position: { x: number; y: number } }
-  return { binding: result.binding, position: result.position }
+  const { binding, position } = best
+  return { binding, position }
+}
+
+const getLinePathPoints = (
+  element: LineElement,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+) => {
+  const { start, end, points } = getResolvedLineEndpoints(element, options)
+  return [start, ...points, end]
+}
+
+const pointToMultiSegmentDistance = (
+  point: { x: number; y: number },
+  path: Array<{ x: number; y: number }>
+) => {
+  if (path.length < 2) return Infinity
+  let best = Infinity
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const a = path[index]
+    const b = path[index + 1]
+    const distance = pointToSegmentDistance(point, a, b)
+    if (distance < best) best = distance
+  }
+  return best
+}
+
+const getSegmentOrientation = (
+  a: { x: number; y: number },
+  b: { x: number; y: number }
+): 'horizontal' | 'vertical' => {
+  const dx = Math.abs(b.x - a.x)
+  const dy = Math.abs(b.y - a.y)
+  return dx >= dy ? 'horizontal' : 'vertical'
+}
+
+const createOrthogonalPoints = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+  const points: Array<{ x: number; y: number }> = []
+  const deltaY = end.y - start.y
+  const deltaX = end.x - start.x
+  if (Math.abs(deltaY) > Math.abs(deltaX)) {
+    const midY = start.y + deltaY / 2
+    points.push({ x: start.x, y: midY }, { x: end.x, y: midY })
+  } else {
+    const midX = start.x + deltaX / 2
+    points.push({ x: midX, y: start.y }, { x: midX, y: end.y })
+  }
+  return points
 }
 
 type ConnectorHandleSpec = {
@@ -645,18 +701,29 @@ const getLineElementBounds = (
   element: LineElement,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
 ): LineElementBounds => {
-  const { start, end } = getResolvedLineEndpoints(element, options)
-  const center = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+  const { start, end, points } = getResolvedLineEndpoints(element, options)
+  const center = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  }
   const strokeWidth = getLineStrokeWidth(element)
   const padding = strokeWidth / 2
-  const aabb = {
-    left: Math.min(start.x, end.x) - padding,
-    right: Math.max(start.x, end.x) + padding,
-    top: Math.min(start.y, end.y) - padding,
-    bottom: Math.max(start.y, end.y) + padding,
-  }
-  const length = Math.hypot(end.x - start.x, end.y - start.y)
-  return { start, end, center, length, aabb, strokeWidth }
+  const pathPoints = [start, ...points, end]
+  const aabb = pathPoints.reduce<Rect>(
+    (acc, point) => ({
+      left: Math.min(acc.left, point.x - padding),
+      right: Math.max(acc.right, point.x + padding),
+      top: Math.min(acc.top, point.y - padding),
+      bottom: Math.max(acc.bottom, point.y + padding),
+    }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
+  )
+  const length = pathPoints.reduce((sum, point, index) => {
+    if (index === 0) return sum
+    const prev = pathPoints[index - 1]
+    return sum + Math.hypot(point.x - prev.x, point.y - prev.y)
+  }, 0)
+  return { start, end, points, center, length, aabb, strokeWidth }
 }
 
 const computeArrowLength = (screenStrokeWidth: number, maxLength: number) => {
@@ -1230,6 +1297,15 @@ function parseLineElement(raw: unknown): LineElement | null {
     typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)
       ? Math.max(0.5, element.strokeWidth)
       : LINE_DEFAULT_STROKE_WIDTH
+  const points = Array.isArray(element.points)
+    ? element.points
+        .map((point) =>
+          point && typeof point === 'object' && typeof point.x === 'number' && typeof point.y === 'number'
+            ? { x: point.x, y: point.y }
+            : null
+        )
+        .filter((point): point is { x: number; y: number } => !!point)
+    : undefined
   return {
     id: element.id,
     type: 'line',
@@ -1241,6 +1317,8 @@ function parseLineElement(raw: unknown): LineElement | null {
     strokeWidth,
     startArrow: !!element.startArrow,
     endArrow: !!element.endArrow,
+    points,
+    orthogonal: element.orthogonal === true,
     startBinding: parseLineEndpointBindingField(element.startBinding) ?? undefined,
     endBinding: parseLineEndpointBindingField(element.endBinding) ?? undefined,
   }
@@ -1615,19 +1693,20 @@ function drawLineElement(
 ) {
   const strokeWidth = getLineStrokeWidth(element)
   const screenStrokeWidth = Math.max(1, strokeWidth * camera.zoom)
-  const { start: startBoard, end: endBoard } = getResolvedLineEndpoints(element, options)
-  const start = {
-    x: (startBoard.x + camera.offsetX) * camera.zoom,
-    y: (startBoard.y + camera.offsetY) * camera.zoom,
-  }
-  const end = {
-    x: (endBoard.x + camera.offsetX) * camera.zoom,
-    y: (endBoard.y + camera.offsetY) * camera.zoom,
-  }
+  const { start: startBoard, end: endBoard, points } = getResolvedLineEndpoints(element, options)
+  const pathPoints = [startBoard, ...points, endBoard]
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
   const strokeColor = getLineStrokeColor(element)
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  const lineLength = Math.hypot(dx, dy)
+  const screenPoints = pathPoints.map(toScreen)
+  const getSegmentLength = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(b.x - a.x, b.y - a.y)
+  const lineLength = screenPoints.reduce((sum, point, index) => {
+    if (index === 0) return sum
+    const prev = screenPoints[index - 1]
+    return sum + getSegmentLength(prev, point)
+  }, 0)
   let startTrim = 0
   let endTrim = 0
   if (lineLength > 0) {
@@ -1643,30 +1722,73 @@ function drawLineElement(
       endTrim *= scale
     }
   }
-  const ux = lineLength > 0 ? dx / lineLength : 0
-  const uy = lineLength > 0 ? dy / lineLength : 0
-  const lineStart = {
-    x: start.x + ux * startTrim,
-    y: start.y + uy * startTrim,
+  const adjustPolyline = (
+    points: Array<{ x: number; y: number }>,
+    trimStart: number,
+    trimEnd: number
+  ) => {
+    const result = points.map((point) => ({ ...point }))
+    const trimSegment = (direction: 'forward' | 'backward', trim: number) => {
+      let remaining = trim
+      if (direction === 'forward') {
+        for (let i = 0; i < result.length - 1 && remaining > 0; i += 1) {
+          const a = result[i]
+          const b = result[i + 1]
+          const length = getSegmentLength(a, b)
+          if (length >= remaining) {
+            const ratio = remaining / length
+            result[i] = {
+              x: a.x + (b.x - a.x) * ratio,
+              y: a.y + (b.y - a.y) * ratio,
+            }
+            break
+          }
+          remaining -= length
+          result[i] = { ...b }
+        }
+      } else {
+        for (let i = result.length - 1; i > 0 && remaining > 0; i -= 1) {
+          const a = result[i - 1]
+          const b = result[i]
+          const length = getSegmentLength(a, b)
+          if (length >= remaining) {
+            const ratio = remaining / length
+            result[i] = {
+              x: b.x - (b.x - a.x) * ratio,
+              y: b.y - (b.y - a.y) * ratio,
+            }
+            break
+          }
+          remaining -= length
+          result[i] = { ...a }
+        }
+      }
+    }
+    if (trimStart > 0) trimSegment('forward', trimStart)
+    if (trimEnd > 0) trimSegment('backward', trimEnd)
+    return result
   }
-  const lineEnd = {
-    x: end.x - ux * endTrim,
-    y: end.y - uy * endTrim,
-  }
+  const trimmedScreenPoints = adjustPolyline(screenPoints, startTrim, endTrim)
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   ctx.strokeStyle = strokeColor
   ctx.lineWidth = screenStrokeWidth
   ctx.beginPath()
-  ctx.moveTo(lineStart.x, lineStart.y)
-  ctx.lineTo(lineEnd.x, lineEnd.y)
+  trimmedScreenPoints.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y)
+    else ctx.lineTo(point.x, point.y)
+  })
   ctx.stroke()
-  if (element.startArrow && startTrim > 0) {
-    drawLineArrowhead(ctx, start, lineStart, strokeColor, screenStrokeWidth, startTrim)
+  if (element.startArrow && startTrim > 0 && trimmedScreenPoints.length >= 2) {
+    const [a, b] = trimmedScreenPoints.slice(0, 2)
+    drawLineArrowhead(ctx, a, b, strokeColor, screenStrokeWidth, startTrim)
   }
-  if (element.endArrow && endTrim > 0) {
-    drawLineArrowhead(ctx, end, lineEnd, strokeColor, screenStrokeWidth, endTrim)
+  if (element.endArrow && endTrim > 0 && trimmedScreenPoints.length >= 2) {
+    const slice = trimmedScreenPoints.slice(-2)
+    const a = slice[0]
+    const b = slice[1]
+    drawLineArrowhead(ctx, b, a, strokeColor, screenStrokeWidth, endTrim)
   }
   ctx.restore()
 }
@@ -2092,15 +2214,15 @@ function drawLineSelection(
   resolveElement?: (id: string) => BoardElement | undefined,
   measureCtx?: CanvasRenderingContext2D | null
 ) {
-  const { start: startBoard, end: endBoard } = getResolvedLineEndpoints(element, { resolveElement, measureCtx })
-  const start = {
-    x: (startBoard.x + camera.offsetX) * camera.zoom,
-    y: (startBoard.y + camera.offsetY) * camera.zoom,
-  }
-  const end = {
-    x: (endBoard.x + camera.offsetX) * camera.zoom,
-    y: (endBoard.y + camera.offsetY) * camera.zoom,
-  }
+  const { start: startBoard, end: endBoard, points } = getResolvedLineEndpoints(element, {
+    resolveElement,
+    measureCtx,
+  })
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
+  const screenPath = [startBoard, ...points, endBoard].map(toScreen)
   const baseWidth = Math.max(1, getLineStrokeWidth(element) * camera.zoom)
   const selectionWidth = Math.max(2, baseWidth + 2)
   ctx.save()
@@ -2108,8 +2230,10 @@ function drawLineSelection(
   ctx.lineWidth = selectionWidth
   ctx.lineCap = 'round'
   ctx.beginPath()
-  ctx.moveTo(start.x, start.y)
-  ctx.lineTo(end.x, end.y)
+  screenPath.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y)
+    else ctx.lineTo(point.x, point.y)
+  })
   ctx.stroke()
   if (options.withHandles) {
     const drawHandle = (point: { x: number; y: number }) => {
@@ -2121,8 +2245,7 @@ function drawLineSelection(
       ctx.fill()
       ctx.stroke()
     }
-    drawHandle(start)
-    drawHandle(end)
+    screenPath.forEach((point) => drawHandle(point))
   }
   ctx.restore()
 }
@@ -2184,7 +2307,10 @@ export function CanvasBoard() {
         offsetY?: number
         pointerId: number
         startPointer: { x: number; y: number }
-        startPositions: Record<string, { x: number; y: number; x2?: number; y2?: number }>
+        startPositions: Record<
+          string,
+          { x: number; y: number; x2?: number; y2?: number; points?: Array<{ x: number; y: number }> }
+        >
       }
     | null
   >(null)
@@ -2204,6 +2330,17 @@ export function CanvasBoard() {
         pointerId: number
         handle: 'start' | 'end'
         candidateBinding: LineEndpointBinding | null
+      }
+  >(null)
+  const lineBendStateRef = useRef<
+    | null
+    | {
+        id: string
+        pointerId: number
+        index: number
+        basePoints: Array<{ x: number; y: number }>
+        prevOrientation: 'horizontal' | 'vertical'
+        nextOrientation: 'horizontal' | 'vertical'
       }
   >(null)
 const shapeCreationRef = useRef<
@@ -2226,6 +2363,7 @@ const shapeCreationRef = useRef<
         hasDragged: boolean
         startBinding: LineEndpointBinding | null
         endBinding: LineEndpointBinding | null
+        kind: 'straight' | 'elbow'
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -2251,6 +2389,7 @@ const shapeCreationRef = useRef<
     | 'shape-create'
     | 'line-create'
     | 'line-handle'
+    | 'line-bend'
   >('none')
   const marqueeCandidateRef = useRef<
     | null
@@ -2531,11 +2670,11 @@ const shapeCreationRef = useRef<
         if (isLineElement(element)) {
           const tolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
           const measureCtx = getSharedMeasureContext()
-          const { start, end } = getResolvedLineEndpoints(element, {
+          const path = getLinePathPoints(element, {
             resolveElement: (elementId) => elements[elementId],
             measureCtx,
           })
-          const distance = pointToSegmentDistance({ x, y }, start, end)
+          const distance = pointToMultiSegmentDistance({ x, y }, path)
           if (distance <= tolerance) {
             return element.id
           }
@@ -2855,6 +2994,35 @@ const shapeCreationRef = useRef<
     [cameraState, elements]
   )
 
+  const hitTestLineBendHandle = useCallback(
+    (point: { x: number; y: number }): { element: LineElement; index: number } | null => {
+      const selected = selectedIdsRef.current
+      if (selected.size !== 1) return null
+      const [id] = Array.from(selected)
+      const element = elements[id]
+      if (!isLineElement(element) || !element.points || element.points.length === 0) return null
+      const measureCtx = getSharedMeasureContext()
+      const resolved = getResolvedLineEndpoints(element, {
+        resolveElement: (elementId) => elements[elementId],
+        measureCtx,
+      })
+      const handles = resolved.points
+      for (let index = 0; index < handles.length; index += 1) {
+        const handle = handles[index]
+        const screen = {
+          x: (handle.x + cameraState.offsetX) * cameraState.zoom,
+          y: (handle.y + cameraState.offsetY) * cameraState.zoom,
+        }
+        const distance = Math.hypot(point.x - screen.x, point.y - screen.y)
+        if (distance <= RESIZE_HANDLE_HIT_RADIUS) {
+          return { element, index }
+        }
+      }
+      return null
+    },
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
+  )
+
   const hitTestTransformHandle = useCallback(
     (
       point: { x: number; y: number }
@@ -3064,6 +3232,35 @@ const shapeCreationRef = useRef<
           }
           return
         }
+        const bendHandleHit = hitTestLineBendHandle(canvasPoint)
+        if (bendHandleHit) {
+          event.preventDefault()
+          suppressClickRef.current = true
+          interactionModeRef.current = 'line-bend'
+          const measureCtx = getSharedMeasureContext()
+          const resolvedPath = getLinePathPoints(bendHandleHit.element, {
+            resolveElement: (elementId) => elements[elementId],
+            measureCtx,
+          })
+          const pathIndex = bendHandleHit.index + 1
+          const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
+          const currentPoint = resolvedPath[pathIndex]
+          const nextPoint = resolvedPath[pathIndex + 1] ?? resolvedPath[pathIndex]
+          const prevOrientation = getSegmentOrientation(prevPoint, currentPoint)
+          const nextOrientation = getSegmentOrientation(currentPoint, nextPoint)
+          lineBendStateRef.current = {
+            id: bendHandleHit.element.id,
+            pointerId: event.pointerId,
+            index: bendHandleHit.index,
+            basePoints: bendHandleHit.element.points ? bendHandleHit.element.points.map((point) => ({ ...point })) : [],
+            prevOrientation,
+            nextOrientation,
+          }
+          if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }
+          return
+        }
       }
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
@@ -3174,48 +3371,14 @@ const shapeCreationRef = useRef<
           setSelection(new Set([id]))
           return
         }
-        if (toolMode === 'line' || toolMode === 'arrow') {
+        if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+          const isElbowTool = toolMode === 'elbow'
           const anchorHit = hitTestConnectorAnchor(canvasPoint)
-          if (anchorHit) {
-            event.preventDefault()
-            const id = randomId()
-            const startBinding: LineEndpointBinding = { elementId: anchorHit.element.id, anchor: anchorHit.anchor }
-            const startPoint = anchorHit.board
-            const newElement: LineElement = {
-              id,
-              type: 'line',
-              x1: startPoint.x,
-              y1: startPoint.y,
-              x2: startPoint.x,
-              y2: startPoint.y,
-              stroke: LINE_DEFAULT_STROKE,
-              strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
-              startArrow: false,
-              endArrow: toolMode === 'arrow',
-              startBinding,
-            }
-            lineCreationRef.current = {
-              pointerId: event.pointerId,
-              id,
-              start: startPoint,
-              hasDragged: false,
-              startBinding,
-              endBinding: null,
-            }
-            interactionModeRef.current = 'line-create'
-            suppressClickRef.current = true
-            setElements((prev) => ({ ...prev, [id]: newElement }))
-            setSelection(new Set([id]))
-            if (event.currentTarget.setPointerCapture) {
-              event.currentTarget.setPointerCapture(event.pointerId)
-            }
-            return
-          }
-          event.preventDefault()
           const id = randomId()
           const measureCtx = getSharedMeasureContext()
-          const startSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
-          const startPosition = startSnap?.position ?? boardPoint
+          const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
+          const initialBinding = anchorHit?.anchor ? { elementId: anchorHit.element.id, anchor: anchorHit.anchor } : fallbackSnap?.binding ?? null
+          const startPosition = anchorHit?.board ?? fallbackSnap?.position ?? boardPoint
           let newElement: LineElement = {
             id,
             type: 'line',
@@ -3227,18 +3390,20 @@ const shapeCreationRef = useRef<
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
             endArrow: toolMode === 'arrow',
+            orthogonal: isElbowTool,
+            points: isElbowTool ? [] : undefined,
           }
-          const startBinding = startSnap?.binding ?? null
-          if (startSnap) {
-            newElement = { ...newElement, startBinding: startSnap.binding }
+          if (initialBinding) {
+            newElement = { ...newElement, startBinding: initialBinding }
           }
           lineCreationRef.current = {
             pointerId: event.pointerId,
             id,
             start: startPosition,
             hasDragged: false,
-            startBinding,
+            startBinding: initialBinding,
             endBinding: null,
+            kind: isElbowTool ? 'elbow' : 'straight',
           }
           interactionModeRef.current = 'line-create'
           suppressClickRef.current = true
@@ -3276,12 +3441,21 @@ const shapeCreationRef = useRef<
       }
 
       const dragIds = Array.from(nextSelection)
-      const startPositions: Record<string, { x: number; y: number; x2?: number; y2?: number }> = {}
+      const startPositions: Record<
+        string,
+        { x: number; y: number; x2?: number; y2?: number; points?: Array<{ x: number; y: number }> }
+      > = {}
       dragIds.forEach((id) => {
         const element = elements[id]
         if (element) {
           if (isLineElement(element)) {
-            startPositions[id] = { x: element.x1, y: element.y1, x2: element.x2, y2: element.y2 }
+            startPositions[id] = {
+              x: element.x1,
+              y: element.y1,
+              x2: element.x2,
+              y2: element.y2,
+              points: element.points ? element.points.map((point) => ({ ...point })) : undefined,
+            }
           } else {
             startPositions[id] = { x: element.x, y: element.y }
           }
@@ -3386,6 +3560,43 @@ const shapeCreationRef = useRef<
           const now = Date.now()
           if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
             sendElementsUpdate([updatedLine])
+            lastBroadcastRef.current = now
+          }
+        }
+        return
+      }
+
+      if (mode === 'line-bend') {
+        const bendState = lineBendStateRef.current
+        if (!bendState || bendState.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        const measureCtx = getSharedMeasureContext()
+        let updatedElement: LineElement | null = null
+        setElements((prev) => {
+          const target = prev[bendState.id]
+          if (!target || !isLineElement(target)) return prev
+          const points = target.points ? [...target.points] : []
+          if (!points[bendState.index]) return prev
+          const resolvedPath = getLinePathPoints(target, {
+            resolveElement: (elementId) => prev[elementId],
+            measureCtx,
+          })
+          const pathIndex = bendState.index + 1
+          const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
+          const nextPoint = resolvedPath[pathIndex + 1] ?? resolvedPath[pathIndex]
+          let nextValue = { x: boardPoint.x, y: boardPoint.y }
+          if (bendState.prevOrientation === 'horizontal') nextValue.y = prevPoint.y
+          else nextValue.x = prevPoint.x
+          if (bendState.nextOrientation === 'horizontal') nextValue.y = nextPoint.y
+          else nextValue.x = nextPoint.x
+          points[bendState.index] = nextValue
+          updatedElement = { ...target, points }
+          return { ...prev, [target.id]: updatedElement }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
             lastBroadcastRef.current = now
           }
         }
@@ -3573,7 +3784,11 @@ const shapeCreationRef = useRef<
         setElements((prev) => {
           const target = prev[creation.id]
           if (!target || !isLineElement(target)) return prev
-          const updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
+          let updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
+          if (creation.kind === 'elbow') {
+            const startPoint = creation.start
+            updated = { ...updated, points: createOrthogonalPoints(startPoint, targetPoint), orthogonal: true }
+          }
           nextLine = updated
           return { ...prev, [creation.id]: updated }
         })
@@ -3678,6 +3893,10 @@ const shapeCreationRef = useRef<
               }
               if (!endBindingActive) {
                 lineNext = { ...lineNext, x2: start.x2 + deltaX, y2: start.y2 + deltaY }
+              }
+              if (start.points && start.points.length > 0) {
+                const shifted = start.points.map((point) => ({ x: point.x + deltaX, y: point.y + deltaY }))
+                lineNext = { ...lineNext, points: shifted }
               }
               updated = lineNext
             }
@@ -3813,6 +4032,22 @@ const shapeCreationRef = useRef<
           void persistElementsUpdate(boardId, [updated])
         }
         updateConnectorHighlight(null)
+        return
+      }
+
+      if (mode === 'line-bend') {
+        const bendState = lineBendStateRef.current
+        lineBendStateRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!bendState) return
+        const element = elements[bendState.id]
+        if (!element || !isLineElement(element)) return
+        sendElementsUpdate([element])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [element])
+        }
         return
       }
 
@@ -3952,8 +4187,11 @@ const shapeCreationRef = useRef<
   )
 
   const handleWheel = useCallback(
-    (event: WheelEvent<HTMLCanvasElement>) => {
+    (event: WheelEvent) => {
       if (editingStateRef.current) return
+      const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current
+      if (!canvas) return
+
       // Miro-like: pan on scroll, zoom on Cmd+scroll
       if (!event.metaKey) {
         event.preventDefault()
@@ -3966,7 +4204,7 @@ const shapeCreationRef = useRef<
       }
 
       event.preventDefault()
-      const rect = event.currentTarget.getBoundingClientRect()
+      const rect = canvas.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
       const boardPoint = screenToBoard(canvasPoint)
       setCameraState((prev) => {
@@ -3979,6 +4217,32 @@ const shapeCreationRef = useRef<
     },
     [screenToBoard]
   )
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const wheelListener = (event: WheelEvent) => {
+      handleWheel(event)
+    }
+    const preventGesture = (event: Event) => {
+      event.preventDefault()
+    }
+
+    const listenerOptions: AddEventListenerOptions = { passive: false }
+    canvas.addEventListener('wheel', wheelListener, listenerOptions)
+    const gestureEvents: Array<keyof HTMLElementEventMap> = ['gesturestart', 'gesturechange', 'gestureend']
+    gestureEvents.forEach((type) => {
+      canvas.addEventListener(type, preventGesture, listenerOptions)
+    })
+
+    return () => {
+      canvas.removeEventListener('wheel', wheelListener)
+      gestureEvents.forEach((type) => {
+        canvas.removeEventListener(type, preventGesture)
+      })
+    }
+  }, [handleWheel])
 
   useEffect(() => {
     let cancelled = false
@@ -4077,6 +4341,10 @@ const shapeCreationRef = useRef<
       }
       if (event.key === 'a' || event.key === 'A') {
         setToolMode((prev) => (prev === 'arrow' ? 'select' : 'arrow'))
+        return
+      }
+      if (event.key === 'k' || event.key === 'K') {
+        setToolMode((prev) => (prev === 'elbow' ? 'select' : 'elbow'))
         return
       }
       if (event.key === 'Escape') {
@@ -4316,7 +4584,7 @@ const shapeCreationRef = useRef<
     const values = Object.values(elements)
     const sharedMeasureCtx = getSharedMeasureContext()
     const resolveElement = (id: string) => elements[id]
-  const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow'
+  const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     values.forEach((element) => {
       if (isStickyElement(element)) {
@@ -4505,7 +4773,6 @@ const shapeCreationRef = useRef<
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerCancel}
-        onWheel={handleWheel}
         onDoubleClick={handleCanvasDoubleClick}
       />
       {marquee && (
