@@ -4714,7 +4714,7 @@ const shapeCreationRef = useRef<
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-    }, [deleteSelectedElements])
+  }, [deleteSelectedElements])
 
   useEffect(() => {
     setSelection(new Set())
