@@ -84,15 +84,14 @@ const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
 const FRAME_MIN_SIZE = 80
 const FRAME_DEFAULT_WIDTH = 640
 const FRAME_DEFAULT_HEIGHT = 420
-const FRAME_HEADER_HEIGHT = 36
-const FRAME_HEADER_MIN_HEIGHT = 28
+const FRAME_HEADER_GAP_PX = 6
 const FRAME_BORDER_COLOR = 'rgba(15, 23, 42, 0.35)'
-const FRAME_HEADER_BG = 'rgba(15, 23, 42, 0.05)'
-const FRAME_FILL_COLOR = 'rgba(255, 255, 255, 0.65)'
-const FRAME_BORDER_WIDTH = 2
+const FRAME_FILL_COLOR = '#ffffff'
 const FRAME_TITLE_FONT_SIZE = 18
-const FRAME_TITLE_PADDING_X = 18
+const FRAME_TITLE_FONT_MIN = 12
+const FRAME_TITLE_FONT_MAX = 28
 const FRAME_TITLE_COLOR = '#0f172a'
+const FRAME_TITLE_HIT_HEIGHT = 28
 const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
@@ -922,6 +921,18 @@ const isFrameLikeElement = (
   element: BoardElement | null | undefined
 ): element is FrameOrShapeElement => isShapeElement(element) || isFrameElement(element)
 
+const getFrameLabelRect = (element: FrameElement, camera: CameraState) => {
+  const width = Math.max(0, element.w * camera.zoom)
+  const x = (element.x + camera.offsetX) * camera.zoom
+  const y = (element.y + camera.offsetY) * camera.zoom
+  return {
+    x,
+    y: y - FRAME_TITLE_HIT_HEIGHT - FRAME_HEADER_GAP_PX,
+    width,
+    height: FRAME_TITLE_HIT_HEIGHT,
+  }
+}
+
 const isLineElement = (element: BoardElement | null | undefined): element is LineElement =>
   !!element && element.type === 'line'
 
@@ -1689,31 +1700,27 @@ function drawFrameElement(ctx: CanvasRenderingContext2D, element: FrameElement, 
   ctx.scale(scaleFactor, scaleFactor)
   const width = bounds.width
   const height = bounds.height
-  const headerLimit = Math.min(FRAME_HEADER_HEIGHT, height)
-  const headerHeight = clamp(headerLimit, FRAME_HEADER_MIN_HEIGHT, Math.max(FRAME_HEADER_MIN_HEIGHT, height))
   ctx.fillStyle = FRAME_FILL_COLOR
   ctx.strokeStyle = FRAME_BORDER_COLOR
-  ctx.lineWidth = FRAME_BORDER_WIDTH / scaleFactor
+  ctx.lineWidth = 2 / scaleFactor
   ctx.beginPath()
   ctx.rect(-width / 2, -height / 2, width, height)
   ctx.fill()
   ctx.stroke()
-  ctx.fillStyle = FRAME_HEADER_BG
-  ctx.fillRect(-width / 2, -height / 2, width, headerHeight)
-  ctx.fillStyle = FRAME_TITLE_COLOR
-  ctx.font = `${FRAME_TITLE_FONT_SIZE}px ${STICKY_FONT_FAMILY}`
-  ctx.textBaseline = 'middle'
-  ctx.textAlign = 'left'
-  const title = element.title && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
-  const textX = -width / 2 + FRAME_TITLE_PADDING_X
-  const textY = -height / 2 + headerHeight / 2
-  const textMaxWidth = Math.max(0, width - FRAME_TITLE_PADDING_X * 2)
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(-width / 2 + FRAME_TITLE_PADDING_X / 4, -height / 2, width - FRAME_TITLE_PADDING_X / 2, headerHeight)
-  ctx.clip()
-  ctx.fillText(title, textX, textY, textMaxWidth)
   ctx.restore()
+
+  // Draw title in screen space so it stays legible across zoom levels.
+  const labelRect = getFrameLabelRect(element, camera)
+  ctx.save()
+  const normalizedZoom = clamp(camera.zoom, 0.35, 3)
+  const screenFontSize = clamp(FRAME_TITLE_FONT_SIZE / normalizedZoom, FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
+  ctx.fillStyle = FRAME_TITLE_COLOR
+  ctx.font = `${screenFontSize}px ${STICKY_FONT_FAMILY}`
+  ctx.textBaseline = 'bottom'
+  ctx.textAlign = 'left'
+  const textY = labelRect.y + labelRect.height
+  const title = element.title && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
+  ctx.fillText(title, labelRect.x, textY, Math.max(0, labelRect.width))
   ctx.restore()
 }
 
@@ -2706,6 +2713,30 @@ const shapeCreationRef = useRef<
     updateEditingState(null)
   }, [updateEditingState])
 
+  const renameFrameTitle = useCallback(
+    (element: FrameElement) => {
+      if (typeof window === 'undefined') return
+      const next = window.prompt('Frame title', element.title ?? 'Frame')
+      if (next === null) return
+      const normalized = next.trim() ? next.trim() : 'Frame'
+      if (normalized === element.title) return
+      let updatedElement: FrameElement | null = null
+      setElements((prev) => {
+        const target = prev[element.id]
+        if (!target || !isFrameElement(target)) return prev
+        updatedElement = { ...target, title: normalized }
+        return { ...prev, [target.id]: updatedElement }
+      })
+      if (updatedElement) {
+        sendElementsUpdate([updatedElement])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [updatedElement])
+        }
+      }
+    },
+    [boardId, persistElementsUpdate, sendElementsUpdate]
+  )
+
   const hitTestElement = useCallback(
     (x: number, y: number): string | null => {
       const values = Object.values(elements)
@@ -2793,6 +2824,26 @@ const shapeCreationRef = useRef<
           if (pointInPolygon({ x, y }, bounds.corners)) {
             return element.id
           }
+          const screenPoint = {
+            x: (x + cameraState.offsetX) * cameraState.zoom,
+            y: (y + cameraState.offsetY) * cameraState.zoom,
+          }
+          const labelRect = getFrameLabelRect(element, cameraState)
+          if (
+            screenPoint.x >= labelRect.x &&
+            screenPoint.x <= labelRect.x + labelRect.width &&
+            screenPoint.y >= labelRect.y &&
+            screenPoint.y <= labelRect.y + labelRect.height
+          ) {
+            return element.id
+          }
+          continue
+        }
+        if (isFrameElement(element)) {
+          const bounds = getShapeElementBounds(element)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
           continue
         }
         if (isRoundedRectElement(element)) {
@@ -2837,7 +2888,7 @@ const shapeCreationRef = useRef<
       }
       return null
     },
-    [cameraState.zoom, elements]
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
   )
 
   const persistElementCreate = useCallback(async (board: string, element: BoardElement) => {
@@ -3006,9 +3057,11 @@ const shapeCreationRef = useRef<
         beginEditingSticky(hitElement)
       } else if (isTextElement(hitElement)) {
         beginEditingText(hitElement)
+      } else if (isFrameElement(hitElement)) {
+        renameFrameTitle(hitElement)
       }
     },
-    [beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, screenToBoard]
+    [beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, renameFrameTitle, screenToBoard]
   )
 
   // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
