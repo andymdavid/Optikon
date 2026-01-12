@@ -1735,6 +1735,21 @@ function drawFrameElement(
   }
 }
 
+function drawCommentElement(ctx: CanvasRenderingContext2D, element: CommentElement, camera: CameraState) {
+  const screenX = (element.x + camera.offsetX) * camera.zoom
+  const screenY = (element.y + camera.offsetY) * camera.zoom
+  const radius = 8
+  ctx.save()
+  ctx.fillStyle = '#0ea5e9'
+  ctx.strokeStyle = '#0f172a'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.restore()
+}
+
 function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
   const bounds = getShapeElementBounds(element)
   ctx.save()
@@ -4815,6 +4830,8 @@ const shapeCreationRef = useRef<
     const renderElement = (element: BoardElement) => {
       if (isFrameElement(element)) {
         drawFrameElement(ctx, element, cameraState, { hideLabel: editingFrameId === element.id })
+      } else if (isCommentElement(element)) {
+        drawCommentElement(ctx, element, cameraState)
       } else if (isStickyElement(element)) {
         drawSticky(ctx, element, cameraState)
       } else if (isTextElement(element)) {
