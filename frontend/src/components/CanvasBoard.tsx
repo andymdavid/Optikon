@@ -12,6 +12,7 @@ import type {
   BoardElement,
   EllipseElement,
   RectangleElement,
+  FrameElement,
   DiamondElement,
   TriangleElement,
   SpeechBubbleElement,
@@ -80,6 +81,18 @@ const TEXT_MAX_SCALE = 40
 const TEXT_ROTATION_HANDLE_OFFSET = 32
 const TEXT_ROTATION_SNAP_EPSILON = (5 * Math.PI) / 180
 const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
+const FRAME_MIN_SIZE = 80
+const FRAME_DEFAULT_WIDTH = 640
+const FRAME_DEFAULT_HEIGHT = 420
+const FRAME_HEADER_HEIGHT = 36
+const FRAME_HEADER_MIN_HEIGHT = 28
+const FRAME_BORDER_COLOR = 'rgba(15, 23, 42, 0.35)'
+const FRAME_HEADER_BG = 'rgba(15, 23, 42, 0.05)'
+const FRAME_FILL_COLOR = 'rgba(255, 255, 255, 0.65)'
+const FRAME_BORDER_WIDTH = 2
+const FRAME_TITLE_FONT_SIZE = 18
+const FRAME_TITLE_PADDING_X = 18
+const FRAME_TITLE_COLOR = '#0f172a'
 const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
@@ -107,6 +120,7 @@ type ToolMode =
   | 'sticky'
   | 'text'
   | 'rect'
+  | 'frame'
   | 'ellipse'
   | 'roundRect'
   | 'diamond'
@@ -122,6 +136,7 @@ type ShapeElement =
   | DiamondElement
   | TriangleElement
   | SpeechBubbleElement
+type FrameOrShapeElement = ShapeElement | FrameElement
 type LineElementBounds = {
   start: { x: number; y: number }
   end: { x: number; y: number }
@@ -241,7 +256,7 @@ const getElementAnchorDetails = (
     const point = getTransformAnchorPoint(textBounds, anchor)
     return { point, center: textBounds.center }
   }
-  if (isShapeElement(element)) {
+  if (isShapeElement(element) || isFrameElement(element)) {
     const shapeBounds = getShapeElementBounds(element)
     const point = getTransformAnchorPoint(shapeBounds, anchor)
     return { point, center: shapeBounds.center }
@@ -297,7 +312,7 @@ const findNearestAnchorBinding = (
   const anchorCtx = measureCtx ?? null
   Object.values(elements).forEach((element) => {
     if (!element || element.id === excludeId) return
-    if (!isStickyElement(element) && !isTextElement(element) && !isShapeElement(element)) return
+    if (!isStickyElement(element) && !isTextElement(element) && !isFrameLikeElement(element)) return
     LINE_ANCHORS.forEach((anchor) => {
       const details = getElementAnchorDetails(element, anchor, { ctx: anchorCtx })
       const position = details?.point
@@ -376,7 +391,7 @@ const getConnectorAnchorHandles = (
   camera: CameraState,
   measureCtx: CanvasRenderingContext2D | null
 ): ConnectorHandleSpec[] => {
-  if (!isStickyElement(element) && !isTextElement(element) && !isShapeElement(element)) return []
+  if (!isStickyElement(element) && !isTextElement(element) && !isFrameLikeElement(element)) return []
   const handles: ConnectorHandleSpec[] = []
   const ctx = measureCtx ?? null
   VISIBLE_CONNECTOR_ANCHORS.forEach((anchor) => {
@@ -670,9 +685,13 @@ const getTextElementBounds = (
   return { ...bounds, layout: layoutInfo }
 }
 
-const getShapeElementBounds = (element: ShapeElement): ShapeElementBounds => {
-  const width = Math.max(RECT_MIN_SIZE, element.w)
-  const height = Math.max(RECT_MIN_SIZE, element.h)
+const resolveShapeMinSize = (element: { type: BoardElement['type'] }) =>
+  element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+
+const getShapeElementBounds = (element: ShapeElement | FrameElement): ShapeElementBounds => {
+  const minSize = resolveShapeMinSize(element)
+  const width = Math.max(minSize, element.w)
+  const height = Math.max(minSize, element.h)
   const rotation = resolveTextRotation(element.rotation)
   return computeTransformBounds({
     x: element.x,
@@ -741,6 +760,7 @@ const getElementBounds = (
   if (isStickyElement(element)) return getStickyBounds(element)
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
+  if (isFrameElement(element)) return getShapeElementBounds(element).aabb
   if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
   if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
@@ -895,6 +915,13 @@ const isShapeElement = (element: BoardElement | null | undefined): element is Sh
   isTriangleElement(element) ||
   isSpeechBubbleElement(element)
 
+const isFrameElement = (element: BoardElement | null | undefined): element is FrameElement =>
+  !!element && element.type === 'frame'
+
+const isFrameLikeElement = (
+  element: BoardElement | null | undefined
+): element is FrameOrShapeElement => isShapeElement(element) || isFrameElement(element)
+
 const isLineElement = (element: BoardElement | null | undefined): element is LineElement =>
   !!element && element.type === 'line'
 
@@ -927,7 +954,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -935,7 +962,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -943,7 +970,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -951,7 +978,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -1132,6 +1159,29 @@ function parseRectangleElement(raw: unknown): RectangleElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+  }
+}
+
+function parseFrameElement(raw: unknown): FrameElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<FrameElement>
+  if (element.type !== 'frame') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  const width = Math.max(FRAME_MIN_SIZE, element.w)
+  const height = Math.max(FRAME_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  const title = typeof element.title === 'string' && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
+  return {
+    id: element.id,
+    type: 'frame',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    rotation,
+    title,
   }
 }
 
@@ -1330,6 +1380,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'sticky') return parseStickyElement(raw)
   if (type === 'text') return parseTextElement(raw)
   if (type === 'rect') return parseRectangleElement(raw)
+  if (type === 'frame') return parseFrameElement(raw)
   if (type === 'ellipse') return parseEllipseElement(raw)
   if (type === 'roundRect') return parseRoundedRectElement(raw)
   if (type === 'diamond') return parseDiamondElement(raw)
@@ -1624,6 +1675,45 @@ function drawRoundedRectElement(
   drawRoundedRectPath(ctx, -width / 2, -height / 2, width, height, radius)
   ctx.fill()
   ctx.stroke()
+  ctx.restore()
+}
+
+function drawFrameElement(ctx: CanvasRenderingContext2D, element: FrameElement, camera: CameraState) {
+  const bounds = getShapeElementBounds(element)
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.save()
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  const width = bounds.width
+  const height = bounds.height
+  const headerLimit = Math.min(FRAME_HEADER_HEIGHT, height)
+  const headerHeight = clamp(headerLimit, FRAME_HEADER_MIN_HEIGHT, Math.max(FRAME_HEADER_MIN_HEIGHT, height))
+  ctx.fillStyle = FRAME_FILL_COLOR
+  ctx.strokeStyle = FRAME_BORDER_COLOR
+  ctx.lineWidth = FRAME_BORDER_WIDTH / scaleFactor
+  ctx.beginPath()
+  ctx.rect(-width / 2, -height / 2, width, height)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = FRAME_HEADER_BG
+  ctx.fillRect(-width / 2, -height / 2, width, headerHeight)
+  ctx.fillStyle = FRAME_TITLE_COLOR
+  ctx.font = `${FRAME_TITLE_FONT_SIZE}px ${STICKY_FONT_FAMILY}`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  const title = element.title && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
+  const textX = -width / 2 + FRAME_TITLE_PADDING_X
+  const textY = -height / 2 + headerHeight / 2
+  const textMaxWidth = Math.max(0, width - FRAME_TITLE_PADDING_X * 2)
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(-width / 2 + FRAME_TITLE_PADDING_X / 4, -height / 2, width - FRAME_TITLE_PADDING_X / 2, headerHeight)
+  ctx.clip()
+  ctx.fillText(title, textX, textY, textMaxWidth)
+  ctx.restore()
   ctx.restore()
 }
 
@@ -2151,7 +2241,7 @@ function drawTextSelection(
 
 function drawShapeSelection(
   ctx: CanvasRenderingContext2D,
-  element: ShapeElement,
+  element: ShapeElement | FrameElement,
   camera: CameraState,
   options: { withHandles: boolean }
 ) {
@@ -2270,6 +2360,10 @@ function drawElementSelection(
     drawLineSelection(ctx, element, camera, options, resolveElement, measureCtx)
     return
   }
+  if (isFrameElement(element)) {
+    drawShapeSelection(ctx, element, camera, options)
+    return
+  }
   if (isRectangleElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
     return
@@ -2351,7 +2445,7 @@ const shapeCreationRef = useRef<
       id: string
       baseSize: number
       hasDragged: boolean
-      elementType: 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
     }
 >(null)
   const lineCreationRef = useRef<
@@ -2689,6 +2783,13 @@ const shapeCreationRef = useRef<
         }
         if (isRectangleElement(element)) {
           const bounds = getRectangleElementBounds(element)
+          if (pointInPolygon({ x, y }, bounds.corners)) {
+            return element.id
+          }
+          continue
+        }
+        if (isFrameElement(element)) {
+          const bounds = getShapeElementBounds(element)
           if (pointInPolygon({ x, y }, bounds.corners)) {
             return element.id
           }
@@ -3035,7 +3136,8 @@ const shapeCreationRef = useRef<
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!isTextElement(element) && !isShapeElement(element)) return null
+      const isFrame = isFrameElement(element)
+      if (!isTextElement(element) && !isShapeElement(element) && !isFrame) return null
       const ctx = getSharedMeasureContext()
       const bounds = isTextElement(element)
         ? getTextElementBounds(element, ctx)
@@ -3043,7 +3145,10 @@ const shapeCreationRef = useRef<
       const handleOptions = isTextElement(element)
         ? { cornerMode: 'scale' as const, verticalMode: 'scale' as const, horizontalMode: 'width' as const }
         : { cornerMode: 'corner' as const, verticalMode: 'height' as const, horizontalMode: 'width' as const }
-      const handles = getTransformHandleSpecs(bounds, handleOptions)
+      let handles = getTransformHandleSpecs(bounds, handleOptions)
+      if (isFrame) {
+        handles = handles.filter((handle) => handle.kind !== 'rotate')
+      }
       const handleRadius = RESIZE_HANDLE_HIT_RADIUS
       const toScreen = (position: { x: number; y: number }) => ({
         x: (position.x + cameraState.offsetX) * cameraState.zoom,
@@ -3120,7 +3225,14 @@ const shapeCreationRef = useRef<
             startBounds: transformHandleHit.bounds as TextElementBounds,
           }
         } else if (handleSpec.kind === 'corner') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+          const shapeType = transformHandleHit.element.type as
+            | 'rect'
+            | 'frame'
+            | 'ellipse'
+            | 'roundRect'
+            | 'diamond'
+            | 'triangle'
+            | 'speechBubble'
           transformStateRef.current = {
             mode: 'shapeScale',
             pointerId: event.pointerId,
@@ -3139,7 +3251,14 @@ const shapeCreationRef = useRef<
             startBounds: transformHandleHit.bounds,
           }
         } else if (handleSpec.kind === 'height') {
-          const shapeType = transformHandleHit.element.type as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+          const shapeType = transformHandleHit.element.type as
+            | 'rect'
+            | 'frame'
+            | 'ellipse'
+            | 'roundRect'
+            | 'diamond'
+            | 'triangle'
+            | 'speechBubble'
           transformStateRef.current = {
             mode: 'height',
             pointerId: event.pointerId,
@@ -3267,6 +3386,7 @@ const shapeCreationRef = useRef<
       if (!hitElement) {
         if (
           toolMode === 'rect' ||
+          toolMode === 'frame' ||
           toolMode === 'ellipse' ||
           toolMode === 'roundRect' ||
           toolMode === 'diamond' ||
@@ -3280,7 +3400,7 @@ const shapeCreationRef = useRef<
           const defaultHeight = isEllipseTool
             ? defaultWidth
             : Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
-          let newElement: ShapeElement
+          let newElement: FrameOrShapeElement
           if (toolMode === 'rect') {
             newElement = {
               id,
@@ -3292,6 +3412,19 @@ const shapeCreationRef = useRef<
               fill: RECT_DEFAULT_FILL,
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
+            }
+          } else if (toolMode === 'frame') {
+            const frameWidth = Math.max(FRAME_MIN_SIZE, FRAME_DEFAULT_WIDTH / cameraState.zoom)
+            const frameHeight = Math.max(FRAME_MIN_SIZE, FRAME_DEFAULT_HEIGHT / cameraState.zoom)
+            newElement = {
+              id,
+              type: 'frame',
+              x: boardPoint.x,
+              y: boardPoint.y,
+              w: frameWidth,
+              h: frameHeight,
+              rotation: 0,
+              title: 'Frame',
             }
           } else if (isEllipseTool) {
             newElement = {
@@ -3363,7 +3496,14 @@ const shapeCreationRef = useRef<
             id,
             baseSize: defaultWidth,
             hasDragged: false,
-            elementType: toolMode as 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble',
+            elementType: toolMode as
+              | 'rect'
+              | 'frame'
+              | 'ellipse'
+              | 'roundRect'
+              | 'diamond'
+              | 'triangle'
+              | 'speechBubble',
           }
           interactionModeRef.current = 'shape-create'
           suppressClickRef.current = true
@@ -3624,22 +3764,25 @@ const shapeCreationRef = useRef<
               nextElement = { ...target, scale: nextScale }
             }
           } else if (transformState.mode === 'shapeScale') {
-            if (!isShapeElement(target)) return prev
+            if (!isShapeElement(target) && !isFrameElement(target)) return prev
             const bounds = transformState.startBounds
             const pointerLocal = toTextLocalCoordinates(boardPoint, bounds)
-            const baseHalfWidth = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
-            const baseHalfHeight = Math.max(RECT_MIN_SIZE / 2, bounds.height / 2)
+            const minDimension = transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+            const baseHalfWidth = Math.max(minDimension / 2, bounds.width / 2)
+            const baseHalfHeight = Math.max(minDimension / 2, bounds.height / 2)
             const scaleX = baseHalfWidth > 0 ? Math.abs(pointerLocal.x) / baseHalfWidth : 1
             const scaleY = baseHalfHeight > 0 ? Math.abs(pointerLocal.y) / baseHalfHeight : 1
-            const minScale = RECT_MIN_SIZE / Math.max(bounds.width, RECT_MIN_SIZE)
+            const minScale = minDimension / Math.max(bounds.width, minDimension)
             const scale = Math.max(scaleX, scaleY, minScale)
-            const newWidth = Math.max(RECT_MIN_SIZE, bounds.width * scale)
-            const newHeight = Math.max(RECT_MIN_SIZE, bounds.height * scale)
+            const newWidth = Math.max(minDimension, bounds.width * scale)
+            const newHeight = Math.max(minDimension, bounds.height * scale)
             const newCenter = bounds.center
             const newX = newCenter.x - newWidth / 2
             const newY = newCenter.y - newHeight / 2
-            let shapeNext: ShapeElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
-            shapeNext = withSpeechBubbleTail(shapeNext, newWidth, newHeight)
+            let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
+            if (isSpeechBubbleElement(shapeNext)) {
+              shapeNext = withSpeechBubbleTail(shapeNext, newWidth, newHeight)
+            }
             nextElement = shapeNext
           } else if (transformState.mode === 'width') {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
@@ -3666,9 +3809,13 @@ const shapeCreationRef = useRef<
               const newX = newCenter.x - layoutInfo.width / 2
               const newY = newCenter.y - layoutInfo.height / 2
               nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
-            } else if (transformState.elementType !== 'text' && isShapeElement(target)) {
+            } else if (
+              transformState.elementType !== 'text' &&
+              (isShapeElement(target) || isFrameElement(target))
+            ) {
               const bounds = transformState.startBounds
-              const minHalfWidth = RECT_MIN_SIZE / 2
+              const minHalfWidth =
+                (transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE) / 2
               const targetHalf = direction * pointerLocal.x
               const newHalfWidth = Math.max(minHalfWidth, targetHalf)
               const newWidth = newHalfWidth * 2
@@ -3683,15 +3830,21 @@ const shapeCreationRef = useRef<
               }
               const newX = newCenter.x - newWidth / 2
               const newY = newCenter.y - bounds.height / 2
-              let shapeNext: ShapeElement = { ...target, x: newX, y: newY, w: newWidth }
-              shapeNext = withSpeechBubbleTail(shapeNext, newWidth, bounds.height)
+              let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, w: newWidth }
+              if (isSpeechBubbleElement(shapeNext)) {
+                shapeNext = withSpeechBubbleTail(shapeNext, newWidth, bounds.height)
+              }
               nextElement = shapeNext
             }
-          } else if (transformState.mode === 'height' && isShapeElement(target)) {
+          } else if (
+            transformState.mode === 'height' &&
+            (isShapeElement(target) || isFrameElement(target))
+          ) {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
             const direction = transformState.handle === 's' ? 1 : -1
             const bounds = transformState.startBounds
-            const minHalfHeight = RECT_MIN_SIZE / 2
+            const minHalfHeight =
+              (transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE) / 2
             const targetHalf = direction * pointerLocal.y
             const newHalfHeight = Math.max(minHalfHeight, targetHalf)
             const newHeight = newHalfHeight * 2
@@ -3706,8 +3859,10 @@ const shapeCreationRef = useRef<
             }
             const newX = newCenter.x - bounds.width / 2
             const newY = newCenter.y - newHeight / 2
-            let shapeNext: ShapeElement = { ...target, x: newX, y: newY, h: newHeight }
-            shapeNext = withSpeechBubbleTail(shapeNext, bounds.width, newHeight)
+            let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, h: newHeight }
+            if (isSpeechBubbleElement(shapeNext)) {
+              shapeNext = withSpeechBubbleTail(shapeNext, bounds.width, newHeight)
+            }
             nextElement = shapeNext
           } else if (transformState.mode === 'rotate') {
             if (!isTextElement(target) && !isShapeElement(target)) return prev
@@ -3743,23 +3898,27 @@ const shapeCreationRef = useRef<
         const creation = shapeCreationRef.current
         if (!creation || creation.pointerId !== event.pointerId) return
         const boardPoint = screenToBoard(canvasPoint)
-        let updatedElement: ShapeElement | null = null
+        let updatedElement: FrameOrShapeElement | null = null
         setElements((prev) => {
           const target = prev[creation.id]
-          if (!target || !isShapeElement(target)) return prev
-          const width = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.x - creation.start.x))
-          const height = Math.max(RECT_MIN_SIZE, Math.abs(boardPoint.y - creation.start.y))
+          if (!target || (!isShapeElement(target) && !isFrameElement(target))) return prev
+          const minSize = target.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+          const width = Math.max(minSize, Math.abs(boardPoint.x - creation.start.x))
+          const height = Math.max(minSize, Math.abs(boardPoint.y - creation.start.y))
           const nextX = Math.min(creation.start.x, boardPoint.x)
           const nextY = Math.min(creation.start.y, boardPoint.y)
-          let updated: ShapeElement = { ...target, x: nextX, y: nextY, w: width, h: height }
-          updated = withSpeechBubbleTail(updated, width, height)
+          let updated: FrameOrShapeElement = { ...target, x: nextX, y: nextY, w: width, h: height }
+          if (isSpeechBubbleElement(updated)) {
+            updated = withSpeechBubbleTail(updated, width, height)
+          }
           updatedElement = updated
           return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
           const dragDistanceX = Math.abs(boardPoint.x - creation.start.x)
           const dragDistanceY = Math.abs(boardPoint.y - creation.start.y)
-          if (!creation.hasDragged && (dragDistanceX > RECT_MIN_SIZE || dragDistanceY > RECT_MIN_SIZE)) {
+          const minSize = updatedElement.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+          if (!creation.hasDragged && (dragDistanceX > minSize || dragDistanceY > minSize)) {
             shapeCreationRef.current = { ...creation, hasDragged: true }
           }
         }
@@ -4004,7 +4163,7 @@ const shapeCreationRef = useRef<
         marqueeCandidateRef.current = null
         if (!creationState) return
         let element = elements[creationState.id]
-        if (!element || !isShapeElement(element)) return
+        if (!element || (!isShapeElement(element) && !isFrameElement(element))) return
         sendElementsUpdate([element])
         if (boardId) {
           void persistElementCreate(boardId, element)
@@ -4315,6 +4474,10 @@ const shapeCreationRef = useRef<
         setToolMode((prev) => (prev === 'rect' ? 'select' : 'rect'))
         return
       }
+      if (event.key === 'f' || event.key === 'F') {
+        setToolMode((prev) => (prev === 'frame' ? 'select' : 'frame'))
+        return
+      }
       if (event.key === 'e' || event.key === 'E') {
         setToolMode((prev) => (prev === 'ellipse' ? 'select' : 'ellipse'))
         return
@@ -4584,10 +4747,12 @@ const shapeCreationRef = useRef<
     const values = Object.values(elements)
     const sharedMeasureCtx = getSharedMeasureContext()
     const resolveElement = (id: string) => elements[id]
-  const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
+    const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
-    values.forEach((element) => {
-      if (isStickyElement(element)) {
+    const renderElement = (element: BoardElement) => {
+      if (isFrameElement(element)) {
+        drawFrameElement(ctx, element, cameraState)
+      } else if (isStickyElement(element)) {
         drawSticky(ctx, element, cameraState)
       } else if (isTextElement(element)) {
         if (editingTextId && element.id === editingTextId) return
@@ -4610,7 +4775,11 @@ const shapeCreationRef = useRef<
       if (showConnectorAnchors && !isLineElement(element)) {
         drawConnectorAnchors(ctx, element, cameraState, sharedMeasureCtx, connectorHighlight)
       }
-    })
+    }
+    const frameElements = values.filter((element): element is FrameElement => isFrameElement(element))
+    const otherElements = values.filter((element) => !isFrameElement(element))
+    frameElements.forEach(renderElement)
+    otherElements.forEach(renderElement)
     const selectedArray = Array.from(selectedIds)
     const singleSelectionId = selectedArray.length === 1 ? selectedArray[0] : null
     selectedArray.forEach((id) => {
