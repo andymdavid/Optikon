@@ -35,6 +35,16 @@ export interface RectangleElement extends CanvasElement {
   rotation?: number
 }
 
+export interface FrameElement extends CanvasElement {
+  type: 'frame'
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation?: number
+  title: string
+}
+
 export interface EllipseElement extends CanvasElement {
   type: 'ellipse'
   x: number
@@ -111,6 +121,8 @@ export interface LineElement extends CanvasElement {
   y1: number
   x2: number
   y2: number
+  points?: Array<{ x: number; y: number }>
+  orthogonal?: boolean
   stroke?: string
   strokeWidth?: number
   startArrow?: boolean
@@ -123,6 +135,7 @@ export type BoardElement =
   | StickyNoteElement
   | TextElement
   | RectangleElement
+  | FrameElement
   | EllipseElement
   | RoundedRectElement
   | DiamondElement

@@ -65,6 +65,7 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
     "sticky",
     "text",
     "rect",
+    "frame",
     "ellipse",
     "roundRect",
     "diamond",
