@@ -76,17 +76,33 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
     typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"]);
 
   const element = body?.element ?? null;
+  const logAndReject = (reason: string) => {
+    const receivedType = body?.element?.type ?? (body as { type?: string } | null)?.type ?? null;
+    console.warn(`[boards] invalid element payload: ${reason}`, body);
+    return jsonResponse(
+      {
+        message: "Invalid element payload.",
+        receivedKeys: body ? Object.keys(body) : [],
+        receivedType,
+      },
+      400
+    );
+  };
+
   if (!element || typeof element !== "object") {
-    console.warn("[boards] invalid element payload: missing element", body);
-    return jsonResponse({ message: "Invalid element payload." }, 400);
+    return logAndReject("missing element");
   }
   if (typeof element.id !== "string" || !element.id.trim()) {
-    console.warn("[boards] invalid element payload: missing id", body);
-    return jsonResponse({ message: "Invalid element payload." }, 400);
+    return logAndReject("missing id");
   }
   if (!isAllowedType(element.type)) {
-    console.warn("[boards] invalid element payload: unsupported type", body);
-    return jsonResponse({ message: "Invalid element payload." }, 400);
+    return logAndReject("unsupported type");
+  }
+  if (typeof (element as { x?: unknown }).x !== "number" || typeof (element as { y?: unknown }).y !== "number") {
+    return logAndReject("missing coordinates");
+  }
+  if (element.type === "comment" && typeof (element as { text?: unknown }).text !== "string") {
+    return logAndReject("missing comment text");
   }
 
   const elementRecord = createBoardElementRecord(boardId, element);
