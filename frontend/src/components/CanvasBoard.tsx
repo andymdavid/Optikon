@@ -85,15 +85,18 @@ const FRAME_MIN_SIZE = 80
 const FRAME_DEFAULT_WIDTH = 640
 const FRAME_DEFAULT_HEIGHT = 420
 const FRAME_HEADER_GAP_PX = 6
-const FRAME_BORDER_COLOR = 'rgba(15, 23, 42, 0.35)'
+const FRAME_BORDER_COLOR = 'rgba(15, 23, 42, 0.3)'
 const FRAME_FILL_COLOR = '#ffffff'
-const FRAME_TITLE_FONT_SIZE = 18
-const FRAME_TITLE_FONT_MIN = 12
-const FRAME_TITLE_FONT_MAX = 28
+const FRAME_TITLE_FONT_SIZE = 16
+const FRAME_TITLE_FONT_MIN = 10
+const FRAME_TITLE_FONT_MAX = 20
 const FRAME_TITLE_COLOR = '#0f172a'
-const FRAME_TITLE_HIT_HEIGHT = 28
-const getFrameTitleScreenFontSize = (zoom: number) =>
-  clamp(FRAME_TITLE_FONT_SIZE / clamp(zoom, 0.35, 3), FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
+const FRAME_TITLE_HIT_HEIGHT = 24
+const getFrameTitleScreenFontSize = (zoom: number) => {
+  const normalizedZoom = clamp(zoom, 0.4, 3)
+  const adjusted = FRAME_TITLE_FONT_SIZE / Math.pow(normalizedZoom, 0.55)
+  return clamp(adjusted, FRAME_TITLE_FONT_MIN, FRAME_TITLE_FONT_MAX)
+}
 const RECT_DEFAULT_FILL = 'rgba(0,0,0,0)'
 const RECT_DEFAULT_STROKE = '#2563eb'
 const RECT_MIN_SIZE = 8
@@ -1629,7 +1632,7 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
+  ctx.lineWidth = 1 / scaleFactor
   const width = bounds.width
   const height = bounds.height
   ctx.beginPath()
@@ -5155,7 +5158,7 @@ const shapeCreationRef = useRef<
               spellCheck={false}
               style={{
                 fontSize: `${editingFrameFontSizePx}px`,
-                lineHeight: 1.2,
+                lineHeight: 1.05,
               }}
               onInput={syncEditingTextFromDom}
               onKeyDown={(event) => {
