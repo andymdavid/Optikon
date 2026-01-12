@@ -20,6 +20,7 @@ import type {
   SpeechBubbleElement,
   RoundedRectElement,
   StickyNoteElement,
+  CommentElement,
   TextElement,
   LineElement,
   LineEndpointBinding,
