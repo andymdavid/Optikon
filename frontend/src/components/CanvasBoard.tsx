@@ -606,10 +606,10 @@ const getTextLayoutForContent = (
   ctx: CanvasRenderingContext2D | null
 ): TextLayout => measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
 
-const getTextElementLayout = (
+function getTextElementLayout(
   element: TextElement,
   ctx: CanvasRenderingContext2D | null
-): TextElementLayoutInfo => {
+): TextElementLayoutInfo {
   const fontSize = resolveTextFontSize(element.fontSize)
   const wrapWidth = resolveTextWrapWidth(element.w)
   const layout = getTextLayoutForContent(element.text ?? '', fontSize, wrapWidth, ctx)
@@ -887,11 +887,13 @@ const pointToSegmentDistance = (
   return Math.hypot(point.x - proj.x, point.y - proj.y)
 }
 
-const isStickyElement = (element: BoardElement | null | undefined): element is StickyNoteElement =>
-  !!element && element.type === 'sticky'
+function isStickyElement(element: BoardElement | null | undefined): element is StickyNoteElement {
+  return !!element && element.type === 'sticky'
+}
 
-const isTextElement = (element: BoardElement | null | undefined): element is TextElement =>
-  !!element && element.type === 'text'
+function isTextElement(element: BoardElement | null | undefined): element is TextElement {
+  return !!element && element.type === 'text'
+}
 
 const isRectangleElement = (element: BoardElement | null | undefined): element is RectangleElement =>
   !!element && element.type === 'rect'
