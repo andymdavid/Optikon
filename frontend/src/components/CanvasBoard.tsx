@@ -941,6 +941,8 @@ const getFrameLabelRect = (element: FrameElement, camera: CameraState) => {
   }
 }
 
+const getCommentBoardPosition = (element: CommentElement) => ({ x: element.x, y: element.y })
+
 const isLineElement = (element: BoardElement | null | undefined): element is LineElement =>
   !!element && element.type === 'line'
 
@@ -1393,6 +1395,24 @@ function parseLineElement(raw: unknown): LineElement | null {
   }
 }
 
+function parseCommentElement(raw: unknown): CommentElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<CommentElement>
+  if (element.type !== 'comment') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  const text = typeof element.text === 'string' ? element.text : ''
+  const elementId = typeof element.elementId === 'string' ? element.elementId : undefined
+  return {
+    id: element.id,
+    type: 'comment',
+    x: element.x,
+    y: element.y,
+    text,
+    elementId,
+  }
+}
+
 function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
@@ -1406,6 +1426,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'triangle') return parseTriangleElement(raw)
   if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
   if (type === 'line') return parseLineElement(raw)
+  if (type === 'comment') return parseCommentElement(raw)
   return null
 }
 
@@ -2401,12 +2422,7 @@ function drawElementSelection(
     return
   }
   if (isCommentElement(element)) {
-    const boardPosition = resolveElement
-      ? getCommentBoardPosition(element as CommentElement, {
-          resolveElement,
-          measureCtx: measureCtx ?? null,
-        })
-      : { x: element.x, y: element.y }
+    const boardPosition = getCommentBoardPosition(element as CommentElement)
     const screenX = (boardPosition.x + camera.offsetX) * camera.zoom
     const screenY = (boardPosition.y + camera.offsetY) * camera.zoom
     const radius = 12
