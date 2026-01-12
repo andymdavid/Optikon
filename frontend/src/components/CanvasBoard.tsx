@@ -2742,6 +2742,22 @@ const shapeCreationRef = useRef<
     [releaseClickSuppression, setSelection, updateEditingState]
   )
 
+  const beginEditingComment = useCallback(
+    (element: CommentElement) => {
+      suppressClickRef.current = true
+      releaseClickSuppression()
+      setSelection(new Set([element.id]))
+      const initial = element.text ?? ''
+      updateEditingState({
+        id: element.id,
+        elementType: 'comment',
+        text: initial,
+        originalText: initial,
+      })
+    },
+    [releaseClickSuppression, setSelection, updateEditingState]
+  )
+
   const commitEditing = useCallback(() => {
     const current = editingStateRef.current
     if (!current) return
@@ -3114,9 +3130,20 @@ const shapeCreationRef = useRef<
         beginEditingText(hitElement)
       } else if (isFrameElement(hitElement)) {
         beginEditingFrame(hitElement)
+      } else if (isCommentElement(hitElement)) {
+        beginEditingComment(hitElement)
       }
     },
-    [beginEditingFrame, beginEditingSticky, beginEditingText, boardId, elements, hitTestElement, screenToBoard]
+    [
+      beginEditingComment,
+      beginEditingFrame,
+      beginEditingSticky,
+      beginEditingText,
+      boardId,
+      elements,
+      hitTestElement,
+      screenToBoard,
+    ]
   )
 
   // TODO(phase-6.2.2): Selection frame + resize handles assume square sticky geometry.
