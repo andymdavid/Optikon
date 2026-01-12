@@ -926,6 +926,9 @@ const isFrameLikeElement = (
   element: BoardElement | null | undefined
 ): element is FrameOrShapeElement => isShapeElement(element) || isFrameElement(element)
 
+const isCommentElement = (element: BoardElement | null | undefined): element is CommentElement =>
+  !!element && element.type === 'comment'
+
 const getFrameLabelRect = (element: FrameElement, camera: CameraState) => {
   const width = Math.max(0, element.w * camera.zoom)
   const x = (element.x + camera.offsetX) * camera.zoom
