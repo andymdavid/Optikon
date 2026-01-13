@@ -1,14 +1,37 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
 
-console.log("CANVASBOARD_BUILD", "4e3d65c")
-
-declare global {
-  interface HTMLElementEventMap {
-    gesturestart: Event
-    gesturechange: Event
-    gestureend: Event
-  }
-}
+import {
+  STICKY_FONT_FAMILY,
+  TEXT_COLOR,
+  TEXT_DEFAULT_FONT_SIZE,
+  TEXT_DEFAULT_MAX_WIDTH,
+  TEXT_MIN_WRAP_WIDTH,
+  TEXT_MAX_WRAP_WIDTH,
+  TEXT_SAFETY_INSET,
+  TEXT_LINE_HEIGHT,
+  TEXT_MIN_SCALE,
+  TEXT_MAX_SCALE,
+  TEXT_ROTATION_HANDLE_OFFSET,
+  TEXT_ROTATION_SNAP_EPSILON,
+  TEXT_ROTATION_SNAP_INCREMENT,
+  TEXT_DEBUG_BOUNDS,
+  clamp,
+  computeTransformBounds,
+  getSharedMeasureContext,
+  getTextElementBounds,
+  getTextElementLayout,
+  getTextHandleLocalPosition,
+  getTextLayoutForContent,
+  smoothstep,
+  toTextLocalCoordinates,
+  resolveTextFontSize,
+  resolveTextRotation,
+  resolveTextScale,
+  resolveTextWrapWidth,
+  type Rect,
+  type TextElementBounds,
+  type TransformBounds,
+} from './canvas/utils'
 
 import type {
   BoardElement,
@@ -26,6 +49,16 @@ import type {
   LineEndpointBinding,
   ConnectorAnchor,
 } from '@shared/boardElements'
+
+console.log("CANVASBOARD_BUILD", "4e3d65c")
+
+declare global {
+  interface HTMLElementEventMap {
+    gesturestart: Event
+    gesturechange: Event
+    gestureend: Event
+  }
+}
 
 export type CameraState = {
   offsetX: number
@@ -71,19 +104,6 @@ const BASE_STICKY_FONT_MIN = 12
 const STICKY_TEXT_LINE_HEIGHT = 1.35
 const STICKY_PADDING_X = 16
 const STICKY_PADDING_Y = 14
-const STICKY_FONT_FAMILY = '"Inter", "Segoe UI", sans-serif'
-const TEXT_DEFAULT_FONT_SIZE = 48
-const TEXT_COLOR = '#0f172a'
-const TEXT_DEFAULT_MAX_WIDTH = 800
-const TEXT_MIN_WRAP_WIDTH = 120
-const TEXT_MAX_WRAP_WIDTH = 3200
-const TEXT_SAFETY_INSET = 2
-const TEXT_LINE_HEIGHT = 1.18
-const TEXT_MIN_SCALE = 0.02
-const TEXT_MAX_SCALE = 40
-const TEXT_ROTATION_HANDLE_OFFSET = 32
-const TEXT_ROTATION_SNAP_EPSILON = (5 * Math.PI) / 180
-const TEXT_ROTATION_SNAP_INCREMENT = Math.PI / 2
 const FRAME_MIN_SIZE = 80
 const FRAME_DEFAULT_WIDTH = 640
 const FRAME_DEFAULT_HEIGHT = 420
@@ -120,8 +140,6 @@ const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 
 const CONNECTOR_HANDLE_RADIUS_PX = 3
 const CONNECTOR_HANDLE_OFFSET_PX = 12
 const TEXT_DEBUG_BOUNDS = false
-const TEXT_MEASURE_SAMPLE = 'Mg'
-type Rect = { left: number; top: number; right: number; bottom: number }
 type ToolMode =
   | 'select'
   | 'sticky'
@@ -446,19 +464,6 @@ function drawConnectorAnchors(
   })
 }
 
-type TextLayout = {
-  lines: string[]
-  lineWidths: number[]
-  maxLineWidth: number
-  totalHeight: number
-  blockWidth: number
-  lineAdvance: number
-  baselineOffsets: number[]
-  ascent: number
-  descent: number
-  maxWidthPx: number
-}
-
 function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number }): Rect {
   return {
     left: Math.min(a.x, b.x),
@@ -468,202 +473,7 @@ function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number })
   }
 }
 
-let sharedMeasureCtx: CanvasRenderingContext2D | null = null
-function getSharedMeasureContext() {
-  if (sharedMeasureCtx) return sharedMeasureCtx
-  if (typeof document === 'undefined') return null
-  const canvas = document.createElement('canvas')
-  sharedMeasureCtx = canvas.getContext('2d')
-  return sharedMeasureCtx
-}
-
-function measureTextLayout(
-  ctx: CanvasRenderingContext2D | null,
-  text: string,
-  fontSizePx: number,
-  maxWidthPx: number,
-  fontFamily: string,
-  lineHeightMultiplier: number
-): TextLayout {
-  const normalizedText = typeof text === 'string' ? text : ''
-  if (!ctx) {
-    const lines = normalizedText.split(/\n/) || ['']
-    const fallbackLineHeight = fontSizePx * lineHeightMultiplier
-    const widths = lines.map((line) => line.length * (fontSizePx * 0.6))
-    const maxLineWidth = widths.reduce((max, width) => Math.max(max, width), 0)
-    return {
-      lines: lines.length > 0 ? lines : [''],
-      lineWidths: widths,
-      maxLineWidth,
-      totalHeight: Math.max(1, lines.length) * fallbackLineHeight,
-      blockWidth: maxLineWidth,
-      lineAdvance: fallbackLineHeight,
-      baselineOffsets: lines.map((_, index) => index * fallbackLineHeight + fontSizePx * 0.8),
-      ascent: fontSizePx * 0.8,
-      descent: fontSizePx * 0.2,
-      maxWidthPx,
-    }
-  }
-
-  ctx.font = `${fontSizePx}px ${fontFamily}`
-  const lineAdvance = Math.max(1, fontSizePx * lineHeightMultiplier)
-  const lines: string[] = []
-  const lineWidths: number[] = []
-
-  const pushLine = (content: string) => {
-    lines.push(content)
-    lineWidths.push(ctx.measureText(content).width)
-  }
-
-  const processWordChunks = (word: string): string => {
-    let chunk = ''
-    for (const char of word) {
-      const nextChunk = `${chunk}${char}`
-      const width = ctx.measureText(nextChunk).width
-      if (width <= maxWidthPx || chunk === '') {
-        chunk = nextChunk
-      } else {
-        pushLine(chunk)
-        chunk = char
-      }
-    }
-    return chunk
-  }
-
-  const paragraphs = normalizedText.split(/\n/)
-  paragraphs.forEach((paragraph, paragraphIndex) => {
-    const words = paragraph.split(/\s+/).filter(Boolean)
-    if (words.length === 0) {
-      pushLine('')
-    } else {
-      let current = ''
-      for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word
-        const width = ctx.measureText(candidate).width
-        if (width <= maxWidthPx || current === '') {
-          current = candidate
-        } else {
-          if (current) pushLine(current)
-          const wordWidth = ctx.measureText(word).width
-          if (wordWidth <= maxWidthPx) {
-            current = word
-          } else {
-            current = processWordChunks(word)
-          }
-        }
-      }
-      if (current) pushLine(current)
-    }
-    if (paragraphIndex < paragraphs.length - 1) {
-      pushLine('')
-    }
-  })
-
-  if (lines.length === 0) {
-    lines.push('')
-    lineWidths.push(0)
-  }
-
-  const metrics = ctx.measureText(TEXT_MEASURE_SAMPLE)
-  const ascent = metrics.actualBoundingBoxAscent ?? fontSizePx * 0.8
-  const descent = metrics.actualBoundingBoxDescent ?? fontSizePx * 0.2
-  const maxLineWidth = lineWidths.reduce((max, width) => Math.max(max, width), 0)
-  const baselineOffsets = lines.map((_, index) => ascent + index * lineAdvance)
-  const totalHeight =
-    lines.length === 0 ? ascent + descent : baselineOffsets[baselineOffsets.length - 1] + descent
-  return {
-    lines,
-    lineWidths,
-    maxLineWidth,
-    totalHeight,
-    blockWidth: maxLineWidth,
-    lineAdvance,
-    baselineOffsets,
-    ascent,
-    descent,
-    maxWidthPx,
-  }
-}
-
-type TextElementLayoutInfo = {
-  layout: TextLayout
-  wrapWidth: number
-  width: number
-  height: number
-  inset: number
-}
-
-type TransformBounds = {
-  center: { x: number; y: number }
-  rotation: number
-  scale: number
-  width: number
-  height: number
-  corners: Array<{ x: number; y: number }>
-  aabb: Rect
-}
-
-type TextElementBounds = TransformBounds & { layout: TextElementLayoutInfo }
 type ShapeElementBounds = TransformBounds
-
-function getTextLayoutForContent(
-  text: string,
-  fontSize: number,
-  wrapWidth: number,
-  ctx: CanvasRenderingContext2D | null
-): TextLayout {
-  return measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
-}
-
-function getTextElementLayout(
-  element: TextElement,
-  ctx: CanvasRenderingContext2D | null
-): TextElementLayoutInfo {
-  const fontSize = resolveTextFontSize(element.fontSize)
-  const wrapWidth = resolveTextWrapWidth(element.w)
-  const layout = getTextLayoutForContent(element.text ?? '', fontSize, wrapWidth, ctx)
-  const inset = TEXT_SAFETY_INSET
-  const height = layout.totalHeight + inset * 2
-  const width = wrapWidth + inset * 2
-  return { layout, wrapWidth, width, height, inset }
-}
-
-function computeTransformBounds(
-  base: { x: number; y: number; width: number; height: number; rotation: number; scale: number }
-): TransformBounds {
-  const center = {
-    x: base.x + base.width / 2,
-    y: base.y + base.height / 2,
-  }
-  const halfWidth = base.width / 2
-  const halfHeight = base.height / 2
-  const cos = Math.cos(base.rotation)
-  const sin = Math.sin(base.rotation)
-  const transform = (dx: number, dy: number) => {
-    const scaledX = dx * base.scale
-    const scaledY = dy * base.scale
-    return {
-      x: center.x + scaledX * cos - scaledY * sin,
-      y: center.y + scaledX * sin + scaledY * cos,
-    }
-  }
-  const corners = [
-    transform(-halfWidth, -halfHeight),
-    transform(halfWidth, -halfHeight),
-    transform(halfWidth, halfHeight),
-    transform(-halfWidth, halfHeight),
-  ]
-  const aabb = corners.reduce<Rect>(
-    (acc, point) => ({
-      left: Math.min(acc.left, point.x),
-      right: Math.max(acc.right, point.x),
-      top: Math.min(acc.top, point.y),
-      bottom: Math.max(acc.bottom, point.y),
-    }),
-    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
-  )
-  return { center, rotation: base.rotation, scale: base.scale, width: base.width, height: base.height, corners, aabb }
-}
 
 function getStickySize(element: StickyNoteElement) {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
@@ -678,24 +488,6 @@ function getStickyBounds(element: StickyNoteElement): Rect {
     right: element.x + size,
     bottom: element.y + size,
   }
-}
-
-function getTextElementBounds(
-  element: TextElement,
-  ctx: CanvasRenderingContext2D | null
-): TextElementBounds {
-  const layoutInfo = getTextElementLayout(element, ctx)
-  const rotation = resolveTextRotation(element.rotation)
-  const scale = resolveTextScale(element.scale)
-  const bounds = computeTransformBounds({
-    x: element.x,
-    y: element.y,
-    width: layoutInfo.width,
-    height: layoutInfo.height,
-    rotation,
-    scale,
-  })
-  return { ...bounds, layout: layoutInfo }
 }
 
 function resolveShapeMinSize(element: { type: BoardElement['type'] }) {
@@ -832,43 +624,11 @@ function logInbound(message: unknown) {
   console.log('[ws in]', message)
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
 function resolveStickyFontSize(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.max(1, value)
   }
   return BASE_STICKY_FONT_MAX
-}
-
-function resolveTextFontSize(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(1, value)
-  }
-  return TEXT_DEFAULT_FONT_SIZE
-}
-
-function resolveTextWrapWidth(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return clamp(value, TEXT_MIN_WRAP_WIDTH, TEXT_MAX_WRAP_WIDTH)
-  }
-  return TEXT_DEFAULT_MAX_WIDTH
-}
-
-function resolveTextScale(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return clamp(value, TEXT_MIN_SCALE, TEXT_MAX_SCALE)
-  }
-  return 1
-}
-
-function resolveTextRotation(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  return 0
 }
 
 function resolveRoundedRectRadius(value: unknown) {
@@ -880,12 +640,6 @@ function resolveRoundedRectRadius(value: unknown) {
 
 function clampTailOffset(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? clamp(value, 0, 1) : SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET
-}
-
-function smoothstep(edge0: number, edge1: number, x: number) {
-  if (edge0 === edge1) return x >= edge1 ? 1 : 0
-  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1)
-  return t * t * (3 - 2 * t)
 }
 
 function pointToSegmentDistance(
@@ -2233,42 +1987,6 @@ function getTransformHandleSpecs(
   }
   specs.push({ kind: 'rotate', handle: 'rotate', position: rotationPosition, anchor: topCenter })
   return specs
-}
-
-function toTextLocalCoordinates(point: { x: number; y: number }, bounds: TransformBounds) {
-  const dx = point.x - bounds.center.x
-  const dy = point.y - bounds.center.y
-  const cos = Math.cos(bounds.rotation)
-  const sin = Math.sin(bounds.rotation)
-  const rotatedX = dx * cos + dy * sin
-  const rotatedY = -dx * sin + dy * cos
-  return {
-    x: rotatedX / bounds.scale,
-    y: rotatedY / bounds.scale,
-  }
-}
-
-function getTextHandleLocalPosition(
-  handle: 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's',
-  bounds: TransformBounds
-) {
-  const halfWidth = bounds.width / 2
-  const halfHeight = bounds.height / 2
-  switch (handle) {
-    case 'nw':
-      return { x: -halfWidth, y: -halfHeight }
-    case 'ne':
-      return { x: halfWidth, y: -halfHeight }
-    case 'se':
-      return { x: halfWidth, y: halfHeight }
-    case 'sw':
-      return { x: -halfWidth, y: halfHeight }
-    case 'n':
-      return { x: 0, y: -halfHeight }
-    case 's':
-    default:
-      return { x: 0, y: halfHeight }
-  }
 }
 
 function drawTextSelection(
