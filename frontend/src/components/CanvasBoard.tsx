@@ -4,9 +4,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type FocusEvent as ReactFocusEvent,
+  type RefObject,
+  type SyntheticEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   STICKY_FONT_FAMILY,
@@ -760,7 +766,7 @@ type EditingState = {
   text: string
   originalText: string
   fontSize?: number
-  elementType: 'sticky' | 'text' | 'frame' | 'comment'
+  elementType: 'sticky' | 'text' | 'frame'
 }
 
 type TransformState =
@@ -2337,10 +2343,23 @@ const shapeCreationRef = useRef<
   const editingStateRef = useRef<EditingState | null>(null)
   const editingContentRef = useRef<HTMLDivElement | null>(null)
   const commentPopoverRef = useRef<HTMLDivElement | null>(null)
+  const lastSelectedCommentIdRef = useRef<string | null>(null)
+  const skipCommentPopoverCloseRef = useRef(false)
   const measurementCtxRef = useRef<CanvasRenderingContext2D | null>(null)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
       suppressClickRef.current = false
+    })
+  }, [])
+
+  const preventNextPopoverClose = useCallback(() => {
+    skipCommentPopoverCloseRef.current = true
+    if (typeof window === 'undefined') {
+      skipCommentPopoverCloseRef.current = false
+      return
+    }
+    window.requestAnimationFrame(() => {
+      skipCommentPopoverCloseRef.current = false
     })
   }, [])
   type MarqueeState = {
@@ -2360,7 +2379,9 @@ const shapeCreationRef = useRef<
   const [connectorHighlight, setConnectorHighlight] = useState<
     { elementId: string; anchor: ConnectorAnchor } | null
   >(null)
-  const [commentPopoverVisible, setCommentPopoverVisible] = useState(false)
+  const [commentPopoverMode, setCommentPopoverMode] = useState<'closed' | 'view' | 'edit'>('closed')
+  const [editingCommentDraft, setEditingCommentDraft] = useState('')
+  const isCommentEditing = commentPopoverMode === 'edit'
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -2530,21 +2551,14 @@ const shapeCreationRef = useRef<
     [releaseClickSuppression, setSelection, updateEditingState]
   )
 
-  const beginEditingComment = useCallback(
-    (element: CommentElement) => {
-      suppressClickRef.current = true
-      releaseClickSuppression()
-      setSelection(new Set([element.id]))
-      const initial = element.text ?? ''
-      updateEditingState({
-        id: element.id,
-        elementType: 'comment',
-        text: initial,
-        originalText: initial,
-      })
-    },
-    [releaseClickSuppression, setSelection, updateEditingState]
-  )
+  const openCommentPopoverForElement = useCallback((element: CommentElement, mode?: 'view' | 'edit') => {
+    const desiredMode = mode ?? (element.text ? 'view' : 'edit')
+    if (desiredMode === 'edit') {
+      setEditingCommentDraft(element.text ?? '')
+    }
+    setCommentPopoverMode(desiredMode)
+  }, [])
+
 
   const commitEditing = useCallback(() => {
     const current = editingStateRef.current
@@ -2570,12 +2584,6 @@ const shapeCreationRef = useRef<
         const nextTitle = current.text.trim() ? current.text.trim() : 'Frame'
         if (target.title === nextTitle) return prev
         updatedElement = { ...target, title: nextTitle }
-        return { ...prev, [current.id]: updatedElement }
-      }
-      if (isCommentElement(target)) {
-        const nextText = current.text
-        if (target.text === nextText) return prev
-        updatedElement = { ...target, text: nextText }
         return { ...prev, [current.id]: updatedElement }
       }
       return prev
@@ -2819,7 +2827,7 @@ const shapeCreationRef = useRef<
         return
       }
       if (!joinedRef.current || !boardId) return
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
       const hitId = hitTestElement(boardPoint.x, boardPoint.y)
@@ -2834,7 +2842,16 @@ const shapeCreationRef = useRef<
         clearSelection()
       }
     },
-    [boardId, clearSelection, createStickyAtPoint, createTextAtPoint, hitTestElement, screenToBoard, toolMode]
+    [
+      boardId,
+      clearSelection,
+      createStickyAtPoint,
+      createTextAtPoint,
+      hitTestElement,
+      isCommentEditing,
+      screenToBoard,
+      toolMode,
+    ]
   )
 
   const removeElements = useCallback((ids: string[]) => {
@@ -2903,7 +2920,7 @@ const shapeCreationRef = useRef<
 
   const handleCanvasDoubleClick = useCallback(
     (event: MouseEvent<HTMLCanvasElement>) => {
-      if (editingStateRef.current || !boardId) return
+      if (editingStateRef.current || isCommentEditing || !boardId) return
       const rect = event.currentTarget.getBoundingClientRect()
       const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
       const hitId = hitTestElement(boardPoint.x, boardPoint.y)
@@ -2918,18 +2935,26 @@ const shapeCreationRef = useRef<
       } else if (isFrameElement(hitElement)) {
         beginEditingFrame(hitElement)
       } else if (isCommentElement(hitElement)) {
-        beginEditingComment(hitElement)
+        suppressClickRef.current = true
+        releaseClickSuppression()
+        setSelection(new Set([hitElement.id]))
+        preventNextPopoverClose()
+        openCommentPopoverForElement(hitElement, 'edit')
       }
     },
     [
-      beginEditingComment,
       beginEditingFrame,
       beginEditingSticky,
       beginEditingText,
       boardId,
       elements,
       hitTestElement,
+      isCommentEditing,
+      openCommentPopoverForElement,
+      preventNextPopoverClose,
+      releaseClickSuppression,
       screenToBoard,
+      setSelection,
     ]
   )
 
@@ -3093,7 +3118,7 @@ const shapeCreationRef = useRef<
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
-      if (editingStateRef.current) {
+      if (editingStateRef.current || isCommentEditing) {
         return
       }
 
@@ -3145,6 +3170,8 @@ const shapeCreationRef = useRef<
         upsertElement(element)
         sendElementUpdate(element)
         setSelection(new Set([id]))
+        preventNextPopoverClose()
+        openCommentPopoverForElement(element, 'edit')
         if (boardId) {
           void persistElementCreate(boardId, element)
         }
@@ -3502,7 +3529,8 @@ const shapeCreationRef = useRef<
         return
       }
       if (isCommentElement(hitElement)) {
-        setCommentPopoverVisible(true)
+        preventNextPopoverClose()
+        openCommentPopoverForElement(hitElement)
       }
       event.preventDefault()
       suppressClickRef.current = true
@@ -3562,10 +3590,16 @@ const shapeCreationRef = useRef<
       hitTestLineHandle,
       hitTestResizeHandle,
       hitTestTransformHandle,
+      isCommentEditing,
+      preventNextPopoverClose,
+      openCommentPopoverForElement,
+      persistElementCreate,
       screenToBoard,
+      sendElementUpdate,
       setMarquee,
       setSelection,
       toolMode,
+      upsertElement,
     ]
   )
 
@@ -3575,7 +3609,7 @@ const shapeCreationRef = useRef<
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
 
       const panState = panStateRef.current
       if (mode === 'pan' && panState && event.pointerId === panState.pointerId) {
@@ -4027,7 +4061,16 @@ const shapeCreationRef = useRef<
         }
       }
     },
-    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, getMeasureContext, screenToBoard, sendElementsUpdate, setMarquee]
+    [
+      cameraState.offsetX,
+      cameraState.offsetY,
+      cameraState.zoom,
+      getMeasureContext,
+      isCommentEditing,
+      screenToBoard,
+      sendElementsUpdate,
+      setMarquee,
+    ]
   )
 
   const finishDrag = useCallback(
@@ -4038,7 +4081,7 @@ const shapeCreationRef = useRef<
         // ignore
       }
 
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
 
       const mode = interactionModeRef.current
       interactionModeRef.current = 'none'
@@ -4272,7 +4315,19 @@ const shapeCreationRef = useRef<
       suppressClickRef.current = true
       releaseClickSuppression()
     },
-    [boardId, elements, handleCanvasClick, clearSelection, persistElementCreate, persistElementsUpdate, releaseClickSuppression, sendElementsUpdate, setMarquee, setSelection]
+    [
+      boardId,
+      clearSelection,
+      elements,
+      handleCanvasClick,
+      isCommentEditing,
+      persistElementCreate,
+      persistElementsUpdate,
+      releaseClickSuppression,
+      sendElementsUpdate,
+      setMarquee,
+      setSelection,
+    ]
   )
 
   const handlePointerUp = useCallback(
@@ -4298,7 +4353,7 @@ const shapeCreationRef = useRef<
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
       const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current
       if (!canvas) return
 
@@ -4325,7 +4380,7 @@ const shapeCreationRef = useRef<
         return { offsetX, offsetY, zoom: newZoom }
       })
     },
-    [screenToBoard]
+    [isCommentEditing, screenToBoard]
   )
 
   useEffect(() => {
@@ -4392,7 +4447,7 @@ const shapeCreationRef = useRef<
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
       if (event.code === 'Space') {
         if (!spacePressedRef.current) {
           spacePressedRef.current = true
@@ -4472,7 +4527,7 @@ const shapeCreationRef = useRef<
     }
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (editingStateRef.current) return
+      if (editingStateRef.current || isCommentEditing) return
       if (event.code === 'Space') {
         spacePressedRef.current = false
       }
@@ -4485,7 +4540,7 @@ const shapeCreationRef = useRef<
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [deleteSelectedElements])
+  }, [deleteSelectedElements, isCommentEditing])
 
   useEffect(() => {
     setSelection(new Set())
@@ -4534,43 +4589,90 @@ const shapeCreationRef = useRef<
     }
   }, [boardId, elements, getMeasureContext, persistElementsUpdate, sendElementsUpdate])
 
-  const selectedCommentData = useMemo(() => {
+  const selectedCommentId = useMemo(() => {
     if (selectedIds.size !== 1) return null
     const [candidateId] = Array.from(selectedIds)
     const candidate = elements[candidateId]
-    if (!isCommentElement(candidate)) return null
-    return {
-      comment: candidate,
-      screen: {
-        x: (candidate.x + cameraState.offsetX) * cameraState.zoom,
-        y: (candidate.y + cameraState.offsetY) * cameraState.zoom,
-      },
+    return isCommentElement(candidate) ? candidateId : null
+  }, [elements, selectedIds])
+
+  const selectedComment = selectedCommentId ? (elements[selectedCommentId] as CommentElement | undefined) : null
+
+  const selectedCommentScreenPosition = (() => {
+    if (!selectedComment) return null
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const boardPosition = getCommentBoardPosition(selectedComment)
+    const localX = (boardPosition.x + cameraState.offsetX) * cameraState.zoom
+    const localY = (boardPosition.y + cameraState.offsetY) * cameraState.zoom
+    return { x: rect.left + localX, y: rect.top + localY }
+  })()
+
+  const commitCommentDraft = useCallback(() => {
+    if (!selectedCommentId) return
+    let updatedElement: CommentElement | null = null
+    setElements((prev) => {
+      const target = prev[selectedCommentId]
+      if (!isCommentElement(target)) return prev
+      if (target.text === editingCommentDraft) return prev
+      updatedElement = { ...target, text: editingCommentDraft }
+      return { ...prev, [target.id]: updatedElement }
+    })
+    if (updatedElement) {
+      sendElementsUpdate([updatedElement])
+      if (boardId) {
+        void persistElementsUpdate(boardId, [updatedElement])
+      }
     }
-  }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, selectedIds])
+    setCommentPopoverMode(editingCommentDraft ? 'view' : 'edit')
+  }, [boardId, editingCommentDraft, persistElementsUpdate, selectedCommentId, sendElementsUpdate, setElements])
+
+  const cancelCommentEditing = useCallback(() => {
+    if (!selectedCommentId) return
+    const element = elements[selectedCommentId]
+    if (!isCommentElement(element)) return
+    setEditingCommentDraft(element.text ?? '')
+    setCommentPopoverMode(element.text ? 'view' : 'closed')
+  }, [elements, selectedCommentId])
 
   useEffect(() => {
-    if (selectedCommentData && (!editingState || editingState.elementType !== 'comment')) {
-      setCommentPopoverVisible(true)
+    const previous = lastSelectedCommentIdRef.current
+    if (selectedComment && selectedComment.id !== previous) {
+      lastSelectedCommentIdRef.current = selectedComment.id
+      setEditingCommentDraft(selectedComment.text ?? '')
+      setCommentPopoverMode(selectedComment.text ? 'view' : 'edit')
       return
     }
-    if (!selectedCommentData) {
-      setCommentPopoverVisible(false)
+    if (!selectedComment && previous) {
+      lastSelectedCommentIdRef.current = null
+      setCommentPopoverMode('closed')
+      setEditingCommentDraft('')
     }
-  }, [editingState, selectedCommentData])
+  }, [selectedComment])
 
   useEffect(() => {
-    if (!commentPopoverVisible) return
+    if (!selectedComment) return
+    if (commentPopoverMode === 'edit') return
+    setEditingCommentDraft(selectedComment.text ?? '')
+  }, [commentPopoverMode, selectedComment?.text])
+
+  useEffect(() => {
+    if (commentPopoverMode === 'closed') return
     const handlePointerDown = (event: PointerEvent) => {
+      if (skipCommentPopoverCloseRef.current) {
+        return
+      }
       if (commentPopoverRef.current && commentPopoverRef.current.contains(event.target as Node)) {
         return
       }
-      setCommentPopoverVisible(false)
+      setCommentPopoverMode('closed')
     }
     window.addEventListener('pointerdown', handlePointerDown)
     return () => {
       window.removeEventListener('pointerdown', handlePointerDown)
     }
-  }, [commentPopoverVisible])
+  }, [commentPopoverMode])
 
   useEffect(() => {
     if (!boardId) return
@@ -4850,15 +4952,6 @@ const shapeCreationRef = useRef<
       : null
   const editingFrameElement = isFrameElement(editingElement) ? editingElement : null
   const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
-  const editingCommentElement = isCommentElement(editingElement) ? editingElement : null
-  const editingCommentRect = editingCommentElement
-    ? {
-        x: (editingCommentElement.x + cameraState.offsetX) * cameraState.zoom + 12,
-        y: (editingCommentElement.y + cameraState.offsetY) * cameraState.zoom - 40,
-        width: 220,
-        height: 110,
-      }
-    : null
   const editingFrameFontSizePx =
     editingState?.elementType === 'frame' ? getFrameTitleScreenFontSize(cameraState.zoom) : null
 
@@ -4957,35 +5050,24 @@ const shapeCreationRef = useRef<
         onPointerCancel={handlePointerCancel}
         onDoubleClick={handleCanvasDoubleClick}
       />
-      {selectedCommentData && commentPopoverVisible && (!editingState || editingState.elementType !== 'comment') && (
-        <div
-          ref={commentPopoverRef}
-          className="comment-popover"
-          style={{
-            position: 'absolute',
-            left: selectedCommentData.screen.x + 14,
-            top: selectedCommentData.screen.y - 20,
-            minWidth: 180,
-            maxWidth: 240,
-            background: '#ffffff',
-            border: '1px solid rgba(15,23,42,0.2)',
-            borderRadius: 6,
-            padding: '8px 10px',
-            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.18)',
-            cursor: 'text',
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => beginEditingComment(selectedCommentData.comment)}
-        >
-          {selectedCommentData.comment.text ? (
-            <div style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'pre-wrap' }}>
-              {selectedCommentData.comment.text}
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: 'rgba(15,23,42,0.5)' }}>Add a comment…</div>
-          )}
-        </div>
-      )}
+      {selectedComment &&
+        commentPopoverMode !== 'closed' &&
+        selectedCommentScreenPosition &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <CommentPopover
+            anchor={selectedCommentScreenPosition}
+            comment={selectedComment}
+            draft={editingCommentDraft}
+            mode={commentPopoverMode}
+            onCancel={cancelCommentEditing}
+            onCommit={commitCommentDraft}
+            onDraftChange={setEditingCommentDraft}
+            onRequestEdit={() => openCommentPopoverForElement(selectedComment, 'edit')}
+            popoverRef={commentPopoverRef}
+          />,
+          document.body
+        )}
       {marquee && (
         <div
           className="marquee-selection"
@@ -5158,49 +5240,147 @@ const shapeCreationRef = useRef<
             />
           </div>
         )}
-      {editingState?.elementType === 'comment' && editingCommentElement && editingCommentRect && (
-        <div
-          className="canvas-board__text-editor"
-          style={{
-            left: editingCommentRect.x,
-            top: editingCommentRect.y,
-            width: editingCommentRect.width,
-            height: editingCommentRect.height,
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div
-            ref={editingContentRef}
-            className="canvas-board__text-editor-content"
-            contentEditable
-            suppressContentEditableWarning
-            role="textbox"
-            aria-multiline="true"
-            spellCheck={false}
-            style={{ fontSize: '13px', lineHeight: 1.35, padding: `${TEXT_SAFETY_INSET}px` }}
-            onInput={syncEditingTextFromDom}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault()
-                cancelEditing()
-                return
-              }
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                commitEditing()
-              }
-            }}
-            onBlur={() => {
-              commitEditing()
-            }}
-            onPaste={(event) => {
-              event.preventDefault()
-              const text = event.clipboardData?.getData('text/plain') ?? ''
-              insertPlainText(text)
-            }}
-          />
-        </div>
-      )}
     </section>
+  )
+}
+
+type CommentPopoverProps = {
+  anchor: { x: number; y: number }
+  comment: CommentElement
+  draft: string
+  mode: 'view' | 'edit'
+  onDraftChange: (value: string) => void
+  onRequestEdit: () => void
+  onCommit: () => void
+  onCancel: () => void
+  popoverRef: RefObject<HTMLDivElement | null>
+}
+
+function CommentPopover({
+  anchor,
+  comment,
+  draft,
+  mode,
+  onDraftChange,
+  onRequestEdit,
+  onCommit,
+  onCancel,
+  popoverRef,
+}: CommentPopoverProps) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    if (mode !== 'edit') return
+    const input = inputRef.current
+    if (!input) return
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(input.value.length, input.value.length)
+  }, [comment.id, mode])
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onCancel()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      onCommit()
+    }
+  }
+
+  const handleBlur = (event: ReactFocusEvent<HTMLTextAreaElement>) => {
+    if (!popoverRef.current) {
+      onCommit()
+      return
+    }
+    const related = event.relatedTarget as Node | null
+    if (related && popoverRef.current.contains(related)) {
+      return
+    }
+    onCommit()
+  }
+
+  const stopPropagation = (event: SyntheticEvent) => {
+    event.stopPropagation()
+  }
+
+  const sharedContainerStyle: CSSProperties = {
+    position: 'fixed',
+    left: anchor.x + 14,
+    top: anchor.y - 20,
+    minWidth: 200,
+    maxWidth: 260,
+    background: '#ffffff',
+    border: '1px solid rgba(15,23,42,0.18)',
+    borderRadius: 8,
+    padding: '10px 12px',
+    boxShadow: '0 6px 18px rgba(15, 23, 42, 0.18)',
+    color: '#0f172a',
+    cursor: mode === 'view' ? 'pointer' : 'text',
+    zIndex: 30,
+  }
+
+  return (
+    <div
+      ref={popoverRef}
+      className="comment-popover"
+      style={sharedContainerStyle}
+      onPointerDownCapture={stopPropagation}
+      onMouseDownCapture={stopPropagation}
+      onDoubleClick={mode === 'view' ? onRequestEdit : undefined}
+    >
+      {mode === 'edit' ? (
+        <>
+          <textarea
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="Add a comment..."
+            className="comment-popover__input"
+            rows={4}
+            spellCheck={false}
+            style={{
+              width: '100%',
+              minHeight: 90,
+              border: '1px solid rgba(15,23,42,0.25)',
+              borderRadius: 6,
+              padding: '6px 8px',
+              resize: 'none',
+              fontSize: 13,
+              lineHeight: 1.35,
+              color: '#0f172a',
+              fontFamily: 'inherit',
+            }}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+          />
+          <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(15,23,42,0.55)' }}>
+            Enter to save · Shift+Enter for newline
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{comment.text}</div>
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={onRequestEdit}
+              style={{
+                border: '1px solid rgba(14,165,233,0.8)',
+                background: '#e0f2fe',
+                color: '#0f172a',
+                fontSize: 12,
+                borderRadius: 4,
+                padding: '4px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              Edit
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
