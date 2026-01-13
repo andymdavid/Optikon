@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 
 import {
   STICKY_FONT_FAMILY,
@@ -139,7 +147,6 @@ const LINE_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left', 'cent
 const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left']
 const CONNECTOR_HANDLE_RADIUS_PX = 3
 const CONNECTOR_HANDLE_OFFSET_PX = 12
-const TEXT_DEBUG_BOUNDS = false
 type ToolMode =
   | 'select'
   | 'sticky'
@@ -154,6 +161,7 @@ type ToolMode =
   | 'line'
   | 'arrow'
   | 'elbow'
+  | 'comment'
 type ShapeElement =
   | RectangleElement
   | EllipseElement
@@ -475,6 +483,10 @@ function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number })
 
 type ShapeElementBounds = TransformBounds
 
+function resolveShapeMinSize(element: { type: BoardElement['type'] }) {
+  return element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+}
+
 function getStickySize(element: StickyNoteElement) {
   const size = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
   return Math.max(STICKY_MIN_SIZE, size)
@@ -488,10 +500,6 @@ function getStickyBounds(element: StickyNoteElement): Rect {
     right: element.x + size,
     bottom: element.y + size,
   }
-}
-
-function resolveShapeMinSize(element: { type: BoardElement['type'] }) {
-  return element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
 }
 
 function getShapeElementBounds(element: ShapeElement | FrameElement): ShapeElementBounds {
@@ -752,7 +760,7 @@ type EditingState = {
   text: string
   originalText: string
   fontSize?: number
-  elementType: 'sticky' | 'text' | 'frame'
+  elementType: 'sticky' | 'text' | 'frame' | 'comment'
 }
 
 type TransformState =
@@ -2328,6 +2336,7 @@ const shapeCreationRef = useRef<
   >(null)
   const editingStateRef = useRef<EditingState | null>(null)
   const editingContentRef = useRef<HTMLDivElement | null>(null)
+  const commentPopoverRef = useRef<HTMLDivElement | null>(null)
   const measurementCtxRef = useRef<CanvasRenderingContext2D | null>(null)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
@@ -2687,13 +2696,6 @@ const shapeCreationRef = useRef<
           }
           continue
         }
-        if (isFrameElement(element)) {
-          const bounds = getShapeElementBounds(element)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          continue
-        }
         if (isRoundedRectElement(element)) {
           const bounds = getShapeElementBounds(element)
           if (pointInPolygon({ x, y }, bounds.corners)) {
@@ -2811,7 +2813,7 @@ const shapeCreationRef = useRef<
   )
 
   const handleCanvasClick = useCallback(
-    (event: MouseEvent<HTMLCanvasElement> | PointerEvent<HTMLCanvasElement>) => {
+    (event: MouseEvent<HTMLCanvasElement> | ReactPointerEvent<HTMLCanvasElement>) => {
       if (suppressClickRef.current) {
         suppressClickRef.current = false
         return
@@ -3048,7 +3050,7 @@ const shapeCreationRef = useRef<
     (
       point: { x: number; y: number }
     ): {
-      element: TextElement | ShapeElement
+      element: TextElement | ShapeElement | FrameElement
       bounds: TextElementBounds | ShapeElementBounds
       handle: TransformHandleSpec
     } | null => {
@@ -3087,7 +3089,7 @@ const shapeCreationRef = useRef<
   )
 
   const handlePointerDown = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
@@ -3568,7 +3570,7 @@ const shapeCreationRef = useRef<
   )
 
   const handlePointerMove = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const mode = interactionModeRef.current
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
@@ -3863,9 +3865,10 @@ const shapeCreationRef = useRef<
           return { ...prev, [creation.id]: updated }
         })
         if (updatedElement) {
+          const elementForSize = updatedElement as FrameOrShapeElement
           const dragDistanceX = Math.abs(boardPoint.x - creation.start.x)
           const dragDistanceY = Math.abs(boardPoint.y - creation.start.y)
-          const minSize = updatedElement.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+          const minSize = elementForSize.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
           if (!creation.hasDragged && (dragDistanceX > minSize || dragDistanceY > minSize)) {
             shapeCreationRef.current = { ...creation, hasDragged: true }
           }
@@ -4028,7 +4031,7 @@ const shapeCreationRef = useRef<
   )
 
   const finishDrag = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>, reason: 'up' | 'cancel') => {
+    (event: ReactPointerEvent<HTMLCanvasElement>, reason: 'up' | 'cancel') => {
       try {
         event.currentTarget.releasePointerCapture(event.pointerId)
       } catch {
@@ -4273,21 +4276,21 @@ const shapeCreationRef = useRef<
   )
 
   const handlePointerUp = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
       finishDrag(event, 'up')
     },
     [finishDrag]
   )
 
   const handlePointerLeave = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
       finishDrag(event, 'cancel')
     },
     [finishDrag]
   )
 
   const handlePointerCancel = useCallback(
-    (event: PointerEvent<HTMLCanvasElement>) => {
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
       finishDrag(event, 'cancel')
     },
     [finishDrag]
@@ -4530,6 +4533,20 @@ const shapeCreationRef = useRef<
       void persistElementsUpdate(boardId, adjustments)
     }
   }, [boardId, elements, getMeasureContext, persistElementsUpdate, sendElementsUpdate])
+
+  const selectedCommentData = useMemo(() => {
+    if (selectedIds.size !== 1) return null
+    const [candidateId] = Array.from(selectedIds)
+    const candidate = elements[candidateId]
+    if (!isCommentElement(candidate)) return null
+    return {
+      comment: candidate,
+      screen: {
+        x: (candidate.x + cameraState.offsetX) * cameraState.zoom,
+        y: (candidate.y + cameraState.offsetY) * cameraState.zoom,
+      },
+    }
+  }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, selectedIds])
 
   useEffect(() => {
     if (selectedCommentData && (!editingState || editingState.elementType !== 'comment')) {
@@ -4794,11 +4811,13 @@ const shapeCreationRef = useRef<
   const editingContentWidth = editingInnerSize ? editingInnerSize.width : null
   const editingContentHeight = editingInnerSize ? editingInnerSize.height : null
   const editingStickyFontSizePx =
-    editingState?.elementType === 'sticky' ? editingState.fontSize * cameraState.zoom : null
+    editingState?.elementType === 'sticky' && typeof editingState.fontSize === 'number'
+      ? editingState.fontSize * cameraState.zoom
+      : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
   const editingTextWrapWidth = editingTextElement ? resolveTextWrapWidth(editingTextElement.w) : TEXT_DEFAULT_MAX_WIDTH
   const editingTextLayout =
-    editingState?.elementType === 'text'
+    editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
       ? getTextLayoutForContent(
           editingState.text,
           editingState.fontSize,
@@ -4826,7 +4845,9 @@ const shapeCreationRef = useRef<
       }
     : null
   const editingTextFontSizePx =
-    editingState?.elementType === 'text' ? editingState.fontSize * cameraState.zoom : null
+    editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
+      ? editingState.fontSize * cameraState.zoom
+      : null
   const editingFrameElement = isFrameElement(editingElement) ? editingElement : null
   const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
   const editingCommentElement = isCommentElement(editingElement) ? editingElement : null
@@ -4840,20 +4861,6 @@ const shapeCreationRef = useRef<
     : null
   const editingFrameFontSizePx =
     editingState?.elementType === 'frame' ? getFrameTitleScreenFontSize(cameraState.zoom) : null
-
-  const selectedCommentData = useMemo(() => {
-    if (selectedIds.size !== 1) return null
-    const [candidateId] = Array.from(selectedIds)
-    const candidate = elements[candidateId]
-    if (!isCommentElement(candidate)) return null
-    return {
-      comment: candidate,
-      screen: {
-        x: (candidate.x + cameraState.offsetX) * cameraState.zoom,
-        y: (candidate.y + cameraState.offsetY) * cameraState.zoom,
-      },
-    }
-  }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements, selectedIds])
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
@@ -4922,7 +4929,7 @@ const shapeCreationRef = useRef<
   useEffect(() => {
     const ctx = getMeasureContext()
     const current = editingStateRef.current
-    if (!ctx || !current || !editingStickyElement) return
+    if (!ctx || !current || !editingStickyElement || typeof current.fontSize !== 'number') return
     const inner = getStickyInnerSize(editingStickyElement)
     const bounds = getStickyFontBounds(editingStickyElement)
     const fitted = fitFontSize(ctx, current.text, inner.width, inner.height, bounds.max, bounds.min)
