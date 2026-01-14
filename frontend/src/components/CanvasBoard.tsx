@@ -46,6 +46,7 @@ import {
   type TextElementBounds,
   type TransformBounds,
 } from './canvas/utils'
+import { FloatingSelectionToolbar } from './toolbar/FloatingSelectionToolbar'
 
 import type {
   BoardElement,
@@ -589,6 +590,43 @@ function getElementBounds(
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   if (isLineElement(element)) return getLineElementBounds(element, options).aabb
   return { left: 0, top: 0, right: 0, bottom: 0 }
+}
+
+function getMultiSelectionBounds(
+  selectedIds: Set<string>,
+  elements: ElementMap,
+  ctx: CanvasRenderingContext2D | null,
+  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+): Rect | null {
+  if (selectedIds.size === 0) return null
+
+  let bounds: Rect = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }
+  let hasValidElement = false
+
+  selectedIds.forEach((id) => {
+    const element = elements[id]
+    if (!element) return
+    const elementBounds = getElementBounds(element, ctx, options)
+    bounds = {
+      left: Math.min(bounds.left, elementBounds.left),
+      top: Math.min(bounds.top, elementBounds.top),
+      right: Math.max(bounds.right, elementBounds.right),
+      bottom: Math.max(bounds.bottom, elementBounds.bottom),
+    }
+    hasValidElement = true
+  })
+
+  if (!hasValidElement) return null
+  return bounds
+}
+
+function boardBoundsToScreen(bounds: Rect, camera: CameraState): Rect {
+  return {
+    left: (bounds.left + camera.offsetX) * camera.zoom,
+    top: (bounds.top + camera.offsetY) * camera.zoom,
+    right: (bounds.right + camera.offsetX) * camera.zoom,
+    bottom: (bounds.bottom + camera.offsetY) * camera.zoom,
+  }
 }
 
 function getStickyPadding(element: StickyNoteElement) {
@@ -5031,6 +5069,24 @@ const shapeCreationRef = useRef<
     }
   }, [editingStickyElement, editingStickyElement?.size, getMeasureContext, updateEditingState])
 
+  // Compute selection bounds for floating toolbar
+  const selectionBoundsScreen = useMemo(() => {
+    if (selectedIds.size === 0) return null
+    const measureCtx = getSharedMeasureContext()
+    const resolveElement = (id: string) => elements[id]
+    const boardBounds = getMultiSelectionBounds(selectedIds, elements, measureCtx, {
+      resolveElement,
+      measureCtx,
+    })
+    if (!boardBounds) return null
+    return boardBoundsToScreen(boardBounds, cameraState)
+  }, [selectedIds, elements, cameraState])
+
+  const showFloatingToolbar =
+    selectedIds.size > 0 &&
+    !editingState &&
+    commentPopoverMode === 'closed'
+
   return (
     <section
       aria-label="Canvas board"
@@ -5068,6 +5124,10 @@ const shapeCreationRef = useRef<
           />,
           document.body
         )}
+      <FloatingSelectionToolbar
+        selectionBoundsScreen={selectionBoundsScreen}
+        isVisible={showFloatingToolbar}
+      />
       {marquee && (
         <div
           className="marquee-selection"
