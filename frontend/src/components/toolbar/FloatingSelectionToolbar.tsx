@@ -14,7 +14,7 @@ export type FloatingSelectionToolbarProps = {
 }
 
 const TOOLBAR_HEIGHT = 44
-const TOOLBAR_GAP = 10
+const TOOLBAR_GAP = 28 // Clear the selection frame padding (18px) + resize handles (6px) + buffer
 const VIEWPORT_MARGIN = 12
 
 // Placeholder button styling
