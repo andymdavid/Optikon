@@ -48,6 +48,7 @@ import {
 } from './canvas/utils'
 import { FloatingSelectionToolbar } from './toolbar/FloatingSelectionToolbar'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
+import { ZoomPanel } from './toolbar/ZoomPanel'
 
 import type {
   BoardElement,
@@ -2458,6 +2459,100 @@ const shapeCreationRef = useRef<
     },
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom]
   )
+
+  // Zoom panel callbacks
+  const handleZoomIn = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const { width, height } = canvas.getBoundingClientRect()
+    const focalScreenX = width / 2
+    const focalScreenY = height / 2
+
+    setCameraState((prev) => {
+      const focalBoardX = focalScreenX / prev.zoom - prev.offsetX
+      const focalBoardY = focalScreenY / prev.zoom - prev.offsetY
+      const newZoom = Math.min(MAX_ZOOM, prev.zoom * 1.2)
+      const offsetX = focalScreenX / newZoom - focalBoardX
+      const offsetY = focalScreenY / newZoom - focalBoardY
+      return { offsetX, offsetY, zoom: newZoom }
+    })
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const { width, height } = canvas.getBoundingClientRect()
+    const focalScreenX = width / 2
+    const focalScreenY = height / 2
+
+    setCameraState((prev) => {
+      const focalBoardX = focalScreenX / prev.zoom - prev.offsetX
+      const focalBoardY = focalScreenY / prev.zoom - prev.offsetY
+      const newZoom = Math.max(MIN_ZOOM, prev.zoom / 1.2)
+      const offsetX = focalScreenX / newZoom - focalBoardX
+      const offsetY = focalScreenY / newZoom - focalBoardY
+      return { offsetX, offsetY, zoom: newZoom }
+    })
+  }, [])
+
+  const handleZoomReset = useCallback(() => {
+    setCameraState(initialCameraState)
+  }, [])
+
+  const handleZoomFit = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const { width: viewportWidth, height: viewportHeight } = canvas.getBoundingClientRect()
+
+    const allElements = Object.values(elements)
+    if (allElements.length === 0) {
+      setCameraState(initialCameraState)
+      return
+    }
+
+    // Compute bounding box of all elements
+    const measureCtx = getSharedMeasureContext()
+    const resolveElement = (id: string) => elements[id]
+    let bounds: Rect = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity }
+
+    allElements.forEach((element) => {
+      const elementBounds = getElementBounds(element, measureCtx, { resolveElement, measureCtx })
+      bounds = {
+        left: Math.min(bounds.left, elementBounds.left),
+        top: Math.min(bounds.top, elementBounds.top),
+        right: Math.max(bounds.right, elementBounds.right),
+        bottom: Math.max(bounds.bottom, elementBounds.bottom),
+      }
+    })
+
+    // Add padding (10% of bounds or min 60 board units)
+    const boundsWidth = bounds.right - bounds.left
+    const boundsHeight = bounds.bottom - bounds.top
+    const paddingX = Math.max(60, boundsWidth * 0.1)
+    const paddingY = Math.max(60, boundsHeight * 0.1)
+    bounds = {
+      left: bounds.left - paddingX,
+      top: bounds.top - paddingY,
+      right: bounds.right + paddingX,
+      bottom: bounds.bottom + paddingY,
+    }
+
+    const paddedWidth = bounds.right - bounds.left
+    const paddedHeight = bounds.bottom - bounds.top
+    const boundsCenterX = (bounds.left + bounds.right) / 2
+    const boundsCenterY = (bounds.top + bounds.bottom) / 2
+
+    // Compute zoom to fit bounds in viewport
+    const zoomX = viewportWidth / paddedWidth
+    const zoomY = viewportHeight / paddedHeight
+    const newZoom = clamp(Math.min(zoomX, zoomY), MIN_ZOOM, MAX_ZOOM)
+
+    // Center bounds in viewport
+    const offsetX = viewportWidth / 2 / newZoom - boundsCenterX
+    const offsetY = viewportHeight / 2 / newZoom - boundsCenterY
+
+    setCameraState({ offsetX, offsetY, zoom: newZoom })
+  }, [elements])
 
   const upsertElement = useCallback((element: BoardElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
@@ -5096,6 +5191,13 @@ const shapeCreationRef = useRef<
         toolMode={toolMode}
         onToolModeChange={setToolMode}
         isEditing={!!editingState || commentPopoverMode !== 'closed'}
+      />
+      <ZoomPanel
+        zoom={cameraState.zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onReset={handleZoomReset}
+        onFit={handleZoomFit}
       />
       {selectedComment &&
         commentPopoverMode !== 'closed' &&
