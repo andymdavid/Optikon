@@ -3740,7 +3740,7 @@ const shapeCreationRef = useRef<
           const pathIndex = bendState.index + 1
           const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
           const nextPoint = resolvedPath[pathIndex + 1] ?? resolvedPath[pathIndex]
-          let nextValue = { x: boardPoint.x, y: boardPoint.y }
+          const nextValue = { x: boardPoint.x, y: boardPoint.y }
           if (bendState.prevOrientation === 'horizontal') nextValue.y = prevPoint.y
           else nextValue.x = prevPoint.x
           if (bendState.nextOrientation === 'horizontal') nextValue.y = nextPoint.y
@@ -4194,7 +4194,7 @@ const shapeCreationRef = useRef<
         setMarquee(null)
         marqueeCandidateRef.current = null
         if (!creationState) return
-        let element = elements[creationState.id]
+        const element = elements[creationState.id]
         if (!element || (!isShapeElement(element) && !isFrameElement(element))) return
         sendElementsUpdate([element])
         if (boardId) {
