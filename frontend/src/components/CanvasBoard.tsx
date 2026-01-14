@@ -47,6 +47,7 @@ import {
   type TransformBounds,
 } from './canvas/utils'
 import { FloatingSelectionToolbar } from './toolbar/FloatingSelectionToolbar'
+import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 
 import type {
   BoardElement,
@@ -154,21 +155,6 @@ const LINE_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left', 'cent
 const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left']
 const CONNECTOR_HANDLE_RADIUS_PX = 3
 const CONNECTOR_HANDLE_OFFSET_PX = 12
-type ToolMode =
-  | 'select'
-  | 'sticky'
-  | 'text'
-  | 'rect'
-  | 'frame'
-  | 'ellipse'
-  | 'roundRect'
-  | 'diamond'
-  | 'triangle'
-  | 'speechBubble'
-  | 'line'
-  | 'arrow'
-  | 'elbow'
-  | 'comment'
 type ShapeElement =
   | RectangleElement
   | EllipseElement
@@ -5105,6 +5091,11 @@ const shapeCreationRef = useRef<
         onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerCancel}
         onDoubleClick={handleCanvasDoubleClick}
+      />
+      <ToolRail
+        toolMode={toolMode}
+        onToolModeChange={setToolMode}
+        isEditing={!!editingState || commentPopoverMode !== 'closed'}
       />
       {selectedComment &&
         commentPopoverMode !== 'closed' &&
