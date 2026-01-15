@@ -1494,8 +1494,8 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   const fontStyle = element.style?.fontStyle ?? 'normal'
   ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'alphabetic'
+  ctx.textAlign = 'left' // Always left - we handle alignment via manual xOffset
   const textAlign = element.style?.textAlign ?? 'left'
-  ctx.textAlign = textAlign
   // Calculate x offset based on alignment
   const textBlockWidth = layoutInfo.wrapWidth
   layoutInfo.layout.lines.forEach((line, index) => {
