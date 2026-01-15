@@ -10,10 +10,23 @@ export type SelectionBoundsScreen = {
 
 export type TextAlign = 'left' | 'center' | 'right'
 
+export type TextBackground = {
+  color: string
+  opacity: number
+}
+
 export type SelectionFormatState = {
   bold: boolean | 'mixed'
   italic: boolean | 'mixed'
+  underline: boolean | 'mixed'
+  strikethrough: boolean | 'mixed'
   align: TextAlign | 'mixed'
+  bullets: boolean | 'mixed'
+  fontFamily: string | 'mixed'
+  fontSize: number | 'mixed'
+  color: string | 'mixed'
+  highlight: string | null | 'mixed'
+  background: TextBackground | null | 'mixed'
   hasTextElements: boolean
 }
 
@@ -23,14 +36,22 @@ export type FloatingSelectionToolbarProps = {
   formatState: SelectionFormatState
   onToggleBold: () => void
   onToggleItalic: () => void
-  onCycleAlign: () => void
+  onToggleUnderline: () => void
+  onToggleStrikethrough: () => void
+  onSetAlign: (align: TextAlign) => void
+  onToggleBullets: () => void
+  onSetFontFamily: (family: string) => void
+  onSetFontSize: (size: number) => void
+  onSetColor: (color: string) => void
+  onSetHighlight: (color: string | null) => void
+  onSetBackground: (bg: TextBackground | null) => void
   onAddComment?: () => void
 }
 
-const FONTS = ['Noto Sans', 'Inter', 'Roboto', 'Serif', 'Mono'] as const
-const FONT_COLORS = ['#111827', '#374151', '#6B7280', '#DC2626', '#EA580C', '#CA8A04', '#16A34A', '#0EA5E9', '#8B5CF6']
-const HIGHLIGHT_COLORS = ['transparent', '#FEF08A', '#BBF7D0', '#BAE6FD', '#E9D5FF', '#FECACA', '#FED7AA']
-const BG_COLORS = ['transparent', '#FFFFFF', '#F3F4F6', '#FEF3C7', '#DCFCE7', '#DBEAFE', '#F3E8FF', '#FCE7F3']
+export const FONT_FAMILIES = ['Inter', 'Noto Sans', 'Roboto', 'Georgia', 'Courier New'] as const
+export const FONT_COLORS = ['#111827', '#374151', '#6B7280', '#DC2626', '#EA580C', '#CA8A04', '#16A34A', '#0EA5E9', '#8B5CF6']
+export const HIGHLIGHT_COLORS = ['transparent', '#FEF08A', '#BBF7D0', '#BAE6FD', '#E9D5FF', '#FECACA', '#FED7AA']
+export const BG_COLORS = ['transparent', '#FFFFFF', '#F3F4F6', '#FEF3C7', '#DCFCE7', '#DBEAFE', '#F3E8FF', '#FCE7F3']
 
 const TOOLBAR_HEIGHT = 44
 const TOOLBAR_GAP = 28
@@ -111,34 +132,6 @@ const colorGridStyle: CSSProperties = {
   padding: 8,
 }
 
-function AlignIcon({ align }: { align: TextAlign | 'mixed' }) {
-  if (align === 'left' || align === 'mixed') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <rect x="2" y="3" width="12" height="2" rx="0.5" />
-        <rect x="2" y="7" width="8" height="2" rx="0.5" />
-        <rect x="2" y="11" width="10" height="2" rx="0.5" />
-      </svg>
-    )
-  }
-  if (align === 'center') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-        <rect x="2" y="3" width="12" height="2" rx="0.5" />
-        <rect x="4" y="7" width="8" height="2" rx="0.5" />
-        <rect x="3" y="11" width="10" height="2" rx="0.5" />
-      </svg>
-    )
-  }
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <rect x="2" y="3" width="12" height="2" rx="0.5" />
-      <rect x="6" y="7" width="8" height="2" rx="0.5" />
-      <rect x="4" y="11" width="10" height="2" rx="0.5" />
-    </svg>
-  )
-}
-
 function ChevronDown() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -155,20 +148,29 @@ export function FloatingSelectionToolbar({
   formatState,
   onToggleBold,
   onToggleItalic,
-  onCycleAlign,
+  onToggleUnderline,
+  onToggleStrikethrough,
+  onSetAlign,
+  onToggleBullets,
+  onSetFontFamily,
+  onSetFontSize,
+  onSetColor,
+  onSetHighlight,
+  onSetBackground,
   onAddComment,
 }: FloatingSelectionToolbarProps) {
   const [openDropdown, setOpenDropdown] = useState<DropdownType>(null)
-  const [selectedFont, setSelectedFont] = useState<typeof FONTS[number]>('Noto Sans')
-  const [fontSize, setFontSize] = useState(16)
-  const [underline, setUnderline] = useState(false)
-  const [strikethrough, setStrikethrough] = useState(false)
-  const [bulletPoints, setBulletPoints] = useState(false)
-  const [fontColor, setFontColor] = useState('#111827')
-  const [highlightColor, setHighlightColor] = useState('transparent')
-  const [bgColor, setBgColor] = useState('transparent')
-  const [bgOpacity, setBgOpacity] = useState(100)
+  const [fontSizeInput, setFontSizeInput] = useState('')
   const toolbarRef = useRef<HTMLDivElement>(null)
+
+  // Sync font size input with formatState
+  useEffect(() => {
+    if (typeof formatState.fontSize === 'number') {
+      setFontSizeInput(String(formatState.fontSize))
+    } else {
+      setFontSizeInput('')
+    }
+  }, [formatState.fontSize])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -236,6 +238,15 @@ export function FloatingSelectionToolbar({
 
   const isBoldActive = formatState.bold === true
   const isItalicActive = formatState.italic === true
+  const isUnderlineActive = formatState.underline === true
+  const isStrikethroughActive = formatState.strikethrough === true
+  const isBulletsActive = formatState.bullets === true
+
+  const currentFontFamily = typeof formatState.fontFamily === 'string' ? formatState.fontFamily : 'Inter'
+  const currentFontSize = typeof formatState.fontSize === 'number' ? formatState.fontSize : 48
+  const currentColor = typeof formatState.color === 'string' ? formatState.color : '#111827'
+  const currentHighlight = formatState.highlight !== 'mixed' ? formatState.highlight : null
+  const currentBackground = formatState.background !== 'mixed' ? formatState.background : null
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>, isActive: boolean) => {
     if (!isActive) {
@@ -254,14 +265,36 @@ export function FloatingSelectionToolbar({
   }
 
   const handleFontSizeChange = (delta: number) => {
-    setFontSize((prev) => Math.max(6, Math.min(240, prev + delta)))
+    const newSize = Math.max(6, Math.min(240, currentFontSize + delta))
+    onSetFontSize(newSize)
   }
 
-  const handleFontSizeInput = (value: string) => {
-    const num = parseInt(value, 10)
+  const handleFontSizeInputChange = (value: string) => {
+    setFontSizeInput(value)
+  }
+
+  const handleFontSizeInputBlur = () => {
+    const num = parseInt(fontSizeInput, 10)
     if (!isNaN(num)) {
-      setFontSize(Math.max(6, Math.min(240, num)))
+      const clampedSize = Math.max(6, Math.min(240, num))
+      onSetFontSize(clampedSize)
+    } else {
+      // Reset to current value
+      setFontSizeInput(String(currentFontSize))
     }
+  }
+
+  const handleFontSizeInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleFontSizeInputBlur()
+    }
+  }
+
+  // Get display name for font family in dropdown button
+  const getFontDisplayName = (family: string): string => {
+    if (family === 'Courier New') return 'Mono'
+    if (family === 'Georgia') return 'Serif'
+    return family
   }
 
   return createPortal(
@@ -283,33 +316,33 @@ export function FloatingSelectionToolbar({
           onMouseLeave={(e) => handleMouseLeave(e, false)}
         >
           <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {selectedFont}
+            {formatState.fontFamily === 'mixed' ? 'Mixed' : getFontDisplayName(currentFontFamily)}
           </span>
           <ChevronDown />
         </button>
         {openDropdown === 'font' && (
           <div style={dropdownStyle}>
-            {FONTS.map((font) => (
+            {FONT_FAMILIES.map((font) => (
               <button
                 key={font}
                 type="button"
                 style={{
                   ...dropdownItemStyle,
-                  fontFamily: font === 'Mono' ? 'monospace' : font === 'Serif' ? 'serif' : font,
-                  background: selectedFont === font ? '#e0f2fe' : 'transparent',
+                  fontFamily: font,
+                  background: currentFontFamily === font ? '#e0f2fe' : 'transparent',
                 }}
                 onClick={() => {
-                  setSelectedFont(font)
+                  onSetFontFamily(font)
                   setOpenDropdown(null)
                 }}
                 onMouseEnter={(e) => {
-                  if (selectedFont !== font) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
+                  if (currentFontFamily !== font) e.currentTarget.style.background = 'rgba(0,0,0,0.04)'
                 }}
                 onMouseLeave={(e) => {
-                  if (selectedFont !== font) e.currentTarget.style.background = 'transparent'
+                  if (currentFontFamily !== font) e.currentTarget.style.background = 'transparent'
                 }}
               >
-                {font}
+                {getFontDisplayName(font)}
               </button>
             ))}
           </div>
@@ -330,8 +363,10 @@ export function FloatingSelectionToolbar({
         </button>
         <input
           type="text"
-          value={fontSize}
-          onChange={(e) => handleFontSizeInput(e.target.value)}
+          value={fontSizeInput}
+          onChange={(e) => handleFontSizeInputChange(e.target.value)}
+          onBlur={handleFontSizeInputBlur}
+          onKeyDown={handleFontSizeInputKeyDown}
           style={{
             width: 36,
             height: 28,
@@ -398,21 +433,21 @@ export function FloatingSelectionToolbar({
             </button>
             <button
               type="button"
-              style={{ ...dropdownItemStyle, background: underline ? '#e0f2fe' : 'transparent' }}
-              onClick={() => setUnderline(!underline)}
+              style={{ ...dropdownItemStyle, background: isUnderlineActive ? '#e0f2fe' : 'transparent' }}
+              onClick={() => onToggleUnderline()}
             >
               <span style={{ textDecoration: 'underline' }}>U</span>
               <span>Underline</span>
-              {underline && <span style={{ marginLeft: 'auto', color: '#0ea5e9' }}>✓</span>}
+              {isUnderlineActive && <span style={{ marginLeft: 'auto', color: '#0ea5e9' }}>✓</span>}
             </button>
             <button
               type="button"
-              style={{ ...dropdownItemStyle, background: strikethrough ? '#e0f2fe' : 'transparent' }}
-              onClick={() => setStrikethrough(!strikethrough)}
+              style={{ ...dropdownItemStyle, background: isStrikethroughActive ? '#e0f2fe' : 'transparent' }}
+              onClick={() => onToggleStrikethrough()}
             >
               <span style={{ textDecoration: 'line-through' }}>S</span>
               <span>Strikethrough</span>
-              {strikethrough && <span style={{ marginLeft: 'auto', color: '#0ea5e9' }}>✓</span>}
+              {isStrikethroughActive && <span style={{ marginLeft: 'auto', color: '#0ea5e9' }}>✓</span>}
             </button>
           </div>
         )}
@@ -426,9 +461,7 @@ export function FloatingSelectionToolbar({
           type="button"
           style={formatState.align === 'left' ? activeButtonStyle : buttonBaseStyle}
           title="Align left"
-          onClick={() => {
-            if (formatState.align !== 'left') onCycleAlign()
-          }}
+          onClick={() => onSetAlign('left')}
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'left')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'left')}
         >
@@ -442,10 +475,7 @@ export function FloatingSelectionToolbar({
           type="button"
           style={formatState.align === 'center' ? activeButtonStyle : buttonBaseStyle}
           title="Align center"
-          onClick={() => {
-            if (formatState.align !== 'center') onCycleAlign()
-            if (formatState.align === 'left') onCycleAlign()
-          }}
+          onClick={() => onSetAlign('center')}
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'center')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'center')}
         >
@@ -459,14 +489,7 @@ export function FloatingSelectionToolbar({
           type="button"
           style={formatState.align === 'right' ? activeButtonStyle : buttonBaseStyle}
           title="Align right"
-          onClick={() => {
-            if (formatState.align !== 'right') onCycleAlign()
-            if (formatState.align === 'left') {
-              onCycleAlign()
-              onCycleAlign()
-            }
-            if (formatState.align === 'center') onCycleAlign()
-          }}
+          onClick={() => onSetAlign('right')}
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'right')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'right')}
         >
@@ -483,11 +506,11 @@ export function FloatingSelectionToolbar({
       {/* Bullet Points Toggle */}
       <button
         type="button"
-        style={bulletPoints ? activeButtonStyle : buttonBaseStyle}
+        style={isBulletsActive ? activeButtonStyle : buttonBaseStyle}
         title="Bullet points"
-        onClick={() => setBulletPoints(!bulletPoints)}
-        onMouseEnter={(e) => handleMouseEnter(e, bulletPoints)}
-        onMouseLeave={(e) => handleMouseLeave(e, bulletPoints)}
+        onClick={() => onToggleBullets()}
+        onMouseEnter={(e) => handleMouseEnter(e, isBulletsActive)}
+        onMouseLeave={(e) => handleMouseLeave(e, isBulletsActive)}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <circle cx="3" cy="4" r="1.5" />
@@ -530,7 +553,7 @@ export function FloatingSelectionToolbar({
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M6.5 2L3 12h2l.75-2.5h4.5L11 12h2L9.5 2h-3zm.75 6L8 5.5 8.75 8h-1.5z" />
           </svg>
-          <div style={{ width: 14, height: 3, background: fontColor, borderRadius: 1, marginTop: -2 }} />
+          <div style={{ width: 14, height: 3, background: currentColor, borderRadius: 1, marginTop: -2 }} />
         </button>
         {openDropdown === 'fontColor' && (
           <div style={{ ...dropdownStyle, minWidth: 'auto' }}>
@@ -541,11 +564,11 @@ export function FloatingSelectionToolbar({
                   style={{
                     ...colorSwatchStyle,
                     background: color,
-                    outline: fontColor === color ? '2px solid #0ea5e9' : 'none',
+                    outline: currentColor === color ? '2px solid #0ea5e9' : 'none',
                     outlineOffset: 1,
                   }}
                   onClick={() => {
-                    setFontColor(color)
+                    onSetColor(color)
                     setOpenDropdown(null)
                   }}
                 />
@@ -572,7 +595,7 @@ export function FloatingSelectionToolbar({
             style={{
               width: 14,
               height: 3,
-              background: highlightColor === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : highlightColor,
+              background: !currentHighlight || currentHighlight === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : currentHighlight,
               borderRadius: 1,
               marginTop: -2,
             }}
@@ -587,11 +610,11 @@ export function FloatingSelectionToolbar({
                   style={{
                     ...colorSwatchStyle,
                     background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
-                    outline: highlightColor === color ? '2px solid #0ea5e9' : 'none',
+                    outline: (currentHighlight ?? 'transparent') === color ? '2px solid #0ea5e9' : 'none',
                     outlineOffset: 1,
                   }}
                   onClick={() => {
-                    setHighlightColor(color)
+                    onSetHighlight(color === 'transparent' ? null : color)
                     setOpenDropdown(null)
                   }}
                 />
@@ -612,7 +635,15 @@ export function FloatingSelectionToolbar({
           onMouseLeave={(e) => handleMouseLeave(e, false)}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2" y="2" width="12" height="12" rx="2" fill={bgColor === 'transparent' ? 'none' : bgColor} fillOpacity={bgOpacity / 100} />
+            <rect
+              x="2"
+              y="2"
+              width="12"
+              height="12"
+              rx="2"
+              fill={!currentBackground || currentBackground.color === 'transparent' ? 'none' : currentBackground.color}
+              fillOpacity={currentBackground ? currentBackground.opacity / 100 : 1}
+            />
           </svg>
         </button>
         {openDropdown === 'bgColor' && (
@@ -624,21 +655,34 @@ export function FloatingSelectionToolbar({
                   style={{
                     ...colorSwatchStyle,
                     background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
-                    outline: bgColor === color ? '2px solid #0ea5e9' : 'none',
+                    outline: (currentBackground?.color ?? 'transparent') === color ? '2px solid #0ea5e9' : 'none',
                     outlineOffset: 1,
                   }}
-                  onClick={() => setBgColor(color)}
+                  onClick={() => {
+                    if (color === 'transparent') {
+                      onSetBackground(null)
+                    } else {
+                      onSetBackground({ color, opacity: currentBackground?.opacity ?? 100 })
+                    }
+                  }}
                 />
               ))}
             </div>
             <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-              <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Opacity: {bgOpacity}%</div>
+              <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Opacity: {currentBackground?.opacity ?? 100}%</div>
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={bgOpacity}
-                onChange={(e) => setBgOpacity(Number(e.target.value))}
+                value={currentBackground?.opacity ?? 100}
+                onChange={(e) => {
+                  const opacity = Number(e.target.value)
+                  if (currentBackground) {
+                    onSetBackground({ ...currentBackground, opacity })
+                  } else {
+                    onSetBackground({ color: '#FFFFFF', opacity })
+                  }
+                }}
                 style={{ width: '100%' }}
               />
             </div>

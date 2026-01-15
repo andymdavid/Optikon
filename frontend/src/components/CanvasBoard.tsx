@@ -50,6 +50,7 @@ import {
   FloatingSelectionToolbar,
   type SelectionFormatState,
   type TextAlign,
+  type TextBackground,
 } from './toolbar/FloatingSelectionToolbar'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
@@ -1480,6 +1481,19 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   const bounds = getTextElementBounds(element, measureCtx)
   const layoutInfo = bounds.layout
   const fontSize = resolveTextFontSize(element.fontSize)
+
+  // Extract style properties with defaults
+  const fontWeight = element.style?.fontWeight ?? 400
+  const fontStyle = element.style?.fontStyle ?? 'normal'
+  const fontFamily = element.fontFamily ?? STICKY_FONT_FAMILY
+  const textAlign = element.style?.textAlign ?? 'left'
+  const textColor = element.style?.color ?? TEXT_COLOR
+  const underline = element.style?.underline ?? false
+  const strikethrough = element.style?.strikethrough ?? false
+  const highlight = element.style?.highlight ?? null
+  const background = element.style?.background ?? null
+  const bullets = element.style?.bullets ?? false
+
   ctx.save()
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
   const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
@@ -1488,24 +1502,101 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   const scaleFactor = bounds.scale * camera.zoom
   ctx.scale(scaleFactor, scaleFactor)
   ctx.translate(-bounds.width / 2 + layoutInfo.inset, -bounds.height / 2 + layoutInfo.inset)
-  ctx.fillStyle = TEXT_COLOR
+
+  // Draw background if set
+  if (background && background.color !== 'transparent') {
+    ctx.fillStyle = background.color
+    ctx.globalAlpha = background.opacity / 100
+    const padding = 4
+    ctx.fillRect(-padding, -padding, layoutInfo.wrapWidth + padding * 2, layoutInfo.totalHeight + padding * 2)
+    ctx.globalAlpha = 1
+  }
+
   // Build font string with style
-  const fontWeight = element.style?.fontWeight ?? 400
-  const fontStyle = element.style?.fontStyle ?? 'normal'
-  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left' // Always left - we handle alignment via manual xOffset
-  const textAlign = element.style?.textAlign ?? 'left'
-  // Calculate x offset based on alignment
+
   const textBlockWidth = layoutInfo.wrapWidth
+  const lineHeight = fontSize * TEXT_LINE_HEIGHT
+
+  // Split original text into paragraphs to track bullet positions
+  const paragraphs = element.text.split('\n')
+  let paragraphIndex = 0
+  let charInParagraph = 0
+
   layoutInfo.layout.lines.forEach((line, index) => {
+    const lineWidth = layoutInfo.layout.lineWidths[index]
+    const baselineY = layoutInfo.layout.baselineOffsets[index]
+
+    // Calculate x offset based on alignment
     let xOffset = 0
     if (textAlign === 'center') {
-      xOffset = (textBlockWidth - layoutInfo.layout.lineWidths[index]) / 2
+      xOffset = (textBlockWidth - lineWidth) / 2
     } else if (textAlign === 'right') {
-      xOffset = textBlockWidth - layoutInfo.layout.lineWidths[index]
+      xOffset = textBlockWidth - lineWidth
     }
-    ctx.fillText(line, xOffset, layoutInfo.layout.baselineOffsets[index])
+
+    // Adjust for bullets
+    const bulletOffset = bullets ? 20 : 0
+    const textXOffset = xOffset + bulletOffset
+
+    // Draw highlight behind line if set
+    if (highlight && highlight !== 'transparent') {
+      ctx.fillStyle = highlight
+      const highlightPadding = 2
+      ctx.fillRect(
+        textXOffset - highlightPadding,
+        baselineY - fontSize + highlightPadding,
+        lineWidth + highlightPadding * 2,
+        lineHeight
+      )
+    }
+
+    // Draw bullet if this is the start of a paragraph
+    if (bullets && charInParagraph === 0) {
+      ctx.fillStyle = textColor
+      const bulletX = xOffset + 6
+      const bulletY = baselineY - fontSize * 0.35
+      ctx.beginPath()
+      ctx.arc(bulletX, bulletY, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Draw text
+    ctx.fillStyle = textColor
+    ctx.fillText(line, textXOffset, baselineY)
+
+    // Draw underline if enabled
+    if (underline) {
+      ctx.strokeStyle = textColor
+      ctx.lineWidth = Math.max(1, fontSize / 14)
+      const underlineY = baselineY + fontSize * 0.15
+      ctx.beginPath()
+      ctx.moveTo(textXOffset, underlineY)
+      ctx.lineTo(textXOffset + lineWidth, underlineY)
+      ctx.stroke()
+    }
+
+    // Draw strikethrough if enabled
+    if (strikethrough) {
+      ctx.strokeStyle = textColor
+      ctx.lineWidth = Math.max(1, fontSize / 14)
+      const strikeY = baselineY - fontSize * 0.3
+      ctx.beginPath()
+      ctx.moveTo(textXOffset, strikeY)
+      ctx.lineTo(textXOffset + lineWidth, strikeY)
+      ctx.stroke()
+    }
+
+    // Track paragraph position for bullets
+    charInParagraph += line.length
+    // Check if we've consumed this paragraph (accounting for space from word wrap)
+    const currentParagraph = paragraphs[paragraphIndex] ?? ''
+    if (charInParagraph >= currentParagraph.length) {
+      paragraphIndex++
+      charInParagraph = 0
+    }
   })
   ctx.restore()
 }
@@ -2595,27 +2686,84 @@ const shapeCreationRef = useRef<
       .map((id) => elements[id])
       .filter((el): el is StickyNoteElement | TextElement => el && supportsTextStyle(el))
 
+    // Default state when no text elements selected
+    const defaultState: SelectionFormatState = {
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      align: 'left',
+      bullets: false,
+      fontFamily: 'Inter',
+      fontSize: 48,
+      color: '#111827',
+      highlight: null,
+      background: null,
+      hasTextElements: false,
+    }
+
     if (textElements.length === 0) {
-      return { bold: false, italic: false, align: 'left', hasTextElements: false }
+      return defaultState
+    }
+
+    // Helper to compute consensus value
+    const computeConsensus = <T,>(values: T[]): T | 'mixed' => {
+      const first = values[0]
+      return values.every((v) => v === first) ? first : 'mixed'
+    }
+
+    // Helper for boolean consensus
+    const computeBoolConsensus = (values: boolean[]): boolean | 'mixed' => {
+      const allTrue = values.every(Boolean)
+      const allFalse = values.every((v) => !v)
+      return allTrue ? true : allFalse ? false : 'mixed'
     }
 
     const boldValues = textElements.map((el) => el.style?.fontWeight === 700)
     const italicValues = textElements.map((el) => el.style?.fontStyle === 'italic')
+    const underlineValues = textElements.map((el) => el.style?.underline ?? false)
+    const strikethroughValues = textElements.map((el) => el.style?.strikethrough ?? false)
     const alignValues = textElements.map((el) => el.style?.textAlign ?? (el.type === 'sticky' ? 'center' : 'left'))
+    const bulletsValues = textElements.map((el) => el.style?.bullets ?? false)
+    const fontFamilyValues = textElements.map((el) => (el.type === 'text' ? el.fontFamily ?? 'Inter' : 'Inter'))
+    const fontSizeValues = textElements.map((el) => el.fontSize ?? 48)
+    const colorValues = textElements.map((el) => el.style?.color ?? '#111827')
+    const highlightValues = textElements.map((el) => el.style?.highlight ?? null)
+    const backgroundValues = textElements.map((el) => el.style?.background ?? null)
 
-    const allBold = boldValues.every(Boolean)
-    const noneBold = boldValues.every((v) => !v)
-    const bold: boolean | 'mixed' = allBold ? true : noneBold ? false : 'mixed'
+    const bold = computeBoolConsensus(boldValues)
+    const italic = computeBoolConsensus(italicValues)
+    const underline = computeBoolConsensus(underlineValues)
+    const strikethrough = computeBoolConsensus(strikethroughValues)
+    const bullets = computeBoolConsensus(bulletsValues)
+    const align = computeConsensus(alignValues) as TextAlign | 'mixed'
+    const fontFamily = computeConsensus(fontFamilyValues)
+    const fontSize = computeConsensus(fontSizeValues)
+    const color = computeConsensus(colorValues)
 
-    const allItalic = italicValues.every(Boolean)
-    const noneItalic = italicValues.every((v) => !v)
-    const italic: boolean | 'mixed' = allItalic ? true : noneItalic ? false : 'mixed'
+    // For highlight and background, compare by JSON since they can be objects
+    const highlightFirst = highlightValues[0]
+    const highlightAllSame = highlightValues.every((v) => JSON.stringify(v) === JSON.stringify(highlightFirst))
+    const highlight = highlightAllSame ? highlightFirst : 'mixed' as const
 
-    const firstAlign = alignValues[0]
-    const allSameAlign = alignValues.every((v) => v === firstAlign)
-    const align: TextAlign | 'mixed' = allSameAlign ? firstAlign : 'mixed'
+    const bgFirst = backgroundValues[0]
+    const bgAllSame = backgroundValues.every((v) => JSON.stringify(v) === JSON.stringify(bgFirst))
+    const background = bgAllSame ? bgFirst : 'mixed' as const
 
-    return { bold, italic, align, hasTextElements: true }
+    return {
+      bold,
+      italic,
+      underline,
+      strikethrough,
+      align,
+      bullets,
+      fontFamily,
+      fontSize,
+      color,
+      highlight,
+      background,
+      hasTextElements: true,
+    }
   }, [selectedIds, elements, supportsTextStyle])
 
   const upsertElement = useCallback((element: BoardElement) => {
@@ -2713,6 +2861,40 @@ const shapeCreationRef = useRef<
     [selectedIds, elements, supportsTextStyle, sendElementsUpdate, boardId, persistElementsUpdate]
   )
 
+  // Apply element-level property updates (fontFamily, fontSize) to selected text elements
+  const applyTextElementUpdate = useCallback(
+    (patch: Partial<Pick<TextElement, 'fontFamily' | 'fontSize'>>) => {
+      const textElements = Array.from(selectedIds)
+        .map((id) => elements[id])
+        .filter((el): el is TextElement => el?.type === 'text')
+
+      if (textElements.length === 0) return
+
+      const updatedElements: BoardElement[] = textElements.map((el) => ({
+        ...el,
+        ...patch,
+      }))
+
+      // Update local state
+      setElements((prev) => {
+        const next = { ...prev }
+        updatedElements.forEach((el) => {
+          next[el.id] = el
+        })
+        return next
+      })
+
+      // Broadcast via WS
+      sendElementsUpdate(updatedElements)
+
+      // Persist to backend
+      if (boardId) {
+        void persistElementsUpdate(boardId, updatedElements)
+      }
+    },
+    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate]
+  )
+
   const handleToggleBold = useCallback(() => {
     const newBold = selectionFormatState.bold !== true
     applyStyleToSelection({ fontWeight: newBold ? 700 : 400 })
@@ -2723,18 +2905,44 @@ const shapeCreationRef = useRef<
     applyStyleToSelection({ fontStyle: newItalic ? 'italic' : 'normal' })
   }, [selectionFormatState.italic, applyStyleToSelection])
 
-  const handleCycleAlign = useCallback(() => {
-    const current = selectionFormatState.align
-    let next: TextAlign
-    if (current === 'left' || current === 'mixed') {
-      next = 'center'
-    } else if (current === 'center') {
-      next = 'right'
-    } else {
-      next = 'left'
-    }
-    applyStyleToSelection({ textAlign: next })
-  }, [selectionFormatState.align, applyStyleToSelection])
+  const handleToggleUnderline = useCallback(() => {
+    const newUnderline = selectionFormatState.underline !== true
+    applyStyleToSelection({ underline: newUnderline })
+  }, [selectionFormatState.underline, applyStyleToSelection])
+
+  const handleToggleStrikethrough = useCallback(() => {
+    const newStrikethrough = selectionFormatState.strikethrough !== true
+    applyStyleToSelection({ strikethrough: newStrikethrough })
+  }, [selectionFormatState.strikethrough, applyStyleToSelection])
+
+  const handleSetAlign = useCallback((align: TextAlign) => {
+    applyStyleToSelection({ textAlign: align })
+  }, [applyStyleToSelection])
+
+  const handleToggleBullets = useCallback(() => {
+    const newBullets = selectionFormatState.bullets !== true
+    applyStyleToSelection({ bullets: newBullets })
+  }, [selectionFormatState.bullets, applyStyleToSelection])
+
+  const handleSetFontFamily = useCallback((fontFamily: string) => {
+    applyTextElementUpdate({ fontFamily })
+  }, [applyTextElementUpdate])
+
+  const handleSetFontSize = useCallback((fontSize: number) => {
+    applyTextElementUpdate({ fontSize })
+  }, [applyTextElementUpdate])
+
+  const handleSetColor = useCallback((color: string) => {
+    applyStyleToSelection({ color })
+  }, [applyStyleToSelection])
+
+  const handleSetHighlight = useCallback((highlight: string | null) => {
+    applyStyleToSelection({ highlight })
+  }, [applyStyleToSelection])
+
+  const handleSetBackground = useCallback((background: TextBackground | null) => {
+    applyStyleToSelection({ background })
+  }, [applyStyleToSelection])
 
   // TODO(phase-6.2.5): Editing UX is sticky-exclusive; add an element-type switch when
   // TextElement editing arrives so keyboard shortcuts + overlay pick the correct component.
@@ -5344,7 +5552,15 @@ const shapeCreationRef = useRef<
         formatState={selectionFormatState}
         onToggleBold={handleToggleBold}
         onToggleItalic={handleToggleItalic}
-        onCycleAlign={handleCycleAlign}
+        onToggleUnderline={handleToggleUnderline}
+        onToggleStrikethrough={handleToggleStrikethrough}
+        onSetAlign={handleSetAlign}
+        onToggleBullets={handleToggleBullets}
+        onSetFontFamily={handleSetFontFamily}
+        onSetFontSize={handleSetFontSize}
+        onSetColor={handleSetColor}
+        onSetHighlight={handleSetHighlight}
+        onSetBackground={handleSetBackground}
       />
       {marquee && (
         <div

@@ -4,10 +4,21 @@ export interface CanvasElement {
   createdAt?: number
 }
 
+export interface TextBackground {
+  color: string
+  opacity: number
+}
+
 export interface TextStyle {
   fontWeight?: 400 | 700
   fontStyle?: 'normal' | 'italic'
   textAlign?: 'left' | 'center' | 'right'
+  underline?: boolean
+  strikethrough?: boolean
+  bullets?: boolean
+  color?: string
+  highlight?: string | null
+  background?: TextBackground | null
 }
 
 export interface StickyNoteElement extends CanvasElement {
@@ -25,6 +36,7 @@ export interface TextElement extends CanvasElement {
   x: number
   y: number
   text: string
+  fontFamily?: string
   fontSize?: number
   w?: number
   scale?: number
