@@ -46,7 +46,11 @@ import {
   type TextElementBounds,
   type TransformBounds,
 } from './canvas/utils'
-import { FloatingSelectionToolbar } from './toolbar/FloatingSelectionToolbar'
+import {
+  FloatingSelectionToolbar,
+  type SelectionFormatState,
+  type TextAlign,
+} from './toolbar/FloatingSelectionToolbar'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
@@ -65,6 +69,7 @@ import type {
   LineElement,
   LineEndpointBinding,
   ConnectorAnchor,
+  TextStyle,
 } from '@shared/boardElements'
 
 console.log("CANVASBOARD_BUILD", "4e3d65c")
@@ -1424,7 +1429,8 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
   const radius = STICKY_CORNER_RADIUS * camera.zoom
-  const { paddingY } = getStickyPadding(element)
+  const { paddingX, paddingY } = getStickyPadding(element)
+  const paddingXScreen = paddingX * camera.zoom
   const paddingYScreen = paddingY * camera.zoom
   const fontSize = getElementFontSize(element) * camera.zoom
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
@@ -1440,16 +1446,28 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
   ctx.fillRect(screenX + radius, screenY + 2 * camera.zoom, width - radius * 2, 6 * camera.zoom)
   ctx.fillStyle = STICKY_TEXT_COLOR
-  ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
+  // Build font string with style
+  const fontWeight = element.style?.fontWeight ?? 400
+  const fontStyle = element.style?.fontStyle ?? 'normal'
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'top'
-  ctx.textAlign = 'center'
+  const textAlign = element.style?.textAlign ?? 'center'
+  ctx.textAlign = textAlign
   const inner = getStickyInnerSize(element)
   const innerWidth = inner.width * camera.zoom
   const innerHeight = inner.height * camera.zoom
   const lines = wrapText(ctx, element.text, innerWidth, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = Math.max(0, (innerHeight - totalHeight) / 2)
-  const textX = screenX + width / 2
+  // Calculate textX based on alignment
+  let textX: number
+  if (textAlign === 'left') {
+    textX = screenX + paddingXScreen
+  } else if (textAlign === 'right') {
+    textX = screenX + width - paddingXScreen
+  } else {
+    textX = screenX + width / 2
+  }
   lines.forEach((line, index) => {
     const textY = screenY + paddingYScreen + offsetY + index * lineHeight
     ctx.fillText(line, textX, textY, innerWidth)
@@ -1471,11 +1489,23 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   ctx.scale(scaleFactor, scaleFactor)
   ctx.translate(-bounds.width / 2 + layoutInfo.inset, -bounds.height / 2 + layoutInfo.inset)
   ctx.fillStyle = TEXT_COLOR
-  ctx.font = `${fontSize}px ${STICKY_FONT_FAMILY}`
+  // Build font string with style
+  const fontWeight = element.style?.fontWeight ?? 400
+  const fontStyle = element.style?.fontStyle ?? 'normal'
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'alphabetic'
-  ctx.textAlign = 'left'
+  const textAlign = element.style?.textAlign ?? 'left'
+  ctx.textAlign = textAlign
+  // Calculate x offset based on alignment
+  const textBlockWidth = layoutInfo.wrapWidth
   layoutInfo.layout.lines.forEach((line, index) => {
-    ctx.fillText(line, 0, layoutInfo.layout.baselineOffsets[index])
+    let xOffset = 0
+    if (textAlign === 'center') {
+      xOffset = (textBlockWidth - layoutInfo.layout.lineWidths[index]) / 2
+    } else if (textAlign === 'right') {
+      xOffset = textBlockWidth - layoutInfo.layout.lineWidths[index]
+    }
+    ctx.fillText(line, xOffset, layoutInfo.layout.baselineOffsets[index])
   })
   ctx.restore()
 }
@@ -2554,6 +2584,40 @@ const shapeCreationRef = useRef<
     setCameraState({ offsetX, offsetY, zoom: newZoom })
   }, [elements])
 
+  // Helper to check if an element supports text styling
+  const supportsTextStyle = useCallback((element: BoardElement): element is StickyNoteElement | TextElement => {
+    return element.type === 'sticky' || element.type === 'text'
+  }, [])
+
+  // Compute format state from current selection
+  const selectionFormatState = useMemo((): SelectionFormatState => {
+    const textElements = Array.from(selectedIds)
+      .map((id) => elements[id])
+      .filter((el): el is StickyNoteElement | TextElement => el && supportsTextStyle(el))
+
+    if (textElements.length === 0) {
+      return { bold: false, italic: false, align: 'left', hasTextElements: false }
+    }
+
+    const boldValues = textElements.map((el) => el.style?.fontWeight === 700)
+    const italicValues = textElements.map((el) => el.style?.fontStyle === 'italic')
+    const alignValues = textElements.map((el) => el.style?.textAlign ?? (el.type === 'sticky' ? 'center' : 'left'))
+
+    const allBold = boldValues.every(Boolean)
+    const noneBold = boldValues.every((v) => !v)
+    const bold: boolean | 'mixed' = allBold ? true : noneBold ? false : 'mixed'
+
+    const allItalic = italicValues.every(Boolean)
+    const noneItalic = italicValues.every((v) => !v)
+    const italic: boolean | 'mixed' = allItalic ? true : noneItalic ? false : 'mixed'
+
+    const firstAlign = alignValues[0]
+    const allSameAlign = alignValues.every((v) => v === firstAlign)
+    const align: TextAlign | 'mixed' = allSameAlign ? firstAlign : 'mixed'
+
+    return { bold, italic, align, hasTextElements: true }
+  }, [selectedIds, elements, supportsTextStyle])
+
   const upsertElement = useCallback((element: BoardElement) => {
     setElements((prev) => ({ ...prev, [element.id]: element }))
   }, [])
@@ -2614,6 +2678,63 @@ const shapeCreationRef = useRef<
     },
     []
   )
+
+  // Apply a style patch to selected text elements
+  const applyStyleToSelection = useCallback(
+    (stylePatch: Partial<TextStyle>) => {
+      const textElements = Array.from(selectedIds)
+        .map((id) => elements[id])
+        .filter((el): el is StickyNoteElement | TextElement => el && supportsTextStyle(el))
+
+      if (textElements.length === 0) return
+
+      const updatedElements: BoardElement[] = textElements.map((el) => ({
+        ...el,
+        style: { ...el.style, ...stylePatch },
+      }))
+
+      // Update local state
+      setElements((prev) => {
+        const next = { ...prev }
+        updatedElements.forEach((el) => {
+          next[el.id] = el
+        })
+        return next
+      })
+
+      // Broadcast via WS
+      sendElementsUpdate(updatedElements)
+
+      // Persist to backend
+      if (boardId) {
+        void persistElementsUpdate(boardId, updatedElements)
+      }
+    },
+    [selectedIds, elements, supportsTextStyle, sendElementsUpdate, boardId, persistElementsUpdate]
+  )
+
+  const handleToggleBold = useCallback(() => {
+    const newBold = selectionFormatState.bold !== true
+    applyStyleToSelection({ fontWeight: newBold ? 700 : 400 })
+  }, [selectionFormatState.bold, applyStyleToSelection])
+
+  const handleToggleItalic = useCallback(() => {
+    const newItalic = selectionFormatState.italic !== true
+    applyStyleToSelection({ fontStyle: newItalic ? 'italic' : 'normal' })
+  }, [selectionFormatState.italic, applyStyleToSelection])
+
+  const handleCycleAlign = useCallback(() => {
+    const current = selectionFormatState.align
+    let next: TextAlign
+    if (current === 'left' || current === 'mixed') {
+      next = 'center'
+    } else if (current === 'center') {
+      next = 'right'
+    } else {
+      next = 'left'
+    }
+    applyStyleToSelection({ textAlign: next })
+  }, [selectionFormatState.align, applyStyleToSelection])
 
   // TODO(phase-6.2.5): Editing UX is sticky-exclusive; add an element-type switch when
   // TextElement editing arrives so keyboard shortcuts + overlay pick the correct component.
@@ -5220,6 +5341,10 @@ const shapeCreationRef = useRef<
       <FloatingSelectionToolbar
         selectionBoundsScreen={selectionBoundsScreen}
         isVisible={showFloatingToolbar}
+        formatState={selectionFormatState}
+        onToggleBold={handleToggleBold}
+        onToggleItalic={handleToggleItalic}
+        onCycleAlign={handleCycleAlign}
       />
       {marquee && (
         <div
@@ -5257,6 +5382,9 @@ const shapeCreationRef = useRef<
                   : undefined,
               fontSize: `${editingStickyFontSizePx}px`,
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
+              fontWeight: editingStickyElement.style?.fontWeight ?? 400,
+              fontStyle: editingStickyElement.style?.fontStyle ?? 'normal',
+              textAlign: editingStickyElement.style?.textAlign ?? 'center',
             }}
             onPointerDown={(event) => {
               event.stopPropagation()
@@ -5320,6 +5448,9 @@ const shapeCreationRef = useRef<
                 fontSize: `${editingTextFontSizePx}px`,
                 lineHeight: TEXT_LINE_HEIGHT,
                 padding: `${TEXT_SAFETY_INSET}px`,
+                fontWeight: editingTextElement.style?.fontWeight ?? 400,
+                fontStyle: editingTextElement.style?.fontStyle ?? 'normal',
+                textAlign: editingTextElement.style?.textAlign ?? 'left',
               }}
               onInput={syncEditingTextFromDom}
               onKeyDown={(event) => {

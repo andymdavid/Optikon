@@ -4,6 +4,12 @@ export interface CanvasElement {
   createdAt?: number
 }
 
+export interface TextStyle {
+  fontWeight?: 400 | 700
+  fontStyle?: 'normal' | 'italic'
+  textAlign?: 'left' | 'center' | 'right'
+}
+
 export interface StickyNoteElement extends CanvasElement {
   type: 'sticky'
   x: number
@@ -11,6 +17,7 @@ export interface StickyNoteElement extends CanvasElement {
   text: string
   size?: number
   fontSize?: number
+  style?: TextStyle
 }
 
 export interface TextElement extends CanvasElement {
@@ -22,6 +29,7 @@ export interface TextElement extends CanvasElement {
   w?: number
   scale?: number
   rotation?: number
+  style?: TextStyle
 }
 
 export interface RectangleElement extends CanvasElement {

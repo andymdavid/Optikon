@@ -8,17 +8,29 @@ export type SelectionBoundsScreen = {
   bottom: number
 } | null
 
+export type TextAlign = 'left' | 'center' | 'right'
+
+export type SelectionFormatState = {
+  bold: boolean | 'mixed'
+  italic: boolean | 'mixed'
+  align: TextAlign | 'mixed'
+  hasTextElements: boolean
+}
+
 export type FloatingSelectionToolbarProps = {
   selectionBoundsScreen: SelectionBoundsScreen
   isVisible: boolean
+  formatState: SelectionFormatState
+  onToggleBold: () => void
+  onToggleItalic: () => void
+  onCycleAlign: () => void
 }
 
 const TOOLBAR_HEIGHT = 44
 const TOOLBAR_GAP = 28 // Clear the selection frame padding (18px) + resize handles (6px) + buffer
 const VIEWPORT_MARGIN = 12
 
-// Placeholder button styling
-const buttonStyle: CSSProperties = {
+const buttonBaseStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -31,6 +43,13 @@ const buttonStyle: CSSProperties = {
   color: '#374151',
   fontSize: 14,
   fontWeight: 500,
+  transition: 'background 0.1s',
+}
+
+const activeButtonStyle: CSSProperties = {
+  ...buttonBaseStyle,
+  background: '#e0f2fe',
+  color: '#0ea5e9',
 }
 
 const separatorStyle: CSSProperties = {
@@ -40,15 +59,48 @@ const separatorStyle: CSSProperties = {
   margin: '0 4px',
 }
 
+function AlignIcon({ align }: { align: TextAlign | 'mixed' }) {
+  if (align === 'left' || align === 'mixed') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="2" y="3" width="12" height="2" rx="0.5" />
+        <rect x="2" y="7" width="8" height="2" rx="0.5" />
+        <rect x="2" y="11" width="10" height="2" rx="0.5" />
+      </svg>
+    )
+  }
+  if (align === 'center') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <rect x="2" y="3" width="12" height="2" rx="0.5" />
+        <rect x="4" y="7" width="8" height="2" rx="0.5" />
+        <rect x="3" y="11" width="10" height="2" rx="0.5" />
+      </svg>
+    )
+  }
+  // right
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <rect x="2" y="3" width="12" height="2" rx="0.5" />
+      <rect x="6" y="7" width="8" height="2" rx="0.5" />
+      <rect x="4" y="11" width="10" height="2" rx="0.5" />
+    </svg>
+  )
+}
+
 export function FloatingSelectionToolbar({
   selectionBoundsScreen,
   isVisible,
+  formatState,
+  onToggleBold,
+  onToggleItalic,
+  onCycleAlign,
 }: FloatingSelectionToolbarProps) {
   const position = useMemo(() => {
     if (!selectionBoundsScreen) return null
 
     const bounds = selectionBoundsScreen
-    const toolbarWidth = 200 // Approximate width for placeholder buttons
+    const toolbarWidth = 200 // Approximate width for buttons
 
     // Calculate horizontal center of selection
     const selectionCenterX = (bounds.left + bounds.right) / 2
@@ -98,6 +150,27 @@ export function FloatingSelectionToolbar({
     pointerEvents: 'auto',
   }
 
+  const isBoldActive = formatState.bold === true
+  const isItalicActive = formatState.italic === true
+  const currentAlign = formatState.align === 'mixed' ? 'left' : formatState.align
+
+  const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>, isActive: boolean) => {
+    if (!isActive) {
+      e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
+    }
+  }
+
+  const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>, isActive: boolean) => {
+    if (!isActive) {
+      e.currentTarget.style.background = 'transparent'
+    }
+  }
+
+  // Don't show formatting buttons if no text elements in selection
+  if (!formatState.hasTextElements) {
+    return null
+  }
+
   return createPortal(
     <div
       className="floating-selection-toolbar"
@@ -105,62 +178,44 @@ export function FloatingSelectionToolbar({
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* Placeholder buttons - these will be replaced with real actions later */}
       <button
         type="button"
-        style={buttonStyle}
+        style={isBoldActive ? activeButtonStyle : buttonBaseStyle}
         title="Bold"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-        }}
+        onClick={onToggleBold}
+        onMouseEnter={(e) => handleMouseEnter(e, isBoldActive)}
+        onMouseLeave={(e) => handleMouseLeave(e, isBoldActive)}
       >
         <strong>B</strong>
       </button>
       <button
         type="button"
-        style={buttonStyle}
+        style={isItalicActive ? activeButtonStyle : buttonBaseStyle}
         title="Italic"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-        }}
+        onClick={onToggleItalic}
+        onMouseEnter={(e) => handleMouseEnter(e, isItalicActive)}
+        onMouseLeave={(e) => handleMouseLeave(e, isItalicActive)}
       >
         <em>I</em>
       </button>
       <div style={separatorStyle} />
       <button
         type="button"
-        style={buttonStyle}
-        title="Align"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-        }}
+        style={buttonBaseStyle}
+        title={`Align ${currentAlign}`}
+        onClick={onCycleAlign}
+        onMouseEnter={(e) => handleMouseEnter(e, false)}
+        onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <rect x="2" y="3" width="12" height="2" rx="0.5" />
-          <rect x="4" y="7" width="8" height="2" rx="0.5" />
-          <rect x="2" y="11" width="12" height="2" rx="0.5" />
-        </svg>
+        <AlignIcon align={formatState.align} />
       </button>
       <div style={separatorStyle} />
       <button
         type="button"
-        style={{ ...buttonStyle, position: 'relative' }}
-        title="Color"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-        }}
+        style={{ ...buttonBaseStyle, position: 'relative' }}
+        title="Color (coming soon)"
+        onMouseEnter={(e) => handleMouseEnter(e, false)}
+        onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -168,14 +223,10 @@ export function FloatingSelectionToolbar({
       </button>
       <button
         type="button"
-        style={buttonStyle}
-        title="More"
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.06)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'transparent'
-        }}
+        style={buttonBaseStyle}
+        title="More (coming soon)"
+        onMouseEnter={(e) => handleMouseEnter(e, false)}
+        onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <circle cx="3" cy="8" r="1.5" />
