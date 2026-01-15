@@ -77,7 +77,9 @@ export function measureTextLayout(
   fontSizePx: number,
   maxWidthPx: number,
   fontFamily: string,
-  lineHeightMultiplier: number
+  lineHeightMultiplier: number,
+  fontWeight: 400 | 700 = 400,
+  fontStyle: 'normal' | 'italic' = 'normal'
 ): TextLayout {
   const normalizedText = typeof text === 'string' ? text : ''
   if (!ctx) {
@@ -99,7 +101,7 @@ export function measureTextLayout(
     }
   }
 
-  ctx.font = `${fontSizePx}px ${fontFamily}`
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSizePx}px ${fontFamily}`
   const lineAdvance = Math.max(1, fontSizePx * lineHeightMultiplier)
   const lines: string[] = []
   const lineWidths: number[] = []
@@ -188,9 +190,12 @@ export function getTextLayoutForContent(
   text: string,
   fontSize: number,
   wrapWidth: number,
-  ctx: CanvasRenderingContext2D | null
+  ctx: CanvasRenderingContext2D | null,
+  fontFamily: string = STICKY_FONT_FAMILY,
+  fontWeight: 400 | 700 = 400,
+  fontStyle: 'normal' | 'italic' = 'normal'
 ): TextLayout {
-  return measureTextLayout(ctx, text, fontSize, wrapWidth, STICKY_FONT_FAMILY, TEXT_LINE_HEIGHT)
+  return measureTextLayout(ctx, text, fontSize, wrapWidth, fontFamily, TEXT_LINE_HEIGHT, fontWeight, fontStyle)
 }
 
 export function resolveTextFontSize(value: unknown) {
@@ -227,7 +232,10 @@ export function getTextElementLayout(
 ): TextElementLayoutInfo {
   const fontSize = resolveTextFontSize(element.fontSize)
   const wrapWidth = resolveTextWrapWidth(element.w)
-  const layout = getTextLayoutForContent(element.text ?? '', fontSize, wrapWidth, ctx)
+  const fontFamily = element.fontFamily ?? STICKY_FONT_FAMILY
+  const fontWeight = element.style?.fontWeight ?? 400
+  const fontStyle = element.style?.fontStyle ?? 'normal'
+  const layout = getTextLayoutForContent(element.text ?? '', fontSize, wrapWidth, ctx, fontFamily, fontWeight, fontStyle)
   const inset = TEXT_SAFETY_INSET
   const height = layout.totalHeight + inset * 2
   const width = wrapWidth + inset * 2
