@@ -52,6 +52,7 @@ import {
   type TextAlign,
   type TextBackground,
 } from './toolbar/FloatingSelectionToolbar'
+import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
@@ -1446,10 +1447,12 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.fill()
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
   ctx.fillRect(screenX + radius, screenY + 2 * camera.zoom, width - radius * 2, 6 * camera.zoom)
-  ctx.fillStyle = STICKY_TEXT_COLOR
   // Build font string with style
   const fontWeight = element.style?.fontWeight ?? 400
   const fontStyle = element.style?.fontStyle ?? 'normal'
+  const link = element.style?.link ?? null
+  // If element has a link, use link color
+  ctx.fillStyle = link ? '#0EA5E9' : STICKY_TEXT_COLOR
   ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
   ctx.textBaseline = 'top'
   const textAlign = element.style?.textAlign ?? 'center'
@@ -1472,6 +1475,25 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   lines.forEach((line, index) => {
     const textY = screenY + paddingYScreen + offsetY + index * lineHeight
     ctx.fillText(line, textX, textY, innerWidth)
+    // Draw underline if element has a link
+    if (link) {
+      const lineWidth = ctx.measureText(line).width
+      let underlineStartX: number
+      if (textAlign === 'left') {
+        underlineStartX = textX
+      } else if (textAlign === 'right') {
+        underlineStartX = textX - lineWidth
+      } else {
+        underlineStartX = textX - lineWidth / 2
+      }
+      ctx.strokeStyle = '#0EA5E9'
+      ctx.lineWidth = Math.max(1, fontSize / 14)
+      const underlineY = textY + fontSize * 1.1
+      ctx.beginPath()
+      ctx.moveTo(underlineStartX, underlineY)
+      ctx.lineTo(underlineStartX + lineWidth, underlineY)
+      ctx.stroke()
+    }
   })
   ctx.restore()
 }
@@ -1487,8 +1509,10 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   const fontStyle = element.style?.fontStyle ?? 'normal'
   const fontFamily = element.fontFamily ?? STICKY_FONT_FAMILY
   const textAlign = element.style?.textAlign ?? 'left'
-  const textColor = element.style?.color ?? TEXT_COLOR
-  const underline = element.style?.underline ?? false
+  const link = element.style?.link ?? null
+  // If element has a link, use link color and force underline
+  const textColor = link ? '#0EA5E9' : (element.style?.color ?? TEXT_COLOR)
+  const underline = link ? true : (element.style?.underline ?? false)
   const strikethrough = element.style?.strikethrough ?? false
   const highlight = element.style?.highlight ?? null
   const background = element.style?.background ?? null
@@ -2528,6 +2552,8 @@ const shapeCreationRef = useRef<
   const [commentPopoverMode, setCommentPopoverMode] = useState<'closed' | 'view' | 'edit'>('closed')
   const [editingCommentDraft, setEditingCommentDraft] = useState('')
   const isCommentEditing = commentPopoverMode === 'edit'
+  const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
+  const [linkPopoverPosition, setLinkPopoverPosition] = useState<{ x: number; y: number } | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -2699,6 +2725,7 @@ const shapeCreationRef = useRef<
       color: '#111827',
       highlight: null,
       background: null,
+      link: null,
       hasTextElements: false,
     }
 
@@ -2730,6 +2757,7 @@ const shapeCreationRef = useRef<
     const colorValues = textElements.map((el) => el.style?.color ?? '#111827')
     const highlightValues = textElements.map((el) => el.style?.highlight ?? null)
     const backgroundValues = textElements.map((el) => el.style?.background ?? null)
+    const linkValues = textElements.map((el) => el.style?.link ?? null)
 
     const bold = computeBoolConsensus(boldValues)
     const italic = computeBoolConsensus(italicValues)
@@ -2750,6 +2778,10 @@ const shapeCreationRef = useRef<
     const bgAllSame = backgroundValues.every((v) => JSON.stringify(v) === JSON.stringify(bgFirst))
     const background = bgAllSame ? bgFirst : 'mixed' as const
 
+    const linkFirst = linkValues[0]
+    const linkAllSame = linkValues.every((v) => v === linkFirst)
+    const link = linkAllSame ? linkFirst : 'mixed' as const
+
     return {
       bold,
       italic,
@@ -2762,6 +2794,7 @@ const shapeCreationRef = useRef<
       color,
       highlight,
       background,
+      link,
       hasTextElements: true,
     }
   }, [selectedIds, elements, supportsTextStyle])
@@ -2943,6 +2976,26 @@ const shapeCreationRef = useRef<
   const handleSetBackground = useCallback((background: TextBackground | null) => {
     applyStyleToSelection({ background })
   }, [applyStyleToSelection])
+
+  const handleSetLink = useCallback((link: string | null) => {
+    applyStyleToSelection({ link })
+    setLinkPopoverOpen(false)
+    setLinkPopoverPosition(null)
+  }, [applyStyleToSelection])
+
+  const handleOpenLinkPopover = useCallback(() => {
+    if (!selectionBoundsScreen) return
+    // Position popover below the center of the selection
+    const x = (selectionBoundsScreen.left + selectionBoundsScreen.right) / 2
+    const y = selectionBoundsScreen.bottom
+    setLinkPopoverPosition({ x, y })
+    setLinkPopoverOpen(true)
+  }, [selectionBoundsScreen])
+
+  const handleCloseLinkPopover = useCallback(() => {
+    setLinkPopoverOpen(false)
+    setLinkPopoverPosition(null)
+  }, [])
 
   // TODO(phase-6.2.5): Editing UX is sticky-exclusive; add an element-type switch when
   // TextElement editing arrives so keyboard shortcuts + overlay pick the correct component.
@@ -5561,10 +5614,14 @@ const shapeCreationRef = useRef<
         onSetColor={handleSetColor}
         onSetHighlight={handleSetHighlight}
         onSetBackground={handleSetBackground}
-        onInsertLink={() => {
-          // TODO: Implement link insertion dialog
-          console.log('Insert link clicked')
-        }}
+        onInsertLink={handleOpenLinkPopover}
+      />
+      <LinkInsertPopover
+        isOpen={linkPopoverOpen}
+        anchorPosition={linkPopoverPosition}
+        currentLink={selectionFormatState.link === 'mixed' ? null : selectionFormatState.link}
+        onApply={handleSetLink}
+        onCancel={handleCloseLinkPopover}
       />
       {marquee && (
         <div

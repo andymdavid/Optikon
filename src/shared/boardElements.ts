@@ -19,6 +19,7 @@ export interface TextStyle {
   color?: string
   highlight?: string | null
   background?: TextBackground | null
+  link?: string | null
 }
 
 export interface StickyNoteElement extends CanvasElement {

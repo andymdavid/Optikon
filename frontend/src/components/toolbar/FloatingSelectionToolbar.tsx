@@ -39,6 +39,7 @@ export type SelectionFormatState = {
   color: string | 'mixed'
   highlight: string | null | 'mixed'
   background: TextBackground | null | 'mixed'
+  link: string | null | 'mixed'
   hasTextElements: boolean
 }
 
