@@ -98,13 +98,9 @@ export function AccountMenu() {
         onMouseDownCapture={stopPropagation}
         onClickCapture={stopPropagation}
       >
-        <button
-          className="account-menu__signin"
-          type="button"
-          onClick={() => window.location.assign(`${API_BASE_URL}/`)}
-        >
+        <a className="account-menu__signin" href={`${API_BASE_URL}/`}>
           Sign in
-        </button>
+        </a>
       </div>
     )
   }
