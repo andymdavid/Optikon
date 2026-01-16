@@ -122,17 +122,21 @@ export function AccountMenu() {
       </button>
       {menuOpen && (
         <div className="account-menu__dropdown" role="menu">
-          <button className="account-menu__item" type="button" onClick={() => handleCopy(session.npub)}>
+          <button className="account-menu__item" type="button" onClick={() => void handleCopy(session.npub)}>
             Copy npub
           </button>
-          <button className="account-menu__item" type="button" onClick={() => handleCopy(session.pubkey)}>
+          <button className="account-menu__item" type="button" onClick={() => void handleCopy(session.pubkey)}>
             Copy pubkey
           </button>
           <button className="account-menu__item" type="button" disabled>
             Account
           </button>
           <div className="account-menu__divider" />
-          <button className="account-menu__item account-menu__item--danger" type="button" onClick={handleLogout}>
+          <button
+            className="account-menu__item account-menu__item--danger"
+            type="button"
+            onClick={() => void handleLogout()}
+          >
             Logout
           </button>
         </div>
