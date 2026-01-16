@@ -103,7 +103,7 @@
   margin: 4px 0;
 }
 
-.auth-modal {
+.nostr-login-modal {
   position: fixed;
   inset: 0;
   display: flex;
@@ -114,22 +114,115 @@
   z-index: 80;
 }
 
-.auth-modal__panel {
-  width: min(960px, 92vw);
-  height: min(720px, 88vh);
-  background: #f6f6f6;
+.nostr-login-modal__panel {
+  width: min(860px, 92vw);
+  max-height: 90vh;
+  background: #f5f5f5;
   border-radius: 24px;
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid rgba(15, 23, 42, 0.1);
+  padding: 28px;
 }
 
-.auth-modal__frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
+.nostr-login-card {
   background: #ffffff;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  padding: 28px;
+}
+
+.nostr-login-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  color: #0f172a;
+}
+
+.nostr-login-description {
+  margin: 0 0 1.5rem;
+  color: #5b6472;
+  font-size: 1.05rem;
+}
+
+.nostr-login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.nostr-login-option {
+  padding: 0.9rem 1.2rem;
+  border: 1px solid #111;
+  background: #ffffff;
+  color: #111;
+  border-radius: 12px;
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nostr-login-option:hover:not(:disabled) {
+  background: #111;
+  color: #fff;
+}
+
+.nostr-login-option:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.nostr-login-advanced {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #d1d5db;
+}
+
+.nostr-login-advanced summary {
+  cursor: pointer;
+  color: #2f2f2f;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.nostr-login-advanced p {
+  margin: 0.75rem 0 1rem;
+  color: #5b6472;
+}
+
+.nostr-login-form {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.nostr-login-input {
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  font-size: 1rem;
+}
+
+.nostr-login-submit {
+  align-self: flex-start;
+  padding: 0.55rem 1.2rem;
+  border-radius: 999px;
+  background: #111;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.nostr-login-submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.nostr-login-error {
+  margin-top: 0.85rem;
+  color: #b91c1c;
+  font-size: 0.95rem;
 }
 
 .canvas-board {
