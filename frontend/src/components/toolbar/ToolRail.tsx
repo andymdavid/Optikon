@@ -1,4 +1,17 @@
 import { type CSSProperties } from 'react'
+import {
+  MousePointer2,
+  StickyNote,
+  Type,
+  Square,
+  Circle,
+  Diamond,
+  Triangle,
+  MessageSquare,
+  MoveUpRight,
+  Frame,
+  CircleAlert,
+} from 'lucide-react'
 
 export type ToolMode =
   | 'select'
@@ -26,48 +39,27 @@ const TOOLS: ToolDefinition[] = [
   {
     mode: 'select',
     label: 'Select',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-        <path d="M4 2l12 9-5 1.5L9 18l-1.5-5L4 2z" />
-      </svg>
-    ),
+    icon: <MousePointer2 size={20} fill="currentColor" stroke="none" />,
   },
   {
     mode: 'sticky',
     label: 'Sticky Note',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="3" width="14" height="14" rx="1" />
-        <path d="M6 7h8M6 10h8M6 13h4" />
-      </svg>
-    ),
+    icon: <StickyNote size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'text',
     label: 'Text',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-        <path d="M4 4v3h1V5h4v10H7v1h6v-1h-2V5h4v2h1V4H4z" />
-      </svg>
-    ),
+    icon: <Type size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'rect',
     label: 'Rectangle',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="4" width="14" height="12" rx="1" />
-      </svg>
-    ),
+    icon: <Square size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'ellipse',
     label: 'Ellipse',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <ellipse cx="10" cy="10" rx="7" ry="5" />
-      </svg>
-    ),
+    icon: <Circle size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'roundRect',
@@ -81,29 +73,17 @@ const TOOLS: ToolDefinition[] = [
   {
     mode: 'diamond',
     label: 'Diamond',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M10 2L18 10L10 18L2 10Z" />
-      </svg>
-    ),
+    icon: <Diamond size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'triangle',
     label: 'Triangle',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M10 3L18 17H2Z" />
-      </svg>
-    ),
+    icon: <Triangle size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'speechBubble',
     label: 'Speech Bubble',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M3 4h14a1 1 0 011 1v8a1 1 0 01-1 1H8l-3 3v-3H3a1 1 0 01-1-1V5a1 1 0 011-1z" />
-      </svg>
-    ),
+    icon: <MessageSquare size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'line',
@@ -117,11 +97,7 @@ const TOOLS: ToolDefinition[] = [
   {
     mode: 'arrow',
     label: 'Arrow',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M4 16L16 4M16 4v6M16 4h-6" />
-      </svg>
-    ),
+    icon: <MoveUpRight size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'elbow',
@@ -135,22 +111,12 @@ const TOOLS: ToolDefinition[] = [
   {
     mode: 'frame',
     label: 'Frame',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="5" width="14" height="12" rx="1" />
-        <path d="M3 3h6" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <Frame size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'comment',
     label: 'Comment',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <circle cx="10" cy="10" r="7" />
-        <path d="M10 6v4M10 13v1" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <CircleAlert size={20} strokeWidth={1.5} />,
   },
 ]
 
