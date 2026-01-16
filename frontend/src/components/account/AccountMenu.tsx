@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+
+import { AuthModal } from './AuthModal'
 
 type SessionInfo = {
   pubkey: string
@@ -21,6 +23,7 @@ const formatNpub = (npub: string) => {
 export function AccountMenu() {
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   const displayName = useMemo(() => {
@@ -28,31 +31,25 @@ export function AccountMenu() {
     return formatNpub(session.npub)
   }, [session])
 
-  useEffect(() => {
-    let cancelled = false
-    const controller = new AbortController()
-    const loadSession = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/session`, {
-          signal: controller.signal,
-          credentials: 'include',
-        })
-        if (!response.ok) {
-          if (!cancelled) setSession(null)
-          return
-        }
-        const data = (await response.json()) as SessionInfo
-        if (!cancelled) setSession(data)
-      } catch (_err) {
-        if (!cancelled) setSession(null)
+  const fetchSession = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/session`, { credentials: 'include' })
+      if (!response.ok) {
+        setSession(null)
+        return false
       }
-    }
-    void loadSession()
-    return () => {
-      cancelled = true
-      controller.abort()
+      const data = (await response.json()) as SessionInfo
+      setSession(data)
+      return true
+    } catch (_err) {
+      setSession(null)
+      return false
     }
   }, [])
+
+  useEffect(() => {
+    void fetchSession()
+  }, [fetchSession])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -83,6 +80,25 @@ export function AccountMenu() {
     }
   }
 
+  useEffect(() => {
+    if (!modalOpen) return
+    let cancelled = false
+    const poll = async () => {
+      const ok = await fetchSession()
+      if (!cancelled && ok) {
+        setModalOpen(false)
+      }
+    }
+    void poll()
+    const interval = window.setInterval(() => {
+      void poll()
+    }, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [fetchSession, modalOpen])
+
   const handleLogout = async () => {
     await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
     setSession(null)
@@ -98,9 +114,10 @@ export function AccountMenu() {
         onMouseDownCapture={stopPropagation}
         onClickCapture={stopPropagation}
       >
-        <a className="account-menu__signin" href={`${API_BASE_URL}/`}>
+        <button className="account-menu__signin" type="button" onClick={() => setModalOpen(true)}>
           Sign in
-        </a>
+        </button>
+        <AuthModal open={modalOpen} src={`${API_BASE_URL}/`} onClose={() => setModalOpen(false)} />
       </div>
     )
   }
@@ -146,6 +163,7 @@ export function AccountMenu() {
           </button>
         </div>
       )}
+      <AuthModal open={modalOpen} src={`${API_BASE_URL}/`} onClose={() => setModalOpen(false)} />
     </div>
   )
 }
