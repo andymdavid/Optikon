@@ -6,6 +6,8 @@ type SessionInfo = {
   method: string
 }
 
+const API_BASE_URL = 'http://localhost:3025'
+
 const avatarUrlFor = (session: SessionInfo) =>
   `https://robohash.org/${encodeURIComponent(session.pubkey || session.npub || 'nostr')}.png?set=set3`
 
@@ -31,7 +33,10 @@ export function AccountMenu() {
     const controller = new AbortController()
     const loadSession = async () => {
       try {
-        const response = await fetch('/auth/session', { signal: controller.signal })
+        const response = await fetch(`${API_BASE_URL}/auth/session`, {
+          signal: controller.signal,
+          credentials: 'include',
+        })
         if (!response.ok) {
           if (!cancelled) setSession(null)
           return
@@ -79,7 +84,7 @@ export function AccountMenu() {
   }
 
   const handleLogout = async () => {
-    await fetch('/auth/logout', { method: 'POST' })
+    await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
     setSession(null)
     setMenuOpen(false)
   }
@@ -93,7 +98,11 @@ export function AccountMenu() {
         onMouseDownCapture={stopPropagation}
         onClickCapture={stopPropagation}
       >
-        <button className="account-menu__signin" type="button" onClick={() => window.location.assign('/')}>
+        <button
+          className="account-menu__signin"
+          type="button"
+          onClick={() => window.location.assign(`${API_BASE_URL}/`)}
+        >
           Sign in
         </button>
       </div>
