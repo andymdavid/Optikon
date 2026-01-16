@@ -1,5 +1,5 @@
-import { type CSSProperties } from 'react'
 import { Maximize2, Focus } from 'lucide-react'
+import { type CSSProperties } from 'react'
 
 export type ZoomPanelProps = {
   zoom: number

@@ -1,6 +1,6 @@
+import { ExternalLink } from 'lucide-react'
 import { type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { ExternalLink } from 'lucide-react'
 
 export type LinkHoverOverlayProps = {
   link: string

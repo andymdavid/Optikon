@@ -1,6 +1,6 @@
+import { Link2, X, ExternalLink } from 'lucide-react'
 import { useState, useRef, useEffect, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { Link2, X, ExternalLink } from 'lucide-react'
 
 export type LinkInsertPopoverProps = {
   isOpen: boolean

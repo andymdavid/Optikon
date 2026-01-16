@@ -52,8 +52,8 @@ import {
   type TextAlign,
   type TextBackground,
 } from './toolbar/FloatingSelectionToolbar'
-import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
 import { LinkHoverOverlay } from './toolbar/LinkHoverOverlay'
+import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
@@ -160,6 +160,7 @@ const LINE_ARROW_MAX_SCREEN = 18
 const LINE_ARROW_WIDTH_FACTOR = 0.6
 const LINE_HIT_RADIUS_PX = 12
 const LINE_SNAP_DISTANCE_PX = 24
+const COPY_PASTE_OFFSET_PX = 24
 const LINE_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left', 'center']
 const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left']
 const CONNECTOR_HANDLE_RADIUS_PX = 3
@@ -949,6 +950,65 @@ function randomId() {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function cloneElementForPaste(
+  element: BoardElement,
+  newId: string,
+  offset: number,
+  idMap: Map<string, string>
+): BoardElement {
+  const dx = offset
+  const dy = offset
+  switch (element.type) {
+    case 'sticky':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'text':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'rect':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'frame':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'ellipse':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'roundRect':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'diamond':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'triangle':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'speechBubble':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'comment': {
+      const linkedId = element.elementId ? idMap.get(element.elementId) ?? element.elementId : undefined
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy, elementId: linkedId }
+    }
+    case 'line': {
+      const startBinding = element.startBinding
+        ? { ...element.startBinding, elementId: idMap.get(element.startBinding.elementId) ?? element.startBinding.elementId }
+        : undefined
+      const endBinding = element.endBinding
+        ? { ...element.endBinding, elementId: idMap.get(element.endBinding.elementId) ?? element.endBinding.elementId }
+        : undefined
+      const points = element.points?.map((point) => ({ x: point.x + dx, y: point.y + dy }))
+      return {
+        ...element,
+        id: newId,
+        x1: element.x1 + dx,
+        y1: element.y1 + dy,
+        x2: element.x2 + dx,
+        y2: element.y2 + dy,
+        points,
+        startBinding,
+        endBinding,
+      }
+    }
+    default:
+      {
+        const exhaustive: never = element
+        return exhaustive
+      }
+  }
+}
+
 function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (!raw || typeof raw !== 'object') return null
   const element = raw as Partial<StickyNoteElement>
@@ -1533,7 +1593,12 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
     ctx.fillStyle = background.color
     ctx.globalAlpha = background.opacity / 100
     const padding = 4
-    ctx.fillRect(-padding, -padding, layoutInfo.wrapWidth + padding * 2, layoutInfo.totalHeight + padding * 2)
+    ctx.fillRect(
+      -padding,
+      -padding,
+      layoutInfo.wrapWidth + padding * 2,
+      layoutInfo.layout.totalHeight + padding * 2
+    )
     ctx.globalAlpha = 1
   }
 
@@ -2481,6 +2546,8 @@ const shapeCreationRef = useRef<
   const transformStateRef = useRef<TransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
+  const clipboardRef = useRef<BoardElement[] | null>(null)
+  const pasteCountRef = useRef(0)
   const panStateRef = useRef<{
     pointerId: number
     startX: number
@@ -3269,6 +3336,42 @@ const shapeCreationRef = useRef<
       console.error('Failed to persist board element', error)
     }
   }, [])
+
+  const copySelectedElements = useCallback(() => {
+    const ids = Array.from(selectedIdsRef.current)
+    if (ids.length === 0) return
+    const selection = ids.map((id) => elements[id]).filter((element): element is BoardElement => Boolean(element))
+    if (selection.length === 0) return
+    clipboardRef.current = selection
+    pasteCountRef.current = 0
+  }, [elements])
+
+  const pasteClipboardElements = useCallback(() => {
+    if (!boardId) return
+    const selection = clipboardRef.current
+    if (!selection || selection.length === 0) return
+    pasteCountRef.current += 1
+    const offset = COPY_PASTE_OFFSET_PX * pasteCountRef.current
+    const idMap = new Map<string, string>()
+    selection.forEach((element) => {
+      idMap.set(element.id, randomId())
+    })
+    const newElements = selection.map((element) =>
+      cloneElementForPaste(element, idMap.get(element.id) ?? randomId(), offset, idMap)
+    )
+    setElements((prev) => {
+      const next = { ...prev }
+      newElements.forEach((element) => {
+        next[element.id] = element
+      })
+      return next
+    })
+    setSelection(new Set(newElements.map((element) => element.id)))
+    newElements.forEach((element) => {
+      sendElementUpdate(element)
+      void persistElementCreate(boardId, element)
+    })
+  }, [boardId, elements, persistElementCreate, sendElementUpdate, setSelection])
 
   const createStickyAtPoint = useCallback(
     (boardPoint: { x: number; y: number }, opts?: { autoEdit?: boolean }) => {
@@ -4948,6 +5051,21 @@ const shapeCreationRef = useRef<
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (editingStateRef.current || isCommentEditing) return
+      if (event.metaKey || event.ctrlKey) {
+        const key = event.key.toLowerCase()
+        if (key === 'c') {
+          if (selectedIdsRef.current.size === 0) return
+          event.preventDefault()
+          copySelectedElements()
+          return
+        }
+        if (key === 'v') {
+          event.preventDefault()
+          pasteClipboardElements()
+          return
+        }
+        return
+      }
       if (event.code === 'Space') {
         if (!spacePressedRef.current) {
           spacePressedRef.current = true
@@ -5040,7 +5158,7 @@ const shapeCreationRef = useRef<
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [deleteSelectedElements, isCommentEditing])
+  }, [copySelectedElements, deleteSelectedElements, isCommentEditing, pasteClipboardElements])
 
   useEffect(() => {
     setSelection(new Set())

@@ -1,4 +1,3 @@
-import { type CSSProperties } from 'react'
 import {
   MousePointer2,
   StickyNote,
@@ -13,6 +12,7 @@ import {
   CircleAlert,
   Paperclip,
 } from 'lucide-react'
+import { type CSSProperties } from 'react'
 
 export type ToolMode =
   | 'select'

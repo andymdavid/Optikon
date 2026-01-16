@@ -1,5 +1,3 @@
-import { useState, useMemo, useRef, useEffect, type CSSProperties } from 'react'
-import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   AlignLeft,
@@ -12,6 +10,8 @@ import {
   ALargeSmall,
   Baseline,
 } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 
 export type SelectionBoundsScreen = {
   left: number
