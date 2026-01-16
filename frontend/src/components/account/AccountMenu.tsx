@@ -110,9 +110,9 @@ export function AccountMenu() {
       <div
         className="account-menu"
         ref={containerRef}
-        onPointerDownCapture={stopPropagation}
-        onMouseDownCapture={stopPropagation}
-        onClickCapture={stopPropagation}
+        onPointerDown={stopPropagation}
+        onMouseDown={stopPropagation}
+        onClick={stopPropagation}
       >
         <button className="account-menu__signin" type="button" onClick={() => setModalOpen(true)}>
           Sign in
@@ -126,9 +126,9 @@ export function AccountMenu() {
     <div
       className="account-menu"
       ref={containerRef}
-      onPointerDownCapture={stopPropagation}
-      onMouseDownCapture={stopPropagation}
-      onClickCapture={stopPropagation}
+      onPointerDown={stopPropagation}
+      onMouseDown={stopPropagation}
+      onClick={stopPropagation}
     >
       <button
         className="account-menu__trigger"
