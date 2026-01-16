@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react'
+import { Maximize2, Focus } from 'lucide-react'
 
 export type ZoomPanelProps = {
   zoom: number
@@ -87,10 +88,7 @@ export function ZoomPanel({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="4" y="4" width="10" height="10" rx="1" />
-          <path d="M1 6V2h4M17 6V2h-4M1 12v4h4M17 12v4h-4" strokeLinecap="round" />
-        </svg>
+        <Maximize2 size={18} strokeWidth={1.5} />
       </button>
       <div style={separatorStyle} />
       <button
@@ -123,10 +121,7 @@ export function ZoomPanel({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="9" cy="9" r="6" />
-          <circle cx="9" cy="9" r="1.5" fill="currentColor" />
-        </svg>
+        <Focus size={18} strokeWidth={1.5} />
       </button>
     </div>
   )
