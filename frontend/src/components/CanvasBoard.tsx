@@ -2983,15 +2983,6 @@ const shapeCreationRef = useRef<
     setLinkPopoverPosition(null)
   }, [applyStyleToSelection])
 
-  const handleOpenLinkPopover = useCallback(() => {
-    if (!selectionBoundsScreen) return
-    // Position popover below the center of the selection
-    const x = (selectionBoundsScreen.left + selectionBoundsScreen.right) / 2
-    const y = selectionBoundsScreen.bottom
-    setLinkPopoverPosition({ x, y })
-    setLinkPopoverOpen(true)
-  }, [selectionBoundsScreen])
-
   const handleCloseLinkPopover = useCallback(() => {
     setLinkPopoverOpen(false)
     setLinkPopoverPosition(null)
@@ -5544,6 +5535,15 @@ const shapeCreationRef = useRef<
     if (!boardBounds) return null
     return boardBoundsToScreen(boardBounds, cameraState)
   }, [selectedIds, elements, cameraState])
+
+  const handleOpenLinkPopover = useCallback(() => {
+    if (!selectionBoundsScreen) return
+    // Position popover below the center of the selection
+    const x = (selectionBoundsScreen.left + selectionBoundsScreen.right) / 2
+    const y = selectionBoundsScreen.bottom
+    setLinkPopoverPosition({ x, y })
+    setLinkPopoverOpen(true)
+  }, [selectionBoundsScreen])
 
   const showFloatingToolbar =
     selectedIds.size > 0 &&
