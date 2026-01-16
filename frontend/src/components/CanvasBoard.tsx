@@ -5561,6 +5561,10 @@ const shapeCreationRef = useRef<
         onSetColor={handleSetColor}
         onSetHighlight={handleSetHighlight}
         onSetBackground={handleSetBackground}
+        onInsertLink={() => {
+          // TODO: Implement link insertion dialog
+          console.log('Insert link clicked')
+        }}
       />
       {marquee && (
         <div

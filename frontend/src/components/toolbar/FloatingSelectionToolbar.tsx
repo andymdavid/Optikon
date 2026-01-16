@@ -6,7 +6,7 @@ import {
   AlignCenter,
   AlignRight,
   List,
-  Paperclip,
+  Link2,
   Highlighter,
   MessageSquare,
   ALargeSmall,
@@ -57,6 +57,7 @@ export type FloatingSelectionToolbarProps = {
   onSetColor: (color: string) => void
   onSetHighlight: (color: string | null) => void
   onSetBackground: (bg: TextBackground | null) => void
+  onInsertLink?: () => void
   onAddComment?: () => void
 }
 
@@ -165,6 +166,7 @@ export function FloatingSelectionToolbar({
   onSetColor,
   onSetHighlight,
   onSetBackground,
+  onInsertLink,
   onAddComment,
 }: FloatingSelectionToolbarProps) {
   const [openDropdown, setOpenDropdown] = useState<DropdownType>(null)
@@ -510,16 +512,18 @@ export function FloatingSelectionToolbar({
 
       <div style={separatorStyle} />
 
-      {/* Attachment Button (placeholder) */}
+      {/* Insert Link Button */}
       <button
         type="button"
         style={buttonBaseStyle}
-        title="Attachment"
-        onClick={() => console.log('attachment')}
+        title="Insert link"
+        onClick={() => {
+          if (onInsertLink) onInsertLink()
+        }}
         onMouseEnter={(e) => handleMouseEnter(e, false)}
         onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
-        <Paperclip size={16} strokeWidth={1.5} />
+        <Link2 size={16} strokeWidth={1.5} />
       </button>
 
       <div style={separatorStyle} />

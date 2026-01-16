@@ -11,6 +11,7 @@ import {
   MoveUpRight,
   Frame,
   CircleAlert,
+  Paperclip,
 } from 'lucide-react'
 
 export type ToolMode =
@@ -27,6 +28,7 @@ export type ToolMode =
   | 'arrow'
   | 'elbow'
   | 'frame'
+  | 'attachment'
   | 'comment'
 
 type ToolDefinition = {
@@ -112,6 +114,11 @@ const TOOLS: ToolDefinition[] = [
     mode: 'frame',
     label: 'Frame',
     icon: <Frame size={20} strokeWidth={1.5} />,
+  },
+  {
+    mode: 'attachment',
+    label: 'Attachment',
+    icon: <Paperclip size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'comment',
