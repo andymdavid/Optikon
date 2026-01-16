@@ -32,10 +32,17 @@ export function createAuthHandlers(authService: AuthService, cookieName: string)
     return authService.logout(token);
   };
 
+  const session = (req: Request) => {
+    const token = parseSessionCookie(req, cookieName);
+    const current = authService.getSession(token);
+    if (!current) return jsonResponse({ message: "Unauthorized" }, 401);
+    return jsonResponse({ pubkey: current.pubkey, npub: current.npub, method: current.method }, 200);
+  };
+
   const sessionFromRequest = (req: Request): Session | null => {
     const token = parseSessionCookie(req, cookieName);
     return authService.getSession(token);
   };
 
-  return { login, logout, sessionFromRequest };
+  return { login, logout, session, sessionFromRequest };
 }
