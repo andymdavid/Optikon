@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 type AuthModalProps = {
   open: boolean
@@ -24,9 +25,9 @@ export function AuthModal({ open, src, onClose }: AuthModalProps) {
     }
   }, [onClose, open])
 
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
-  return (
+  return createPortal(
     <div className="auth-modal" role="dialog" aria-modal="true" onPointerDown={onClose}>
       <div className="auth-modal__panel" onPointerDown={(event) => event.stopPropagation()}>
         <iframe
@@ -36,6 +37,7 @@ export function AuthModal({ open, src, onClose }: AuthModalProps) {
           sandbox="allow-forms allow-scripts allow-same-origin"
         />
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
