@@ -1,5 +1,17 @@
 import { useState, useMemo, useRef, useEffect, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  ChevronDown,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  List,
+  Paperclip,
+  Highlighter,
+  MessageSquare,
+  ALargeSmall,
+  Baseline,
+} from 'lucide-react'
 
 export type SelectionBoundsScreen = {
   left: number
@@ -132,12 +144,8 @@ const colorGridStyle: CSSProperties = {
   padding: 8,
 }
 
-function ChevronDown() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 4.5L6 7.5L9 4.5" />
-    </svg>
-  )
+function ChevronDownIcon() {
+  return <ChevronDown size={12} strokeWidth={1.5} />
 }
 
 type DropdownType = 'font' | 'textStyle' | 'fontColor' | 'highlightColor' | 'bgColor' | null
@@ -318,7 +326,7 @@ export function FloatingSelectionToolbar({
           <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {formatState.fontFamily === 'mixed' ? 'Mixed' : getFontDisplayName(currentFontFamily)}
           </span>
-          <ChevronDown />
+          <ChevronDownIcon />
         </button>
         {openDropdown === 'font' && (
           <div style={dropdownStyle}>
@@ -401,11 +409,8 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, false)}
           onMouseLeave={(e) => handleMouseLeave(e, false)}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <text x="3" y="12" fontFamily="serif" fontSize="13" fontStyle="italic" fontWeight="bold">B</text>
-            <rect x="3" y="13.5" width="10" height="1.5" rx="0.5" />
-          </svg>
-          <ChevronDown />
+          <ALargeSmall size={16} strokeWidth={1.5} />
+          <ChevronDownIcon />
         </button>
         {openDropdown === 'textStyle' && (
           <div style={{ ...dropdownStyle, minWidth: 140 }}>
@@ -465,11 +470,7 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'left')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'left')}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="2" y="3" width="12" height="2" rx="0.5" />
-            <rect x="2" y="7" width="8" height="2" rx="0.5" />
-            <rect x="2" y="11" width="10" height="2" rx="0.5" />
-          </svg>
+          <AlignLeft size={16} strokeWidth={1.5} />
         </button>
         <button
           type="button"
@@ -479,11 +480,7 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'center')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'center')}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="2" y="3" width="12" height="2" rx="0.5" />
-            <rect x="4" y="7" width="8" height="2" rx="0.5" />
-            <rect x="3" y="11" width="10" height="2" rx="0.5" />
-          </svg>
+          <AlignCenter size={16} strokeWidth={1.5} />
         </button>
         <button
           type="button"
@@ -493,11 +490,7 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, formatState.align === 'right')}
           onMouseLeave={(e) => handleMouseLeave(e, formatState.align === 'right')}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="2" y="3" width="12" height="2" rx="0.5" />
-            <rect x="6" y="7" width="8" height="2" rx="0.5" />
-            <rect x="4" y="11" width="10" height="2" rx="0.5" />
-          </svg>
+          <AlignRight size={16} strokeWidth={1.5} />
         </button>
       </div>
 
@@ -512,14 +505,7 @@ export function FloatingSelectionToolbar({
         onMouseEnter={(e) => handleMouseEnter(e, isBulletsActive)}
         onMouseLeave={(e) => handleMouseLeave(e, isBulletsActive)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="3" cy="4" r="1.5" />
-          <rect x="6" y="3" width="8" height="2" rx="0.5" />
-          <circle cx="3" cy="8" r="1.5" />
-          <rect x="6" y="7" width="8" height="2" rx="0.5" />
-          <circle cx="3" cy="12" r="1.5" />
-          <rect x="6" y="11" width="8" height="2" rx="0.5" />
-        </svg>
+        <List size={16} strokeWidth={1.5} />
       </button>
 
       <div style={separatorStyle} />
@@ -533,9 +519,7 @@ export function FloatingSelectionToolbar({
         onMouseEnter={(e) => handleMouseEnter(e, false)}
         onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5l6-6a2 2 0 013 3l-5.5 5.5a.5.5 0 01-1-1L11.5 5" />
-        </svg>
+        <Paperclip size={16} strokeWidth={1.5} />
       </button>
 
       <div style={separatorStyle} />
@@ -550,9 +534,7 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, false)}
           onMouseLeave={(e) => handleMouseLeave(e, false)}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M6.5 2L3 12h2l.75-2.5h4.5L11 12h2L9.5 2h-3zm.75 6L8 5.5 8.75 8h-1.5z" />
-          </svg>
+          <Baseline size={16} strokeWidth={1.5} />
           <div style={{ width: 14, height: 3, background: currentColor, borderRadius: 1, marginTop: -2 }} />
         </button>
         {openDropdown === 'fontColor' && (
@@ -588,9 +570,7 @@ export function FloatingSelectionToolbar({
           onMouseEnter={(e) => handleMouseEnter(e, false)}
           onMouseLeave={(e) => handleMouseLeave(e, false)}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M11.5 1L4 8.5V12h3.5L15 4.5 11.5 1zM2 14h12v1H2v-1z" />
-          </svg>
+          <Highlighter size={16} strokeWidth={1.5} />
           <div
             style={{
               width: 14,
@@ -703,10 +683,7 @@ export function FloatingSelectionToolbar({
         onMouseEnter={(e) => handleMouseEnter(e, false)}
         onMouseLeave={(e) => handleMouseLeave(e, false)}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M2 3h12a1 1 0 011 1v7a1 1 0 01-1 1H5l-3 3V4a1 1 0 011-1z" />
-          <path d="M5 7h6M5 9h3" strokeLinecap="round" />
-        </svg>
+        <MessageSquare size={16} strokeWidth={1.5} />
       </button>
     </div>,
     document.body
