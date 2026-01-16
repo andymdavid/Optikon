@@ -53,6 +53,7 @@ import {
   type TextBackground,
 } from './toolbar/FloatingSelectionToolbar'
 import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
+import { LinkHoverOverlay } from './toolbar/LinkHoverOverlay'
 import { ToolRail, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
@@ -2554,6 +2555,13 @@ const shapeCreationRef = useRef<
   const isCommentEditing = commentPopoverMode === 'edit'
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [linkPopoverPosition, setLinkPopoverPosition] = useState<{ x: number; y: number } | null>(null)
+  const [hoveredLinkElement, setHoveredLinkElement] = useState<{
+    elementId: string
+    link: string
+    position: { x: number; y: number }
+  } | null>(null)
+  const hoveredLinkElementRef = useRef<typeof hoveredLinkElement>(null)
+  const linkHoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -5545,6 +5553,113 @@ const shapeCreationRef = useRef<
     setLinkPopoverOpen(true)
   }, [selectionBoundsScreen])
 
+  // Handle mouse move for link hover detection
+  const handleLinkHover = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      // Skip if we're in an active interaction or editing
+      if (interactionModeRef.current !== 'none' || editingState || linkPopoverOpen) {
+        if (hoveredLinkElementRef.current) {
+          hoveredLinkElementRef.current = null
+          setHoveredLinkElement(null)
+        }
+        return
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect()
+      const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      const boardPoint = screenToBoard(canvasPoint)
+
+      // Find element under cursor
+      const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+
+      if (!hitId) {
+        if (hoveredLinkElementRef.current) {
+          // Clear with a small delay to allow moving to the overlay
+          if (linkHoverTimeoutRef.current) {
+            clearTimeout(linkHoverTimeoutRef.current)
+          }
+          linkHoverTimeoutRef.current = setTimeout(() => {
+            if (hoveredLinkElementRef.current) {
+              hoveredLinkElementRef.current = null
+              setHoveredLinkElement(null)
+            }
+          }, 150)
+        }
+        return
+      }
+
+      const element = elements[hitId]
+      if (!element) {
+        if (hoveredLinkElementRef.current) {
+          hoveredLinkElementRef.current = null
+          setHoveredLinkElement(null)
+        }
+        return
+      }
+
+      // Check if element has a link (only text and sticky elements can have links)
+      const link = (element.type === 'text' || element.type === 'sticky') ? element.style?.link : null
+
+      if (!link) {
+        if (hoveredLinkElementRef.current && hoveredLinkElementRef.current.elementId !== hitId) {
+          hoveredLinkElementRef.current = null
+          setHoveredLinkElement(null)
+        }
+        return
+      }
+
+      // Clear any pending timeout
+      if (linkHoverTimeoutRef.current) {
+        clearTimeout(linkHoverTimeoutRef.current)
+        linkHoverTimeoutRef.current = null
+      }
+
+      // If already showing for this element, don't update
+      if (hoveredLinkElementRef.current?.elementId === hitId) {
+        return
+      }
+
+      // Calculate position for overlay (bottom-left of element in screen coords)
+      const measureCtx = getSharedMeasureContext()
+      let overlayPosition = { x: event.clientX, y: event.clientY + 20 }
+
+      if (element.type === 'text') {
+        const bounds = getTextElementBounds(element as TextElement, measureCtx)
+        const screenBottomLeft = {
+          x: (bounds.center.x - bounds.width / 2 + cameraState.offsetX) * cameraState.zoom,
+          y: (bounds.center.y + bounds.height / 2 + cameraState.offsetY) * cameraState.zoom,
+        }
+        overlayPosition = { x: screenBottomLeft.x, y: screenBottomLeft.y + 8 }
+      } else if (element.type === 'sticky') {
+        const stickySize = (element as StickyNoteElement).size ?? 150
+        const screenBottomLeft = {
+          x: (element.x + cameraState.offsetX) * cameraState.zoom,
+          y: (element.y + stickySize + cameraState.offsetY) * cameraState.zoom,
+        }
+        overlayPosition = { x: screenBottomLeft.x, y: screenBottomLeft.y + 8 }
+      }
+
+      const hoverData = { elementId: hitId, link, position: overlayPosition }
+      hoveredLinkElementRef.current = hoverData
+      setHoveredLinkElement(hoverData)
+    },
+    [cameraState, editingState, elements, hitTestElement, linkPopoverOpen, screenToBoard]
+  )
+
+  const handleLinkOverlayMouseEnter = useCallback(() => {
+    // Cancel any pending hide timeout when entering the overlay
+    if (linkHoverTimeoutRef.current) {
+      clearTimeout(linkHoverTimeoutRef.current)
+      linkHoverTimeoutRef.current = null
+    }
+  }, [])
+
+  const handleLinkOverlayMouseLeave = useCallback(() => {
+    // Hide overlay when leaving
+    hoveredLinkElementRef.current = null
+    setHoveredLinkElement(null)
+  }, [])
+
   const showFloatingToolbar =
     selectedIds.size > 0 &&
     !editingState &&
@@ -5568,6 +5683,7 @@ const shapeCreationRef = useRef<
         onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerCancel}
         onDoubleClick={handleCanvasDoubleClick}
+        onMouseMove={handleLinkHover}
       />
       <ToolRail
         toolMode={toolMode}
@@ -5623,6 +5739,14 @@ const shapeCreationRef = useRef<
         onApply={handleSetLink}
         onCancel={handleCloseLinkPopover}
       />
+      {hoveredLinkElement && (
+        <LinkHoverOverlay
+          link={hoveredLinkElement.link}
+          position={hoveredLinkElement.position}
+          onMouseEnter={handleLinkOverlayMouseEnter}
+          onMouseLeave={handleLinkOverlayMouseLeave}
+        />
+      )}
       {marquee && (
         <div
           className="marquee-selection"
