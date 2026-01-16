@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
 
-import { AuthModal } from './AuthModal'
+import { NostrLoginModal } from './NostrLoginModal'
 
 type SessionInfo = {
   pubkey: string
@@ -80,29 +80,15 @@ export function AccountMenu() {
     }
   }
 
-  useEffect(() => {
-    if (!modalOpen) return
-    let cancelled = false
-    const poll = async () => {
-      const ok = await fetchSession()
-      if (!cancelled && ok) {
-        setModalOpen(false)
-      }
-    }
-    void poll()
-    const interval = window.setInterval(() => {
-      void poll()
-    }, 1000)
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
-  }, [fetchSession, modalOpen])
-
   const handleLogout = async () => {
     await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
     setSession(null)
     setMenuOpen(false)
+  }
+
+  const handleLoginSuccess = (nextSession: SessionInfo) => {
+    setSession(nextSession)
+    setModalOpen(false)
   }
 
   if (!session) {
@@ -117,7 +103,12 @@ export function AccountMenu() {
         <button className="account-menu__signin" type="button" onClick={() => setModalOpen(true)}>
           Sign in
         </button>
-        <AuthModal open={modalOpen} src={`${API_BASE_URL}/`} onClose={() => setModalOpen(false)} />
+        <NostrLoginModal
+          open={modalOpen}
+          apiBaseUrl={API_BASE_URL}
+          onClose={() => setModalOpen(false)}
+          onSuccess={handleLoginSuccess}
+        />
       </div>
     )
   }
@@ -163,7 +154,12 @@ export function AccountMenu() {
           </button>
         </div>
       )}
-      <AuthModal open={modalOpen} src={`${API_BASE_URL}/`} onClose={() => setModalOpen(false)} />
+      <NostrLoginModal
+        open={modalOpen}
+        apiBaseUrl={API_BASE_URL}
+        onClose={() => setModalOpen(false)}
+        onSuccess={handleLoginSuccess}
+      />
     </div>
   )
 }
