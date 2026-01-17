@@ -2719,6 +2719,40 @@ const shapeCreationRef = useRef<
     return measurementCtxRef.current
   }, [])
 
+  const getFrameAttachmentIds = useCallback(
+    (frame: FrameElement) => {
+      const ctx = getSharedMeasureContext()
+      const resolveElement = (id: string) => elements[id]
+      const frameBounds = getShapeElementBounds(frame).aabb
+      const commentRadius = 14 / Math.max(0.01, cameraState.zoom)
+      const attached: string[] = []
+      Object.values(elements).forEach((element) => {
+        if (!element || element.id === frame.id || isFrameElement(element)) return
+        let bounds: Rect
+        if (isCommentElement(element)) {
+          bounds = {
+            left: element.x - commentRadius,
+            right: element.x + commentRadius,
+            top: element.y - commentRadius,
+            bottom: element.y + commentRadius,
+          }
+        } else {
+          bounds = getElementBounds(element, ctx, { resolveElement, measureCtx: ctx })
+        }
+        if (
+          bounds.left >= frameBounds.left &&
+          bounds.right <= frameBounds.right &&
+          bounds.top >= frameBounds.top &&
+          bounds.bottom <= frameBounds.bottom
+        ) {
+          attached.push(element.id)
+        }
+      })
+      return attached
+    },
+    [cameraState.zoom, elements]
+  )
+
   const updateEditingState = useCallback(
     (next: EditingState | null | ((prev: EditingState | null) => EditingState | null)) => {
       setEditingStateInternal((prev) => {
@@ -3280,104 +3314,112 @@ const shapeCreationRef = useRef<
         return Math.abs(totalArea - (area1 + area2 + area3)) <= epsilon
       }
       const commentRadius = 14 / Math.max(0.01, cameraState.zoom)
-      for (let i = values.length - 1; i >= 0; i -= 1) {
-        const element = values[i]
-        if (isLineElement(element)) {
-          const tolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
-          const measureCtx = getSharedMeasureContext()
-          const path = getLinePathPoints(element, {
-            resolveElement: (elementId) => elements[elementId],
-            measureCtx,
+      const testList = (list: Array<BoardElement | undefined>) => {
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          const element = list[i]
+          if (!element) continue
+          if (isLineElement(element)) {
+            const tolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
+            const measureCtx = getSharedMeasureContext()
+            const path = getLinePathPoints(element, {
+              resolveElement: (elementId) => elements[elementId],
+              measureCtx,
+            })
+            const distance = pointToMultiSegmentDistance({ x, y }, path)
+            if (distance <= tolerance) {
+              return element.id
+            }
+            continue
+          }
+          if (isTextElement(element)) {
+            const bounds = getTextElementBounds(element, ctx)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            continue
+          }
+          if (isRectangleElement(element)) {
+            const bounds = getRectangleElementBounds(element)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            continue
+          }
+          if (isFrameElement(element)) {
+            const bounds = getShapeElementBounds(element)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            const screenPoint = {
+              x: (x + cameraState.offsetX) * cameraState.zoom,
+              y: (y + cameraState.offsetY) * cameraState.zoom,
+            }
+            const labelRect = getFrameLabelRect(element, cameraState)
+            if (
+              screenPoint.x >= labelRect.x &&
+              screenPoint.x <= labelRect.x + labelRect.width &&
+              screenPoint.y >= labelRect.y &&
+              screenPoint.y <= labelRect.y + labelRect.height
+            ) {
+              return element.id
+            }
+            continue
+          }
+          if (isRoundedRectElement(element)) {
+            const bounds = getShapeElementBounds(element)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            continue
+          }
+          if (isDiamondElement(element)) {
+            if (pointInDiamond({ x, y }, element)) {
+              return element.id
+            }
+            continue
+          }
+          if (isSpeechBubbleElement(element)) {
+            const bounds = getShapeElementBounds(element)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            continue
+          }
+          if (isTriangleElement(element)) {
+            if (pointInTriangle({ x, y }, element)) {
+              return element.id
+            }
+            continue
+          }
+          if (isEllipseElement(element)) {
+            if (pointInEllipse({ x, y }, element)) {
+              return element.id
+            }
+            continue
+          }
+          if (isCommentElement(element)) {
+            const dx = x - element.x
+            const dy = y - element.y
+            if (Math.hypot(dx, dy) <= commentRadius) {
+              return element.id
+            }
+            continue
+          }
+          const aabb = getElementBounds(element, ctx, {
+            resolveElement: (id) => elements[id],
+            measureCtx: ctx,
           })
-          const distance = pointToMultiSegmentDistance({ x, y }, path)
-          if (distance <= tolerance) {
+          if (x >= aabb.left && x <= aabb.right && y >= aabb.top && y <= aabb.bottom) {
             return element.id
           }
-          continue
         }
-        if (isTextElement(element)) {
-          const bounds = getTextElementBounds(element, ctx)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          continue
-        }
-        if (isRectangleElement(element)) {
-          const bounds = getRectangleElementBounds(element)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          continue
-        }
-        if (isFrameElement(element)) {
-          const bounds = getShapeElementBounds(element)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          const screenPoint = {
-            x: (x + cameraState.offsetX) * cameraState.zoom,
-            y: (y + cameraState.offsetY) * cameraState.zoom,
-          }
-          const labelRect = getFrameLabelRect(element, cameraState)
-          if (
-            screenPoint.x >= labelRect.x &&
-            screenPoint.x <= labelRect.x + labelRect.width &&
-            screenPoint.y >= labelRect.y &&
-            screenPoint.y <= labelRect.y + labelRect.height
-          ) {
-            return element.id
-          }
-          continue
-        }
-        if (isRoundedRectElement(element)) {
-          const bounds = getShapeElementBounds(element)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          continue
-        }
-        if (isDiamondElement(element)) {
-          if (pointInDiamond({ x, y }, element)) {
-            return element.id
-          }
-          continue
-        }
-        if (isSpeechBubbleElement(element)) {
-          const bounds = getShapeElementBounds(element)
-          if (pointInPolygon({ x, y }, bounds.corners)) {
-            return element.id
-          }
-          continue
-        }
-        if (isTriangleElement(element)) {
-          if (pointInTriangle({ x, y }, element)) {
-            return element.id
-          }
-          continue
-        }
-        if (isEllipseElement(element)) {
-          if (pointInEllipse({ x, y }, element)) {
-            return element.id
-          }
-          continue
-        }
-        if (isCommentElement(element)) {
-          const dx = x - element.x
-          const dy = y - element.y
-          if (Math.hypot(dx, dy) <= commentRadius) {
-            return element.id
-          }
-          continue
-        }
-        const aabb = getElementBounds(element, ctx, {
-          resolveElement: (id) => elements[id],
-          measureCtx: ctx,
-        })
-        if (x >= aabb.left && x <= aabb.right && y >= aabb.top && y <= aabb.bottom) {
-          return element.id
-        }
+        return null
       }
-      return null
+      const nonFrames = values.filter((element) => element && !isFrameElement(element))
+      const frames = values.filter((element) => element && isFrameElement(element))
+      const nonFrameHit = testList(nonFrames)
+      if (nonFrameHit) return nonFrameHit
+      return testList(frames)
     },
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
   )
@@ -3609,6 +3651,7 @@ const shapeCreationRef = useRef<
       beginEditingText,
       boardId,
       elements,
+      getFrameAttachmentIds,
       hitTestElement,
       isCommentEditing,
       openCommentPopoverForElement,
@@ -4214,7 +4257,15 @@ const shapeCreationRef = useRef<
         setSelection(nextSelection)
       }
 
-      const dragIds = Array.from(nextSelection)
+      const dragIdSet = new Set(nextSelection)
+      nextSelection.forEach((id) => {
+        const element = elements[id]
+        if (element && isFrameElement(element)) {
+          const attached = getFrameAttachmentIds(element)
+          attached.forEach((attachedId) => dragIdSet.add(attachedId))
+        }
+      })
+      const dragIds = Array.from(dragIdSet)
       const startPositions: Record<
         string,
         { x: number; y: number; x2?: number; y2?: number; points?: Array<{ x: number; y: number }> }
