@@ -3024,15 +3024,18 @@ const shapeCreationRef = useRef<
   }, [elements])
 
   // Helper to check if an element supports text styling
-  const supportsTextStyle = useCallback((element: BoardElement): element is StickyNoteElement | TextElement => {
-    return element.type === 'sticky' || element.type === 'text'
-  }, [])
+  const supportsTextStyle = useCallback(
+    (element: BoardElement): element is StickyNoteElement | TextElement | ShapeElement | FrameElement => {
+      return element.type === 'sticky' || element.type === 'text' || isShapeElement(element) || isFrameElement(element)
+    },
+    []
+  )
 
   // Compute format state from current selection
   const selectionFormatState = useMemo((): SelectionFormatState => {
     const textElements = Array.from(selectedIds)
       .map((id) => elements[id])
-      .filter((el): el is StickyNoteElement | TextElement => el && supportsTextStyle(el))
+      .filter((el): el is StickyNoteElement | TextElement | ShapeElement | FrameElement => el && supportsTextStyle(el))
 
     // Default state when no text elements selected
     const defaultState: SelectionFormatState = {
@@ -3072,10 +3075,16 @@ const shapeCreationRef = useRef<
     const italicValues = textElements.map((el) => el.style?.fontStyle === 'italic')
     const underlineValues = textElements.map((el) => el.style?.underline ?? false)
     const strikethroughValues = textElements.map((el) => el.style?.strikethrough ?? false)
-    const alignValues = textElements.map((el) => el.style?.textAlign ?? (el.type === 'sticky' ? 'center' : 'left'))
+    const alignValues = textElements.map((el) =>
+      el.style?.textAlign ?? (el.type === 'text' ? 'left' : 'center')
+    )
     const bulletsValues = textElements.map((el) => el.style?.bullets ?? false)
     const fontFamilyValues = textElements.map((el) => (el.type === 'text' ? el.fontFamily ?? 'Inter' : 'Inter'))
-    const fontSizeValues = textElements.map((el) => el.fontSize ?? 48)
+    const fontSizeValues = textElements.map((el) => {
+      if (el.type === 'text') return el.fontSize ?? 48
+      if (el.type === 'sticky') return resolveStickyFontSize(el.fontSize)
+      return resolveShapeFontSize(el)
+    })
     const colorValues = textElements.map((el) => el.style?.color ?? '#111827')
     const highlightValues = textElements.map((el) => el.style?.highlight ?? null)
     const backgroundValues = textElements.map((el) => el.style?.background ?? null)
@@ -3187,7 +3196,7 @@ const shapeCreationRef = useRef<
     (stylePatch: Partial<TextStyle>) => {
       const textElements = Array.from(selectedIds)
         .map((id) => elements[id])
-        .filter((el): el is StickyNoteElement | TextElement => el && supportsTextStyle(el))
+        .filter((el): el is StickyNoteElement | TextElement | ShapeElement | FrameElement => el && supportsTextStyle(el))
 
       if (textElements.length === 0) return
 
