@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
 
 import { NostrLoginModal } from './NostrLoginModal'
 
 type SessionInfo = {
   pubkey: string
   npub: string
-  method: string
 }
-
-const API_BASE_URL = 'http://localhost:3025'
 
 const avatarUrlFor = (session: SessionInfo) =>
   `https://robohash.org/${encodeURIComponent(session.pubkey || session.npub || 'nostr')}.png?set=set3`
@@ -20,8 +17,15 @@ const formatNpub = (npub: string) => {
   return `${start}…${end}`
 }
 
-export function AccountMenu() {
-  const [session, setSession] = useState<SessionInfo | null>(null)
+export function AccountMenu({
+  apiBaseUrl,
+  session,
+  onSessionChange,
+}: {
+  apiBaseUrl: string
+  session: SessionInfo | null
+  onSessionChange: (session: SessionInfo | null) => void
+}) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -30,26 +34,6 @@ export function AccountMenu() {
     if (!session) return 'Sign in'
     return formatNpub(session.npub)
   }, [session])
-
-  const fetchSession = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/session`, { credentials: 'include' })
-      if (!response.ok) {
-        setSession(null)
-        return false
-      }
-      const data = (await response.json()) as SessionInfo
-      setSession(data)
-      return true
-    } catch (_err) {
-      setSession(null)
-      return false
-    }
-  }, [])
-
-  useEffect(() => {
-    void fetchSession()
-  }, [fetchSession])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -81,13 +65,13 @@ export function AccountMenu() {
   }
 
   const handleLogout = async () => {
-    await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
-    setSession(null)
+    await fetch(`${apiBaseUrl}/auth/logout`, { method: 'POST', credentials: 'include' })
+    onSessionChange(null)
     setMenuOpen(false)
   }
 
   const handleLoginSuccess = (nextSession: SessionInfo) => {
-    setSession(nextSession)
+    onSessionChange({ pubkey: nextSession.pubkey, npub: nextSession.npub })
     setModalOpen(false)
   }
 
@@ -105,7 +89,7 @@ export function AccountMenu() {
         </button>
         <NostrLoginModal
           open={modalOpen}
-          apiBaseUrl={API_BASE_URL}
+          apiBaseUrl={apiBaseUrl}
           onClose={() => setModalOpen(false)}
           onSuccess={handleLoginSuccess}
         />
@@ -156,7 +140,7 @@ export function AccountMenu() {
       )}
       <NostrLoginModal
         open={modalOpen}
-        apiBaseUrl={API_BASE_URL}
+        apiBaseUrl={apiBaseUrl}
         onClose={() => setModalOpen(false)}
         onSuccess={handleLoginSuccess}
       />
