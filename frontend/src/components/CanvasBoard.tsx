@@ -755,8 +755,8 @@ function rectsIntersect(a: Rect, b: Rect) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
 }
 const DRAG_THROTTLE_MS = 50
-const MIN_ZOOM = 0.2
-const MAX_ZOOM = 3
+const MIN_ZOOM = 0.01
+const MAX_ZOOM = 4
 
 function logInbound(message: unknown) {
   console.log('[ws in]', message)
