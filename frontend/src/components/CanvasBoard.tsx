@@ -36,7 +36,6 @@ import {
   getTextElementBounds,
   getTextElementLayout,
   getTextHandleLocalPosition,
-  getTextLayoutForContent,
   smoothstep,
   toTextLocalCoordinates,
   resolveTextFontSize,
@@ -5597,42 +5596,20 @@ const shapeCreationRef = useRef<
       ? editingState.fontSize * cameraState.zoom
       : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
-  const editingTextWrapWidth = editingTextElement ? resolveTextWrapWidth(editingTextElement.w) : TEXT_DEFAULT_MAX_WIDTH
-  const editingTextFontFamily = editingTextElement?.fontFamily ?? STICKY_FONT_FAMILY
-  const editingTextFontWeight = editingTextElement?.style?.fontWeight ?? 400
-  const editingTextFontStyle = editingTextElement?.style?.fontStyle ?? 'normal'
   const editingTextScale = editingTextElement ? resolveTextScale(editingTextElement.scale) : 1
-  const editingTextLayout =
-    editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
-      ? getTextLayoutForContent(
-          editingState.text,
-          editingState.fontSize,
-          editingTextWrapWidth,
-          getSharedMeasureContext(),
-          editingTextFontFamily,
-          editingTextFontWeight,
-          editingTextFontStyle
-        )
+  const editingTextPreview =
+    editingState?.elementType === 'text' && editingTextElement
+      ? { ...editingTextElement, text: editingState.text, fontSize: editingState.fontSize }
       : null
   const editingTextBounds =
-    editingState?.elementType === 'text' && editingTextElement && editingTextLayout
-      ? {
-          left: editingTextElement.x,
-          top: editingTextElement.y,
-          right:
-            editingTextElement.x +
-            (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * editingTextScale,
-          bottom:
-            editingTextElement.y +
-            (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * editingTextScale,
-        }
-      : null
-  const editingTextRect = editingTextBounds && editingTextLayout
+    editingTextPreview ? getTextElementBounds(editingTextPreview, getSharedMeasureContext()) : null
+  const editingTextLayout = editingTextBounds?.layout ?? null
+  const editingTextRect = editingTextBounds
     ? {
-        x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
-        y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
-        width: (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * editingTextScale * cameraState.zoom,
-        height: (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * editingTextScale * cameraState.zoom,
+        x: (editingTextBounds.aabb.left + cameraState.offsetX) * cameraState.zoom,
+        y: (editingTextBounds.aabb.top + cameraState.offsetY) * cameraState.zoom,
+        width: (editingTextBounds.aabb.right - editingTextBounds.aabb.left) * cameraState.zoom,
+        height: (editingTextBounds.aabb.bottom - editingTextBounds.aabb.top) * cameraState.zoom,
       }
     : null
   const editingTextFontSizePx =
