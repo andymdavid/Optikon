@@ -19,12 +19,13 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  height: 40px;
+  padding: 4px 12px;
   border: 1px solid rgba(15, 23, 42, 0.14);
   border-radius: 8px;
   background: #ffffff;
   color: #0f172a;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
@@ -32,12 +33,12 @@
 }
 
 .account-menu__signin {
-  padding: 8px 16px;
+  padding: 4px 14px;
 }
 
 .account-menu__avatar {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   overflow: hidden;
   background: #f1f5f9;
