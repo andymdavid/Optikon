@@ -103,6 +103,7 @@ const initialCameraState: CameraState = {
 const BOARD_STORAGE_KEY = 'optikon.devBoardId'
 const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
+const resolveImageUrl = (url: string) => (url.startsWith('/') ? `${API_BASE_URL}${url}` : url)
 const STICKY_SIZE = 220
 const STICKY_MIN_SIZE = 40
 const BOARD_BACKGROUND = '#f7f7f8'
@@ -3075,17 +3076,18 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
 
   const ensureBoardImage = useCallback((url: string) => {
     const cache = imageCacheRef.current
-    if (cache.has(url)) return
+    const resolvedUrl = resolveImageUrl(url)
+    if (cache.has(resolvedUrl)) return
     const image = new Image()
     image.onload = () => {
       setImageCacheVersion((prev) => prev + 1)
     }
     image.onerror = () => {
-      cache.set(url, null)
+      cache.set(resolvedUrl, null)
       setImageCacheVersion((prev) => prev + 1)
     }
-    image.src = url
-    cache.set(url, image)
+    image.src = resolvedUrl
+    cache.set(resolvedUrl, image)
     if (image.complete) {
       setImageCacheVersion((prev) => prev + 1)
     }
@@ -6311,7 +6313,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
           editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
         drawRoundedRectElement(ctx, renderShape, cameraState)
       } else if (isImageElement(element)) {
-        const image = imageCacheRef.current.get(element.url) ?? null
+        const image = imageCacheRef.current.get(resolveImageUrl(element.url)) ?? null
         drawImageElement(ctx, element, cameraState, image)
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
