@@ -86,6 +86,12 @@ declare global {
   }
 }
 
+type GestureEvent = Event & {
+  scale: number
+  clientX: number
+  clientY: number
+}
+
 export type CameraState = {
   offsetX: number
   offsetY: number
@@ -2976,6 +2982,11 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
   } | null>(null)
   const spacePressedRef = useRef(false)
   const selectedIdsRef = useRef<Set<string>>(new Set())
+  const gestureStateRef = useRef<{
+    startZoom: number
+    boardPoint: { x: number; y: number }
+    screenPoint: { x: number; y: number }
+  } | null>(null)
   const interactionModeRef = useRef<
     | 'none'
     | 'pan'
@@ -5755,8 +5766,8 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
       const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current
       if (!canvas) return
 
-      // Miro-like: pan on scroll, zoom on Cmd+scroll
-      if (!event.metaKey) {
+      // Miro-like: pan on scroll, zoom on Cmd+scroll or trackpad pinch (ctrlKey)
+      if (!event.metaKey && !event.ctrlKey) {
         event.preventDefault()
         setCameraState((prev) => ({
           offsetX: prev.offsetX - event.deltaX / prev.zoom,
@@ -5771,7 +5782,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
       const boardPoint = screenToBoard(canvasPoint)
       setCameraState((prev) => {
-        const zoomFactor = event.deltaY < 0 ? 1.02 : 0.98
+        const zoomFactor = Math.exp(-event.deltaY * 0.0015)
         const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * zoomFactor))
         const offsetX = canvasPoint.x / newZoom - boardPoint.x
         const offsetY = canvasPoint.y / newZoom - boardPoint.y
@@ -5788,24 +5799,52 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
     const wheelListener = (event: WheelEvent) => {
       handleWheel(event)
     }
-    const preventGesture = (event: Event) => {
-      event.preventDefault()
-    }
-
     const listenerOptions: AddEventListenerOptions = { passive: false }
     canvas.addEventListener('wheel', wheelListener, listenerOptions)
-    const gestureEvents: Array<keyof HTMLElementEventMap> = ['gesturestart', 'gesturechange', 'gestureend']
-    gestureEvents.forEach((type) => {
-      canvas.addEventListener(type, preventGesture, listenerOptions)
-    })
+    const handleGestureStart = (event: Event) => {
+      if (editingStateRef.current || isCommentEditing) return
+      const gestureEvent = event as GestureEvent
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const screenPoint = {
+        x: gestureEvent.clientX - rect.left,
+        y: gestureEvent.clientY - rect.top,
+      }
+      const boardPoint = screenToBoard(screenPoint)
+      gestureStateRef.current = {
+        startZoom: cameraState.zoom,
+        boardPoint,
+        screenPoint,
+      }
+    }
+    const handleGestureChange = (event: Event) => {
+      const gestureEvent = event as GestureEvent
+      const gestureState = gestureStateRef.current
+      if (!gestureState) return
+      event.preventDefault()
+      const nextZoom = clamp(gestureState.startZoom * gestureEvent.scale, MIN_ZOOM, MAX_ZOOM)
+      const { screenPoint, boardPoint } = gestureState
+      setCameraState(() => ({
+        offsetX: screenPoint.x / nextZoom - boardPoint.x,
+        offsetY: screenPoint.y / nextZoom - boardPoint.y,
+        zoom: nextZoom,
+      }))
+    }
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault()
+      gestureStateRef.current = null
+    }
+    canvas.addEventListener('gesturestart', handleGestureStart, listenerOptions)
+    canvas.addEventListener('gesturechange', handleGestureChange, listenerOptions)
+    canvas.addEventListener('gestureend', handleGestureEnd, listenerOptions)
 
     return () => {
       canvas.removeEventListener('wheel', wheelListener)
-      gestureEvents.forEach((type) => {
-        canvas.removeEventListener(type, preventGesture)
-      })
+      canvas.removeEventListener('gesturestart', handleGestureStart)
+      canvas.removeEventListener('gesturechange', handleGestureChange)
+      canvas.removeEventListener('gestureend', handleGestureEnd)
     }
-  }, [handleWheel])
+  }, [cameraState.zoom, handleWheel, isCommentEditing, screenToBoard])
 
   useEffect(() => {
     let cancelled = false
