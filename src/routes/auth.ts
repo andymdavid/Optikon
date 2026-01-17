@@ -39,10 +39,17 @@ export function createAuthHandlers(authService: AuthService, cookieName: string)
     return jsonResponse({ pubkey: current.pubkey, npub: current.npub, method: current.method }, 200);
   };
 
+  const me = (req: Request) => {
+    const token = parseSessionCookie(req, cookieName);
+    const current = authService.getSession(token);
+    if (!current) return jsonResponse(null, 200);
+    return jsonResponse({ pubkey: current.pubkey, npub: current.npub }, 200);
+  };
+
   const sessionFromRequest = (req: Request): Session | null => {
     const token = parseSessionCookie(req, cookieName);
     return authService.getSession(token);
   };
 
-  return { login, logout, session, sessionFromRequest };
+  return { login, logout, session, me, sessionFromRequest };
 }

@@ -263,7 +263,7 @@ const authService = new AuthService(
   SESSION_MAX_AGE_SECONDS
 );
 
-const { login, logout, session: sessionHandler, sessionFromRequest } = createAuthHandlers(authService, SESSION_COOKIE);
+const { login, logout, session: sessionHandler, me, sessionFromRequest } = createAuthHandlers(authService, SESSION_COOKIE);
 
 function handleWebSocketUpgrade(req: Request, serverInstance: Server<WebSocketData>, session: Session | null) {
   const upgradeHeader = req.headers.get("upgrade");
@@ -300,6 +300,7 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (aiTasksMatch) return handleAiTasks(url, aiTasksMatch);
     if (pathname === "/ai/summary/latest") return handleLatestSummary(url);
     if (pathname === "/auth/session") return sessionHandler(req);
+    if (pathname === "/auth/me") return me(req);
     const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
