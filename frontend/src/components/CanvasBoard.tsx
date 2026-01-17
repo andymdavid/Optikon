@@ -5986,6 +5986,11 @@ const shapeCreationRef = useRef<
                   cancelEditing()
                   return
                 }
+                if (event.key === 'Enter' && event.shiftKey) {
+                  event.preventDefault()
+                  insertPlainText('\n')
+                  return
+                }
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
                   commitEditing()
@@ -6038,6 +6043,11 @@ const shapeCreationRef = useRef<
                 if (event.key === 'Escape') {
                   event.preventDefault()
                   cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && event.shiftKey) {
+                  event.preventDefault()
+                  insertPlainText('\n')
                   return
                 }
                 if (event.key === 'Enter' && !event.shiftKey) {
