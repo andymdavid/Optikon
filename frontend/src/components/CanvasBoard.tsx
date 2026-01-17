@@ -1712,55 +1712,48 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.scale(scaleFactor, scaleFactor)
   ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`
   ctx.textBaseline = 'top'
-  ctx.textAlign = textAlign
+  ctx.textAlign = 'left'
   ctx.fillStyle = textColor
 
   const lines = wrapText(ctx, element.text, inner.width, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = Math.max(0, (inner.height - totalHeight) / 2)
 
-  const blockX =
+  const blockLeft =
     textAlign === 'left'
       ? -width / 2 + paddingX
       : textAlign === 'right'
         ? width / 2 - paddingX - inner.width
         : -inner.width / 2
-  const blockY = -height / 2 + paddingY + offsetY
+  const blockTop = -height / 2 + paddingY + offsetY
 
   if (background && background.color !== 'transparent') {
     ctx.fillStyle = background.color
     ctx.globalAlpha = background.opacity / 100
     const backgroundPadding = 4
     ctx.fillRect(
-      blockX - backgroundPadding,
-      blockY - backgroundPadding,
+      blockLeft - backgroundPadding,
+      blockTop - backgroundPadding,
       inner.width + backgroundPadding * 2,
       totalHeight + backgroundPadding * 2
     )
     ctx.globalAlpha = 1
   }
 
-  let textX: number
-  if (textAlign === 'left') {
-    textX = -width / 2 + paddingX
-  } else if (textAlign === 'right') {
-    textX = width / 2 - paddingX
-  } else {
-    textX = 0
-  }
   const paragraphs = element.text.split('\n')
   let paragraphIndex = 0
   let charInParagraph = 0
 
   lines.forEach((line, index) => {
-    const textY = -height / 2 + paddingY + offsetY + index * lineHeight
+    const textY = blockTop + index * lineHeight
     const lineWidth = ctx.measureText(line).width
-    const lineStartX =
-      textAlign === 'left'
-        ? textX
-        : textAlign === 'right'
-          ? textX - lineWidth
-          : textX - lineWidth / 2
+    let xOffset = 0
+    if (textAlign === 'center') {
+      xOffset = (inner.width - lineWidth) / 2
+    } else if (textAlign === 'right') {
+      xOffset = inner.width - lineWidth
+    }
+    const lineStartX = blockLeft + xOffset
     const bulletOffset = bullets ? 20 : 0
     const textStartX = lineStartX + bulletOffset
 
