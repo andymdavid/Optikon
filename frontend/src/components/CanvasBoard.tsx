@@ -1953,7 +1953,7 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 0.5 / scaleFactor
+  ctx.lineWidth = 1 / scaleFactor
   const width = bounds.width
   const height = bounds.height
   ctx.beginPath()
@@ -2006,7 +2006,7 @@ function drawRoundedRectElement(
   ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
+  ctx.lineWidth = 1 / scaleFactor
   const width = bounds.width
   const height = bounds.height
   const radius = getRoundedRectRadius(element, width, height)
