@@ -703,6 +703,10 @@ function getElementFontSize(element: StickyNoteElement) {
 }
 
 function resolveShapeFontSize(element: ShapeElement | FrameElement) {
+  if (element.textAutoFit === false) {
+    const manual = typeof element.fontSize === 'number' && Number.isFinite(element.fontSize) ? element.fontSize : getShapeFontBounds(element).max
+    return clampFontSizeForShape(element, manual)
+  }
   const value = element.fontSize
   if (typeof value === 'number' && Number.isFinite(value)) {
     return clampFontSizeForShape(element, value)
@@ -1139,6 +1143,8 @@ function parseRectangleElement(raw: unknown): RectangleElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1169,6 +1175,8 @@ function parseFrameElement(raw: unknown): FrameElement | null {
     rotation,
     title,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1199,6 +1207,8 @@ function parseEllipseElement(raw: unknown): EllipseElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1231,6 +1241,8 @@ function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1261,6 +1273,8 @@ function parseDiamondElement(raw: unknown): DiamondElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1291,6 +1305,8 @@ function parseTriangleElement(raw: unknown): TriangleElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const fontSize =
     typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
@@ -1337,6 +1353,8 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
     rotation,
     tail,
     text,
+    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
+    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
   }
   const sized = applySpeechBubbleTailSizing(bubble, width, height)
   const fontSize =
@@ -1674,6 +1692,14 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   const fontWeight = element.style?.fontWeight ?? 400
   const fontStyle = element.style?.fontStyle ?? 'normal'
   const textAlign = element.style?.textAlign ?? 'center'
+  const fontFamily = element.fontFamily ?? STICKY_FONT_FAMILY
+  const link = element.style?.link ?? null
+  const textColor = link ? '#0EA5E9' : (element.style?.color ?? STICKY_TEXT_COLOR)
+  const underline = link ? true : (element.style?.underline ?? false)
+  const strikethrough = element.style?.strikethrough ?? false
+  const highlight = element.style?.highlight ?? null
+  const background = element.style?.background ?? null
+  const bullets = element.style?.bullets ?? false
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const inner = getShapeInnerSize(element)
 
@@ -1684,14 +1710,35 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.rotate(bounds.rotation)
   const scaleFactor = bounds.scale * camera.zoom
   ctx.scale(scaleFactor, scaleFactor)
-  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`
   ctx.textBaseline = 'top'
   ctx.textAlign = textAlign
-  ctx.fillStyle = STICKY_TEXT_COLOR
+  ctx.fillStyle = textColor
 
   const lines = wrapText(ctx, element.text, inner.width, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = Math.max(0, (inner.height - totalHeight) / 2)
+
+  const blockX =
+    textAlign === 'left'
+      ? -width / 2 + paddingX
+      : textAlign === 'right'
+        ? width / 2 - paddingX - inner.width
+        : -inner.width / 2
+  const blockY = -height / 2 + paddingY + offsetY
+
+  if (background && background.color !== 'transparent') {
+    ctx.fillStyle = background.color
+    ctx.globalAlpha = background.opacity / 100
+    const backgroundPadding = 4
+    ctx.fillRect(
+      blockX - backgroundPadding,
+      blockY - backgroundPadding,
+      inner.width + backgroundPadding * 2,
+      totalHeight + backgroundPadding * 2
+    )
+    ctx.globalAlpha = 1
+  }
 
   let textX: number
   if (textAlign === 'left') {
@@ -1701,9 +1748,71 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   } else {
     textX = 0
   }
+  const paragraphs = element.text.split('\n')
+  let paragraphIndex = 0
+  let charInParagraph = 0
+
   lines.forEach((line, index) => {
     const textY = -height / 2 + paddingY + offsetY + index * lineHeight
-    ctx.fillText(line, textX, textY, inner.width)
+    const lineWidth = ctx.measureText(line).width
+    const lineStartX =
+      textAlign === 'left'
+        ? textX
+        : textAlign === 'right'
+          ? textX - lineWidth
+          : textX - lineWidth / 2
+    const bulletOffset = bullets ? 20 : 0
+    const textStartX = lineStartX + bulletOffset
+
+    if (highlight && highlight !== 'transparent') {
+      ctx.fillStyle = highlight
+      const highlightPadding = 2
+      ctx.fillRect(
+        textStartX - highlightPadding,
+        textY - highlightPadding,
+        lineWidth + highlightPadding * 2,
+        lineHeight
+      )
+    }
+
+    if (bullets && charInParagraph === 0) {
+      ctx.fillStyle = textColor
+      const bulletX = lineStartX + 6
+      const bulletY = textY + lineHeight * 0.35
+      ctx.beginPath()
+      ctx.arc(bulletX, bulletY, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.fillStyle = textColor
+    ctx.fillText(line, textStartX, textY, inner.width)
+
+    if (underline) {
+      ctx.strokeStyle = textColor
+      ctx.lineWidth = Math.max(1, fontSize / 14)
+      const underlineY = textY + fontSize * 1.1
+      ctx.beginPath()
+      ctx.moveTo(textStartX, underlineY)
+      ctx.lineTo(textStartX + lineWidth, underlineY)
+      ctx.stroke()
+    }
+
+    if (strikethrough) {
+      ctx.strokeStyle = textColor
+      ctx.lineWidth = Math.max(1, fontSize / 14)
+      const strikeY = textY + fontSize * 0.5
+      ctx.beginPath()
+      ctx.moveTo(textStartX, strikeY)
+      ctx.lineTo(textStartX + lineWidth, strikeY)
+      ctx.stroke()
+    }
+
+    charInParagraph += line.length
+    const currentParagraph = paragraphs[paragraphIndex] ?? ''
+    if (charInParagraph >= currentParagraph.length) {
+      paragraphIndex++
+      charInParagraph = 0
+    }
   })
   ctx.restore()
 }
@@ -3079,7 +3188,11 @@ const shapeCreationRef = useRef<
       el.style?.textAlign ?? (el.type === 'text' ? 'left' : 'center')
     )
     const bulletsValues = textElements.map((el) => el.style?.bullets ?? false)
-    const fontFamilyValues = textElements.map((el) => (el.type === 'text' ? el.fontFamily ?? 'Inter' : 'Inter'))
+    const fontFamilyValues = textElements.map((el) => {
+      if (el.type === 'text') return el.fontFamily ?? 'Inter'
+      if (el.type === 'sticky') return 'Inter'
+      return el.fontFamily ?? 'Inter'
+    })
     const fontSizeValues = textElements.map((el) => {
       if (el.type === 'text') return el.fontSize ?? 48
       if (el.type === 'sticky') return resolveStickyFontSize(el.fontSize)
@@ -3225,19 +3338,32 @@ const shapeCreationRef = useRef<
     [selectedIds, elements, supportsTextStyle, sendElementsUpdate, boardId, persistElementsUpdate]
   )
 
-  // Apply element-level property updates (fontFamily, fontSize) to selected text elements
+  // Apply element-level property updates (fontFamily, fontSize) to selected text/shape elements
   const applyTextElementUpdate = useCallback(
-    (patch: Partial<Pick<TextElement, 'fontFamily' | 'fontSize'>>) => {
+    (patch: { fontFamily?: string; fontSize?: number }) => {
       const textElements = Array.from(selectedIds)
         .map((id) => elements[id])
-        .filter((el): el is TextElement => el?.type === 'text')
+        .filter((el): el is TextElement | ShapeElement | FrameElement => {
+          return !!el && (el.type === 'text' || isShapeElement(el) || isFrameElement(el))
+        })
 
       if (textElements.length === 0) return
 
-      const updatedElements: BoardElement[] = textElements.map((el) => ({
-        ...el,
-        ...patch,
-      }))
+      const updatedElements: BoardElement[] = textElements.map((el) => {
+        if (el.type === 'text') {
+          const nextFontSize =
+            typeof patch.fontSize === 'number' ? resolveTextFontSize(patch.fontSize) : el.fontSize
+          return { ...el, fontFamily: patch.fontFamily ?? el.fontFamily, fontSize: nextFontSize }
+        }
+        const nextFontSize =
+          typeof patch.fontSize === 'number' ? clampFontSizeForShape(el, patch.fontSize) : el.fontSize
+        return {
+          ...el,
+          fontFamily: patch.fontFamily ?? el.fontFamily,
+          fontSize: nextFontSize,
+          textAutoFit: typeof patch.fontSize === 'number' ? false : el.textAutoFit,
+        }
+      })
 
       // Update local state
       setElements((prev) => {
@@ -3381,9 +3507,12 @@ const shapeCreationRef = useRef<
       setSelection(new Set([element.id]))
       const ctx = getMeasureContext()
       const text = element.text ?? ''
-      const inner = getShapeInnerSize(element)
-      const { max, min } = getShapeFontBounds(element)
-      const fitted = ctx ? fitFontSize(ctx, text, inner.width, inner.height, max, min) : max
+      const fitted =
+        element.textAutoFit === false
+          ? resolveShapeFontSize(element)
+          : ctx
+            ? fitShapeFontSize(ctx, element, text)
+            : resolveShapeFontSize(element)
       updateEditingState({
         id: element.id,
         elementType: 'shape',
@@ -3434,10 +3563,12 @@ const shapeCreationRef = useRef<
         const ctx = getMeasureContext()
         const nextText = current.text
         let nextFontSize = resolveShapeFontSize(target)
-        if (ctx) {
+        if (target.textAutoFit === false) {
+          if (typeof current.fontSize === 'number') {
+            nextFontSize = clampFontSizeForShape(target, current.fontSize)
+          }
+        } else if (ctx) {
           nextFontSize = fitShapeFontSize(ctx, target, nextText)
-        } else if (typeof current.fontSize === 'number') {
-          nextFontSize = clampFontSizeForShape(target, current.fontSize)
         }
         if ((target.text ?? '') === nextText && resolveShapeFontSize(target) === nextFontSize) return prev
         updatedElement = { ...target, text: nextText, fontSize: nextFontSize }
@@ -5526,6 +5657,7 @@ const shapeCreationRef = useRef<
         return
       }
       if ((isShapeElement(element) || isFrameElement(element)) && typeof element.text === 'string') {
+        if (element.textAutoFit === false) return
         const fitted = fitShapeFontSize(ctx, element, element.text)
         if (Math.abs(fitted - resolveShapeFontSize(element)) > 0.1) {
           adjustments.push({ ...element, fontSize: fitted })
@@ -5954,6 +6086,9 @@ const shapeCreationRef = useRef<
           return { ...prev, text: nextValue, fontSize: fitted }
         }
         if (prev.elementType === 'shape' && shapeTarget && ctx) {
+          if (shapeTarget.textAutoFit === false) {
+            return { ...prev, text: nextValue }
+          }
           const fitted = fitShapeFontSize(ctx, shapeTarget, nextValue)
           return { ...prev, text: nextValue, fontSize: fitted }
         }
@@ -6465,7 +6600,7 @@ const shapeCreationRef = useRef<
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
               fontWeight: editingShapeElement.style?.fontWeight ?? 400,
               fontStyle: editingShapeElement.style?.fontStyle ?? 'normal',
-              fontFamily: STICKY_FONT_FAMILY,
+              fontFamily: editingShapeElement.fontFamily ?? STICKY_FONT_FAMILY,
               textAlign: editingShapeElement.style?.textAlign ?? 'center',
             }}
             onPointerDown={(event) => {

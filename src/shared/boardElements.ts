@@ -55,7 +55,9 @@ export interface RectangleElement extends CanvasElement {
   stroke?: string
   rotation?: number
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -68,7 +70,9 @@ export interface FrameElement extends CanvasElement {
   rotation?: number
   title: string
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -82,7 +86,9 @@ export interface EllipseElement extends CanvasElement {
   stroke?: string
   rotation?: number
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -97,7 +103,9 @@ export interface RoundedRectElement extends CanvasElement {
   stroke?: string
   rotation?: number
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -111,7 +119,9 @@ export interface DiamondElement extends CanvasElement {
   stroke?: string
   rotation?: number
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -125,7 +135,9 @@ export interface TriangleElement extends CanvasElement {
   stroke?: string
   rotation?: number
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
@@ -146,7 +158,9 @@ export interface SpeechBubbleElement extends CanvasElement {
   rotation?: number
   tail?: SpeechBubbleTail
   text?: string
+  fontFamily?: string
   fontSize?: number
+  textAutoFit?: boolean
   style?: TextStyle
 }
 
