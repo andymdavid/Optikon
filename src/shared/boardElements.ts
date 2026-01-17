@@ -135,6 +135,7 @@ export interface CommentElement extends CanvasElement {
   y: number
   text: string
   elementId?: string
+  authorPubkey?: string
 }
 
 export type ConnectorAnchor = 'top' | 'right' | 'bottom' | 'left' | 'center'

@@ -14,6 +14,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
+import { fetchProfilePicture, getAvatarFallback } from './canvas/nostrProfiles'
 import {
   STICKY_FONT_FAMILY,
   TEXT_COLOR,
@@ -1306,6 +1307,7 @@ function parseCommentElement(raw: unknown): CommentElement | null {
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   const text = typeof element.text === 'string' ? element.text : ''
   const elementId = typeof element.elementId === 'string' ? element.elementId : undefined
+  const authorPubkey = typeof element.authorPubkey === 'string' ? element.authorPubkey : undefined
   return {
     id: element.id,
     type: 'comment',
@@ -1313,6 +1315,7 @@ function parseCommentElement(raw: unknown): CommentElement | null {
     y: element.y,
     text,
     elementId,
+    authorPubkey,
   }
 }
 
@@ -1805,18 +1808,32 @@ function drawFrameElement(
   }
 }
 
-function drawCommentElement(ctx: CanvasRenderingContext2D, element: CommentElement, camera: CameraState) {
+function drawCommentElement(
+  ctx: CanvasRenderingContext2D,
+  element: CommentElement,
+  camera: CameraState,
+  avatarImage: HTMLImageElement | null
+) {
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
-  const radius = 8
+  const radius = 14
   ctx.save()
-  ctx.fillStyle = '#0ea5e9'
+  ctx.fillStyle = '#e2e8f0'
   ctx.strokeStyle = '#0f172a'
-  ctx.lineWidth = 1.5
+  ctx.lineWidth = 1
   ctx.beginPath()
   ctx.arc(screenX, screenY, radius, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
+  const image = avatarImage
+  if (image && image.complete) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(screenX, screenY, radius - 1, 0, Math.PI * 2)
+    ctx.clip()
+    ctx.drawImage(image, screenX - radius, screenY - radius, radius * 2, radius * 2)
+    ctx.restore()
+  }
   ctx.restore()
 }
 
@@ -2437,7 +2454,7 @@ function drawElementSelection(
     const boardPosition = getCommentBoardPosition(element as CommentElement)
     const screenX = (boardPosition.x + camera.offsetX) * camera.zoom
     const screenY = (boardPosition.y + camera.offsetY) * camera.zoom
-    const radius = 12
+    const radius = 14
     ctx.save()
     ctx.strokeStyle = ACCENT_COLOR
     ctx.lineWidth = 2
@@ -2472,7 +2489,7 @@ function drawElementSelection(
   }
 }
 
-export function CanvasBoard() {
+export function CanvasBoard({ session }: { session: { pubkey: string; npub: string } | null }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
@@ -2584,6 +2601,8 @@ const shapeCreationRef = useRef<
   const lastSelectedCommentIdRef = useRef<string | null>(null)
   const skipCommentPopoverCloseRef = useRef(false)
   const measurementCtxRef = useRef<CanvasRenderingContext2D | null>(null)
+  const commentAvatarCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map())
+  const [commentAvatarVersion, setCommentAvatarVersion] = useState(0)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
       suppressClickRef.current = false
@@ -2630,6 +2649,46 @@ const shapeCreationRef = useRef<
   const hoveredLinkElementRef = useRef<typeof hoveredLinkElement>(null)
   const linkHoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
+
+  const ensureAvatarImage = useCallback((key: string, url: string) => {
+    const cache = commentAvatarCacheRef.current
+    if (cache.has(key)) return
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => {
+      setCommentAvatarVersion((prev) => prev + 1)
+    }
+    image.onerror = () => {
+      cache.set(key, null)
+      setCommentAvatarVersion((prev) => prev + 1)
+    }
+    image.src = url
+    cache.set(key, image)
+    if (image.complete) {
+      setCommentAvatarVersion((prev) => prev + 1)
+    }
+  }, [])
+
+  useEffect(() => {
+    const pubkeys = new Set<string>()
+    let hasAnonymous = false
+    Object.values(elements).forEach((element) => {
+      if (!isCommentElement(element)) return
+      if (element.authorPubkey) pubkeys.add(element.authorPubkey)
+      else hasAnonymous = true
+    })
+    if (hasAnonymous) {
+      ensureAvatarImage('anonymous', getAvatarFallback('anonymous'))
+    }
+    if (pubkeys.size === 0) return
+    pubkeys.forEach((pubkey) => {
+      ensureAvatarImage(pubkey, getAvatarFallback(pubkey))
+      void fetchProfilePicture(pubkey).then((url) => {
+        if (!url) return
+        ensureAvatarImage(pubkey, url)
+      })
+    })
+  }, [elements, ensureAvatarImage])
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
       const value = typeof next === 'function' ? (next as (prev: MarqueeState | null) => MarqueeState | null)(marqueeRef.current) : next
@@ -3221,7 +3280,7 @@ const shapeCreationRef = useRef<
         const epsilon = Math.max(0.0001, totalArea * 0.001)
         return Math.abs(totalArea - (area1 + area2 + area3)) <= epsilon
       }
-      const commentRadius = 10 / Math.max(0.01, cameraState.zoom)
+      const commentRadius = 14 / Math.max(0.01, cameraState.zoom)
       for (let i = values.length - 1; i >= 0; i -= 1) {
         const element = values[i]
         if (isLineElement(element)) {
@@ -3769,6 +3828,7 @@ const shapeCreationRef = useRef<
           x: boardPoint.x,
           y: boardPoint.y,
           text: '',
+          authorPubkey: session?.pubkey,
         }
         upsertElement(element)
         sendElementUpdate(element)
@@ -5467,7 +5527,9 @@ const shapeCreationRef = useRef<
       if (isFrameElement(element)) {
         drawFrameElement(ctx, element, cameraState, { hideLabel: editingFrameId === element.id })
       } else if (isCommentElement(element)) {
-        drawCommentElement(ctx, element, cameraState)
+        const avatarKey = element.authorPubkey ?? 'anonymous'
+        const avatarImage = commentAvatarCacheRef.current.get(avatarKey) ?? null
+        drawCommentElement(ctx, element, cameraState, avatarImage)
       } else if (isStickyElement(element)) {
         drawSticky(ctx, element, cameraState)
       } else if (isTextElement(element)) {
@@ -5519,7 +5581,7 @@ const shapeCreationRef = useRef<
         sharedMeasureCtx
       )
     })
-  }, [cameraState, connectorHighlight, editingState, elements, selectedIds, toolMode])
+  }, [cameraState, commentAvatarVersion, connectorHighlight, editingState, elements, selectedIds, toolMode])
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
