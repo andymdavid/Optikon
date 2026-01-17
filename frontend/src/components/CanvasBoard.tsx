@@ -1953,7 +1953,7 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 1 / scaleFactor
+  ctx.lineWidth = 0.5 / scaleFactor
   const width = bounds.width
   const height = bounds.height
   ctx.beginPath()
