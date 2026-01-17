@@ -54,6 +54,9 @@ export interface RectangleElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface FrameElement extends CanvasElement {
@@ -64,6 +67,9 @@ export interface FrameElement extends CanvasElement {
   h: number
   rotation?: number
   title: string
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface EllipseElement extends CanvasElement {
@@ -75,6 +81,9 @@ export interface EllipseElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface RoundedRectElement extends CanvasElement {
@@ -87,6 +96,9 @@ export interface RoundedRectElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface DiamondElement extends CanvasElement {
@@ -98,6 +110,9 @@ export interface DiamondElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface TriangleElement extends CanvasElement {
@@ -109,6 +124,9 @@ export interface TriangleElement extends CanvasElement {
   fill?: string
   stroke?: string
   rotation?: number
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface SpeechBubbleTail {
@@ -127,6 +145,9 @@ export interface SpeechBubbleElement extends CanvasElement {
   stroke?: string
   rotation?: number
   tail?: SpeechBubbleTail
+  text?: string
+  fontSize?: number
+  style?: TextStyle
 }
 
 export interface CommentElement extends CanvasElement {

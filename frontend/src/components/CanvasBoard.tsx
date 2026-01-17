@@ -642,6 +642,42 @@ function getStickyInnerSize(element: StickyNoteElement) {
   }
 }
 
+function getShapeDimensions(element: ShapeElement | FrameElement) {
+  const minSize = resolveShapeMinSize(element)
+  return {
+    width: Math.max(minSize, element.w),
+    height: Math.max(minSize, element.h),
+  }
+}
+
+function getShapeTextPadding(element: ShapeElement | FrameElement) {
+  const { width, height } = getShapeDimensions(element)
+  const ratio = Math.min(width, height) / STICKY_SIZE
+  const paddingX = Math.max(2, STICKY_PADDING_X * ratio)
+  const paddingY = Math.max(2, STICKY_PADDING_Y * ratio)
+  return { paddingX, paddingY }
+}
+
+function getShapeInnerSize(element: ShapeElement | FrameElement) {
+  const { width, height } = getShapeDimensions(element)
+  const { paddingX, paddingY } = getShapeTextPadding(element)
+  return {
+    width: Math.max(0, width - paddingX * 2),
+    height: Math.max(0, height - paddingY * 2),
+  }
+}
+
+function getShapeFontBounds(element: ShapeElement | FrameElement) {
+  const { width, height } = getShapeDimensions(element)
+  const ratio = Math.min(width, height) / STICKY_SIZE
+  const max = BASE_STICKY_FONT_MAX * ratio
+  const min = Math.max(2, BASE_STICKY_FONT_MIN * ratio)
+  return {
+    max: Math.max(min, max),
+    min,
+  }
+}
+
 function getStickyFontBounds(element: StickyNoteElement) {
   const ratio = getStickySize(element) / STICKY_SIZE
   const max = BASE_STICKY_FONT_MAX * ratio
@@ -657,8 +693,27 @@ function clampFontSizeForElement(element: StickyNoteElement, fontSize: number) {
   return clamp(fontSize, min, max)
 }
 
+function clampFontSizeForShape(element: ShapeElement | FrameElement, fontSize: number) {
+  const { min, max } = getShapeFontBounds(element)
+  return clamp(fontSize, min, max)
+}
+
 function getElementFontSize(element: StickyNoteElement) {
   return resolveStickyFontSize(element.fontSize)
+}
+
+function resolveShapeFontSize(element: ShapeElement | FrameElement) {
+  const value = element.fontSize
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clampFontSizeForShape(element, value)
+  }
+  return getShapeFontBounds(element).max
+}
+
+function fitShapeFontSize(ctx: CanvasRenderingContext2D, element: ShapeElement | FrameElement, text: string) {
+  const inner = getShapeInnerSize(element)
+  const bounds = getShapeFontBounds(element)
+  return fitFontSize(ctx, text, inner.width, inner.height, bounds.max, bounds.min)
 }
 
 function rectsIntersect(a: Rect, b: Rect) {
@@ -800,7 +855,7 @@ type EditingState = {
   text: string
   originalText: string
   fontSize?: number
-  elementType: 'sticky' | 'text' | 'frame'
+  elementType: 'sticky' | 'text' | 'frame' | 'shape'
 }
 
 type TransformState =
@@ -1072,7 +1127,8 @@ function parseRectangleElement(raw: unknown): RectangleElement | null {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: RectangleElement = {
     id: element.id,
     type: 'rect',
     x: element.x,
@@ -1082,7 +1138,13 @@ function parseRectangleElement(raw: unknown): RectangleElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseFrameElement(raw: unknown): FrameElement | null {
@@ -1096,7 +1158,8 @@ function parseFrameElement(raw: unknown): FrameElement | null {
   const height = Math.max(FRAME_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
   const title = typeof element.title === 'string' && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: FrameElement = {
     id: element.id,
     type: 'frame',
     x: element.x,
@@ -1105,7 +1168,13 @@ function parseFrameElement(raw: unknown): FrameElement | null {
     h: height,
     rotation,
     title,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseEllipseElement(raw: unknown): EllipseElement | null {
@@ -1118,7 +1187,8 @@ function parseEllipseElement(raw: unknown): EllipseElement | null {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: EllipseElement = {
     id: element.id,
     type: 'ellipse',
     x: element.x,
@@ -1128,7 +1198,13 @@ function parseEllipseElement(raw: unknown): EllipseElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
@@ -1142,7 +1218,8 @@ function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
   const radiusValue = resolveRoundedRectRadius(element.r)
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: RoundedRectElement = {
     id: element.id,
     type: 'roundRect',
     x: element.x,
@@ -1153,7 +1230,13 @@ function parseRoundedRectElement(raw: unknown): RoundedRectElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseDiamondElement(raw: unknown): DiamondElement | null {
@@ -1166,7 +1249,8 @@ function parseDiamondElement(raw: unknown): DiamondElement | null {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: DiamondElement = {
     id: element.id,
     type: 'diamond',
     x: element.x,
@@ -1176,7 +1260,13 @@ function parseDiamondElement(raw: unknown): DiamondElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseTriangleElement(raw: unknown): TriangleElement | null {
@@ -1189,7 +1279,8 @@ function parseTriangleElement(raw: unknown): TriangleElement | null {
   const width = Math.max(RECT_MIN_SIZE, element.w)
   const height = Math.max(RECT_MIN_SIZE, element.h)
   const rotation = resolveTextRotation(element.rotation)
-  return {
+  const text = typeof element.text === 'string' ? element.text : undefined
+  const provisional: TriangleElement = {
     id: element.id,
     type: 'triangle',
     x: element.x,
@@ -1199,7 +1290,13 @@ function parseTriangleElement(raw: unknown): TriangleElement | null {
     fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
+    text,
   }
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(provisional, element.fontSize)
+      : undefined
+  return { ...provisional, fontSize }
 }
 
 function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
@@ -1227,6 +1324,7 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
             : defaultTailSize,
       } satisfies SpeechBubbleTail)
     : undefined
+  const text = typeof element.text === 'string' ? element.text : undefined
   const bubble: SpeechBubbleElement = {
     id: element.id,
     type: 'speechBubble',
@@ -1238,8 +1336,14 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
     stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
     rotation,
     tail,
+    text,
   }
-  return applySpeechBubbleTailSizing(bubble, width, height)
+  const sized = applySpeechBubbleTailSizing(bubble, width, height)
+  const fontSize =
+    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
+      ? clampFontSizeForShape(sized, element.fontSize)
+      : undefined
+  return { ...sized, fontSize }
 }
 
 function isConnectorAnchor(value: unknown): value is ConnectorAnchor {
@@ -1561,6 +1665,49 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.restore()
 }
 
+function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | FrameElement, camera: CameraState) {
+  if (!element.text) return
+  const bounds = getShapeElementBounds(element)
+  const { paddingX, paddingY } = getShapeTextPadding(element)
+  const { width, height } = getShapeDimensions(element)
+  const fontSize = resolveShapeFontSize(element)
+  const fontWeight = element.style?.fontWeight ?? 400
+  const fontStyle = element.style?.fontStyle ?? 'normal'
+  const textAlign = element.style?.textAlign ?? 'center'
+  const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
+  const inner = getShapeInnerSize(element)
+
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.save()
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${STICKY_FONT_FAMILY}`
+  ctx.textBaseline = 'top'
+  ctx.textAlign = textAlign
+  ctx.fillStyle = STICKY_TEXT_COLOR
+
+  const lines = wrapText(ctx, element.text, inner.width, true)
+  const totalHeight = lines.length * lineHeight
+  const offsetY = Math.max(0, (inner.height - totalHeight) / 2)
+
+  let textX: number
+  if (textAlign === 'left') {
+    textX = -width / 2 + paddingX
+  } else if (textAlign === 'right') {
+    textX = width / 2 - paddingX
+  } else {
+    textX = 0
+  }
+  lines.forEach((line, index) => {
+    const textY = -height / 2 + paddingY + offsetY + index * lineHeight
+    ctx.fillText(line, textX, textY, inner.width)
+  })
+  ctx.restore()
+}
+
 function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
   const measureCtx = getSharedMeasureContext()
   const bounds = getTextElementBounds(element, measureCtx)
@@ -1712,6 +1859,7 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseElement, camera: CameraState) {
@@ -1733,6 +1881,7 @@ function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseEleme
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function getRoundedRectRadius(element: { r?: number }, width: number, height: number) {
@@ -1764,6 +1913,7 @@ function drawRoundedRectElement(
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function drawFrameElement(
@@ -1790,6 +1940,8 @@ function drawFrameElement(
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+
+  drawShapeText(ctx, element, camera)
 
   // Draw title in screen space so it stays legible across zoom levels.
   const labelRect = getFrameLabelRect(element, camera)
@@ -1859,6 +2011,7 @@ function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondEleme
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function getLineStrokeColor(element: LineElement) {
@@ -2152,6 +2305,7 @@ function drawSpeechBubbleElement(
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function drawTriangleElement(ctx: CanvasRenderingContext2D, element: TriangleElement, camera: CameraState) {
@@ -2176,6 +2330,7 @@ function drawTriangleElement(ctx: CanvasRenderingContext2D, element: TriangleEle
   ctx.fill()
   ctx.stroke()
   ctx.restore()
+  drawShapeText(ctx, element, camera)
 }
 
 function drawStickySelection(
@@ -3210,6 +3365,27 @@ const shapeCreationRef = useRef<
     [releaseClickSuppression, setSelection, updateEditingState]
   )
 
+  const beginEditingShape = useCallback(
+    (element: ShapeElement | FrameElement) => {
+      suppressClickRef.current = true
+      releaseClickSuppression()
+      setSelection(new Set([element.id]))
+      const ctx = getMeasureContext()
+      const text = element.text ?? ''
+      const inner = getShapeInnerSize(element)
+      const { max, min } = getShapeFontBounds(element)
+      const fitted = ctx ? fitFontSize(ctx, text, inner.width, inner.height, max, min) : max
+      updateEditingState({
+        id: element.id,
+        elementType: 'shape',
+        text,
+        originalText: text,
+        fontSize: fitted,
+      })
+    },
+    [getMeasureContext, releaseClickSuppression, setSelection, updateEditingState]
+  )
+
   const openCommentPopoverForElement = useCallback((element: CommentElement, mode?: 'view' | 'edit') => {
     const desiredMode = mode ?? (element.text ? 'view' : 'edit')
     if (desiredMode === 'edit') {
@@ -3227,22 +3403,35 @@ const shapeCreationRef = useRef<
     setElements((prev) => {
       const target = prev[current.id]
       if (!target) return prev
-      if (isStickyElement(target)) {
+      if (current.elementType === 'sticky' && isStickyElement(target)) {
         const nextFontSize = clampFontSizeForElement(target, resolveStickyFontSize(current.fontSize))
         if (target.text === current.text && resolveStickyFontSize(target.fontSize) === nextFontSize) return prev
         updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
         return { ...prev, [current.id]: updatedElement }
       }
-      if (isTextElement(target)) {
+      if (current.elementType === 'text' && isTextElement(target)) {
         const nextFontSize = resolveTextFontSize(current.fontSize)
         if (target.text === current.text && resolveTextFontSize(target.fontSize) === nextFontSize) return prev
         updatedElement = { ...target, text: current.text, fontSize: nextFontSize }
         return { ...prev, [current.id]: updatedElement }
       }
-      if (isFrameElement(target)) {
+      if (current.elementType === 'frame' && isFrameElement(target)) {
         const nextTitle = current.text.trim() ? current.text.trim() : 'Frame'
         if (target.title === nextTitle) return prev
         updatedElement = { ...target, title: nextTitle }
+        return { ...prev, [current.id]: updatedElement }
+      }
+      if (current.elementType === 'shape' && (isShapeElement(target) || isFrameElement(target))) {
+        const ctx = getMeasureContext()
+        const nextText = current.text
+        let nextFontSize = resolveShapeFontSize(target)
+        if (ctx) {
+          nextFontSize = fitShapeFontSize(ctx, target, nextText)
+        } else if (typeof current.fontSize === 'number') {
+          nextFontSize = clampFontSizeForShape(target, current.fontSize)
+        }
+        if ((target.text ?? '') === nextText && resolveShapeFontSize(target) === nextFontSize) return prev
+        updatedElement = { ...target, text: nextText, fontSize: nextFontSize }
         return { ...prev, [current.id]: updatedElement }
       }
       return prev
@@ -3253,7 +3442,7 @@ const shapeCreationRef = useRef<
         void persistElementsUpdate(boardId, [updatedElement])
       }
     }
-  }, [boardId, persistElementsUpdate, sendElementsUpdate, updateEditingState])
+  }, [boardId, getMeasureContext, persistElementsUpdate, sendElementsUpdate, updateEditingState])
 
   const cancelEditing = useCallback(() => {
     if (!editingStateRef.current) return
@@ -3636,7 +3825,20 @@ const shapeCreationRef = useRef<
       } else if (isTextElement(hitElement)) {
         beginEditingText(hitElement)
       } else if (isFrameElement(hitElement)) {
-        beginEditingFrame(hitElement)
+        const screenPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+        const labelRect = getFrameLabelRect(hitElement, cameraState)
+        if (
+          screenPoint.x >= labelRect.x &&
+          screenPoint.x <= labelRect.x + labelRect.width &&
+          screenPoint.y >= labelRect.y &&
+          screenPoint.y <= labelRect.y + labelRect.height
+        ) {
+          beginEditingFrame(hitElement)
+        } else {
+          beginEditingShape(hitElement)
+        }
+      } else if (isShapeElement(hitElement)) {
+        beginEditingShape(hitElement)
       } else if (isCommentElement(hitElement)) {
         suppressClickRef.current = true
         releaseClickSuppression()
@@ -3647,11 +3849,12 @@ const shapeCreationRef = useRef<
     },
     [
       beginEditingFrame,
+      beginEditingShape,
       beginEditingSticky,
       beginEditingText,
+      cameraState,
       boardId,
       elements,
-      getFrameAttachmentIds,
       hitTestElement,
       isCommentEditing,
       openCommentPopoverForElement,
@@ -4442,7 +4645,7 @@ const shapeCreationRef = useRef<
         setElements((prev) => {
           const target = prev[transformState.id]
           if (!target) return prev
-      let nextElement: BoardElement | null = null
+          let nextElement: BoardElement | null = null
           if (transformState.mode === 'scale') {
             if (!isTextElement(target)) return prev
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
@@ -4575,6 +4778,17 @@ const shapeCreationRef = useRef<
               }
               const rotTarget = target
               nextElement = { ...rotTarget, rotation: nextRotation }
+            }
+          }
+          if (
+            nextElement &&
+            (isShapeElement(nextElement) || isFrameElement(nextElement)) &&
+            typeof nextElement.text === 'string' &&
+            measureCtx
+          ) {
+            const fitted = fitShapeFontSize(measureCtx, nextElement, nextElement.text)
+            if (Math.abs(fitted - resolveShapeFontSize(nextElement)) > 0.1) {
+              nextElement = { ...nextElement, fontSize: fitted }
             }
           }
           if (!nextElement) return prev
@@ -5289,16 +5503,24 @@ const shapeCreationRef = useRef<
     if (!ctx) return
     // TODO(phase-6.2.5): Font auto-fit assumes every element follows sticky sizing rules;
     // skip non-sticky types (e.g. TextElement) once we support them.
-    const adjustments: StickyNoteElement[] = []
+    const adjustments: BoardElement[] = []
     const editingId = editingStateRef.current?.id
     Object.values(elements).forEach((element) => {
-      if (!isStickyElement(element)) return
       if (element.id === editingId) return
-      const inner = getStickyInnerSize(element)
-      const bounds = getStickyFontBounds(element)
-      const fitted = fitFontSize(ctx, element.text, inner.width, inner.height, bounds.max, bounds.min)
-      if (Math.abs(fitted - getElementFontSize(element)) > 0.1) {
-        adjustments.push({ ...element, fontSize: fitted })
+      if (isStickyElement(element)) {
+        const inner = getStickyInnerSize(element)
+        const bounds = getStickyFontBounds(element)
+        const fitted = fitFontSize(ctx, element.text, inner.width, inner.height, bounds.max, bounds.min)
+        if (Math.abs(fitted - getElementFontSize(element)) > 0.1) {
+          adjustments.push({ ...element, fontSize: fitted })
+        }
+        return
+      }
+      if ((isShapeElement(element) || isFrameElement(element)) && typeof element.text === 'string') {
+        const fitted = fitShapeFontSize(ctx, element, element.text)
+        if (Math.abs(fitted - resolveShapeFontSize(element)) > 0.1) {
+          adjustments.push({ ...element, fontSize: fitted })
+        }
       }
     })
     if (adjustments.length === 0) return
@@ -5672,11 +5894,33 @@ const shapeCreationRef = useRef<
   const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
   const editingFrameFontSizePx =
     editingState?.elementType === 'frame' ? getFrameTitleScreenFontSize(cameraState.zoom) : null
+  const editingShapeElement =
+    editingState?.elementType === 'shape' && (isShapeElement(editingElement) || isFrameElement(editingElement))
+      ? editingElement
+      : null
+  const editingShapeBounds = editingShapeElement ? getShapeElementBounds(editingShapeElement) : null
+  const editingShapeRect = editingShapeBounds
+    ? {
+        centerX: (editingShapeBounds.center.x + cameraState.offsetX) * cameraState.zoom,
+        centerY: (editingShapeBounds.center.y + cameraState.offsetY) * cameraState.zoom,
+        width: editingShapeBounds.width * cameraState.zoom,
+        height: editingShapeBounds.height * cameraState.zoom,
+        rotation: editingShapeBounds.rotation,
+      }
+    : null
+  const editingShapePadding = editingShapeElement ? getShapeTextPadding(editingShapeElement) : null
+  const editingShapePaddingX = editingShapePadding ? editingShapePadding.paddingX * cameraState.zoom : null
+  const editingShapePaddingY = editingShapePadding ? editingShapePadding.paddingY * cameraState.zoom : null
+  const editingShapeFontSizePx =
+    editingState?.elementType === 'shape' && typeof editingState.fontSize === 'number'
+      ? editingState.fontSize * cameraState.zoom
+      : null
 
   const updateEditingText = useCallback(
     (nextValue: string) => {
       const ctx = getMeasureContext()
       const stickyTarget = editingStickyElement
+      const shapeTarget = editingShapeElement
       updateEditingState((prev) => {
         if (!prev) return prev
         if (prev.elementType === 'sticky' && stickyTarget && ctx) {
@@ -5685,10 +5929,14 @@ const shapeCreationRef = useRef<
           const fitted = fitFontSize(ctx, nextValue, inner.width, inner.height, bounds.max, bounds.min)
           return { ...prev, text: nextValue, fontSize: fitted }
         }
+        if (prev.elementType === 'shape' && shapeTarget && ctx) {
+          const fitted = fitShapeFontSize(ctx, shapeTarget, nextValue)
+          return { ...prev, text: nextValue, fontSize: fitted }
+        }
         return { ...prev, text: nextValue }
       })
     },
-    [editingStickyElement, getMeasureContext, updateEditingState]
+    [editingShapeElement, editingStickyElement, getMeasureContext, updateEditingState]
   )
 
   const syncEditingTextFromDom = useCallback(() => {
@@ -5748,6 +5996,24 @@ const shapeCreationRef = useRef<
       updateEditingState((prev) => (prev ? { ...prev, fontSize: fitted } : prev))
     }
   }, [editingStickyElement, editingStickyElement?.size, getMeasureContext, updateEditingState])
+
+  useEffect(() => {
+    const ctx = getMeasureContext()
+    const current = editingStateRef.current
+    if (
+      !ctx ||
+      !current ||
+      current.elementType !== 'shape' ||
+      !editingShapeElement ||
+      typeof current.fontSize !== 'number'
+    ) {
+      return
+    }
+    const fitted = fitShapeFontSize(ctx, editingShapeElement, current.text)
+    if (Math.abs(fitted - current.fontSize) > 0.1) {
+      updateEditingState((prev) => (prev ? { ...prev, fontSize: fitted } : prev))
+    }
+  }, [editingShapeElement, getMeasureContext, updateEditingState])
 
   // Compute selection bounds for floating toolbar
   const selectionBoundsScreen = useMemo(() => {
@@ -6137,6 +6403,69 @@ const shapeCreationRef = useRef<
                 if (event.key === 'Escape') {
                   event.preventDefault()
                   cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  commitEditing()
+                }
+              }}
+              onBlur={() => {
+                commitEditing()
+              }}
+              onPaste={(event) => {
+                event.preventDefault()
+                const text = event.clipboardData?.getData('text/plain') ?? ''
+                insertPlainText(text)
+              }}
+            />
+          </div>
+        )}
+      {editingState?.elementType === 'shape' &&
+        editingShapeElement &&
+        editingShapeRect &&
+        editingShapeFontSizePx !== null && (
+          <div
+            className="canvas-board__shape-editor"
+            style={{
+              left: editingShapeRect.centerX,
+              top: editingShapeRect.centerY,
+              width: editingShapeRect.width,
+              height: editingShapeRect.height,
+              transform: `translate(-50%, -50%) rotate(${editingShapeRect.rotation}rad)`,
+              padding:
+                editingShapePaddingX !== null && editingShapePaddingY !== null
+                  ? `${editingShapePaddingY}px ${editingShapePaddingX}px`
+                  : undefined,
+              fontSize: `${editingShapeFontSizePx}px`,
+              lineHeight: STICKY_TEXT_LINE_HEIGHT,
+              fontWeight: editingShapeElement.style?.fontWeight ?? 400,
+              fontStyle: editingShapeElement.style?.fontStyle ?? 'normal',
+              fontFamily: STICKY_FONT_FAMILY,
+              textAlign: editingShapeElement.style?.textAlign ?? 'center',
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+            }}
+          >
+            <div
+              ref={editingContentRef}
+              className="canvas-board__shape-editor-content"
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="true"
+              spellCheck={false}
+              onInput={syncEditingTextFromDom}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelEditing()
+                  return
+                }
+                if (event.key === 'Enter' && event.shiftKey) {
+                  event.preventDefault()
+                  insertPlainText('\n')
                   return
                 }
                 if (event.key === 'Enter' && !event.shiftKey) {
