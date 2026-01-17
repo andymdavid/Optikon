@@ -2246,15 +2246,15 @@ function drawLineElement(
     else ctx.lineTo(point.x, point.y)
   })
   ctx.stroke()
-  if (element.startArrow && startTrim > 0 && trimmedScreenPoints.length >= 2) {
-    const [a, b] = trimmedScreenPoints.slice(0, 2)
-    drawLineArrowhead(ctx, a, b, strokeColor, screenStrokeWidth, startTrim)
+  if (element.startArrow && startTrim > 0 && screenPoints.length >= 2) {
+    const tip = screenPoints[0]
+    const origin = screenPoints[1]
+    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startTrim)
   }
-  if (element.endArrow && endTrim > 0 && trimmedScreenPoints.length >= 2) {
-    const slice = trimmedScreenPoints.slice(-2)
-    const a = slice[0]
-    const b = slice[1]
-    drawLineArrowhead(ctx, b, a, strokeColor, screenStrokeWidth, endTrim)
+  if (element.endArrow && endTrim > 0 && screenPoints.length >= 2) {
+    const tip = screenPoints[screenPoints.length - 1]
+    const origin = screenPoints[screenPoints.length - 2]
+    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endTrim)
   }
   ctx.restore()
 }
