@@ -1975,7 +1975,7 @@ function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseEleme
   ctx.scale(scaleFactor, scaleFactor)
   ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
   ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
+  ctx.lineWidth = 1 / scaleFactor
   const radiusX = bounds.width / 2
   const radiusY = bounds.height / 2
   ctx.beginPath()
