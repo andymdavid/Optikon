@@ -164,6 +164,18 @@ export interface SpeechBubbleElement extends CanvasElement {
   style?: TextStyle
 }
 
+export interface ImageElement extends CanvasElement {
+  type: 'image'
+  x: number
+  y: number
+  w: number
+  h: number
+  url: string
+  mimeType?: string
+  attachmentId?: string
+  rotation?: number
+}
+
 export interface CommentElement extends CanvasElement {
   type: 'comment'
   x: number
@@ -206,5 +218,6 @@ export type BoardElement =
   | DiamondElement
   | TriangleElement
   | SpeechBubbleElement
+  | ImageElement
   | LineElement
   | CommentElement

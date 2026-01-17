@@ -66,6 +66,7 @@ import type {
   TriangleElement,
   SpeechBubbleElement,
   RoundedRectElement,
+  ImageElement,
   StickyNoteElement,
   CommentElement,
   TextElement,
@@ -161,6 +162,8 @@ const LINE_ARROW_WIDTH_FACTOR = 0.7
 const LINE_HIT_RADIUS_PX = 12
 const LINE_SNAP_DISTANCE_PX = 24
 const COPY_PASTE_OFFSET_PX = 24
+const IMAGE_MAX_DIMENSION = 1200
+const IMAGE_MIN_SIZE = 24
 const LINE_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left', 'center']
 const VISIBLE_CONNECTOR_ANCHORS: ConnectorAnchor[] = ['top', 'right', 'bottom', 'left']
 const CONNECTOR_HANDLE_RADIUS_PX = 3
@@ -291,6 +294,11 @@ function getElementAnchorDetails(
     const textBounds = getTextElementBounds(element, ctx)
     const point = getTransformAnchorPoint(textBounds, anchor)
     return { point, center: textBounds.center }
+  }
+  if (isImageElement(element)) {
+    const imageBounds = getImageElementBounds(element)
+    const point = getTransformAnchorPoint(imageBounds, anchor)
+    return { point, center: imageBounds.center }
   }
   if (isShapeElement(element) || isFrameElement(element)) {
     const shapeBounds = getShapeElementBounds(element)
@@ -485,6 +493,7 @@ function normalizeRect(a: { x: number; y: number }, b: { x: number; y: number })
 }
 
 type ShapeElementBounds = TransformBounds
+type ImageElementBounds = TransformBounds
 
 function resolveShapeMinSize(element: { type: BoardElement['type'] }) {
   return element.type === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
@@ -526,6 +535,20 @@ function getRectangleElementBounds(element: RectangleElement): ShapeElementBound
 
 function getEllipseElementBounds(element: EllipseElement): ShapeElementBounds {
   return getShapeElementBounds(element)
+}
+
+function getImageElementBounds(element: ImageElement): ImageElementBounds {
+  const width = Math.max(IMAGE_MIN_SIZE, element.w)
+  const height = Math.max(IMAGE_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  return computeTransformBounds({
+    x: element.x,
+    y: element.y,
+    width,
+    height,
+    rotation,
+    scale: 1,
+  })
 }
 
 function getLineStrokeWidth(element: LineElement) {
@@ -584,6 +607,7 @@ function getElementBounds(
   if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
+  if (isImageElement(element)) return getImageElementBounds(element).aabb
   if (isLineElement(element)) return getLineElementBounds(element, options).aabb
   return { left: 0, top: 0, right: 0, bottom: 0 }
 }
@@ -801,6 +825,10 @@ function isSpeechBubbleElement(
   return !!element && element.type === 'speechBubble'
 }
 
+function isImageElement(element: BoardElement | null | undefined): element is ImageElement {
+  return !!element && element.type === 'image'
+}
+
 function isShapeElement(element: BoardElement | null | undefined): element is ShapeElement {
   return (
     isRectangleElement(element) ||
@@ -875,7 +903,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -883,7 +911,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -891,7 +919,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -899,7 +927,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -1035,6 +1063,8 @@ function cloneElementForPaste(
     case 'triangle':
       return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
     case 'speechBubble':
+      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
+    case 'image':
       return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
     case 'comment': {
       const linkedId = element.elementId ? idMap.get(element.elementId) ?? element.elementId : undefined
@@ -1364,6 +1394,31 @@ function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
   return { ...sized, fontSize }
 }
 
+function parseImageElement(raw: unknown): ImageElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<ImageElement>
+  if (element.type !== 'image') return null
+  if (typeof element.id !== 'string') return null
+  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
+  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
+  if (typeof element.url !== 'string') return null
+  const width = Math.max(IMAGE_MIN_SIZE, element.w)
+  const height = Math.max(IMAGE_MIN_SIZE, element.h)
+  const rotation = resolveTextRotation(element.rotation)
+  return {
+    id: element.id,
+    type: 'image',
+    x: element.x,
+    y: element.y,
+    w: width,
+    h: height,
+    url: element.url,
+    mimeType: typeof element.mimeType === 'string' ? element.mimeType : undefined,
+    attachmentId: typeof element.attachmentId === 'string' ? element.attachmentId : undefined,
+    rotation,
+  }
+}
+
 function isConnectorAnchor(value: unknown): value is ConnectorAnchor {
   return value === 'top' || value === 'right' || value === 'bottom' || value === 'left' || value === 'center'
 }
@@ -1452,6 +1507,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'diamond') return parseDiamondElement(raw)
   if (type === 'triangle') return parseTriangleElement(raw)
   if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
+  if (type === 'image') return parseImageElement(raw)
   if (type === 'line') return parseLineElement(raw)
   if (type === 'comment') return parseCommentElement(raw)
   return null
@@ -1807,6 +1863,34 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       charInParagraph = 0
     }
   })
+  ctx.restore()
+}
+
+function drawImageElement(
+  ctx: CanvasRenderingContext2D,
+  element: ImageElement,
+  camera: CameraState,
+  image: HTMLImageElement | null
+) {
+  const bounds = getImageElementBounds(element)
+  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
+  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
+  ctx.save()
+  ctx.translate(screenCenterX, screenCenterY)
+  ctx.rotate(bounds.rotation)
+  const scaleFactor = bounds.scale * camera.zoom
+  ctx.scale(scaleFactor, scaleFactor)
+  const width = bounds.width
+  const height = bounds.height
+  if (image && image.complete) {
+    ctx.drawImage(image, -width / 2, -height / 2, width, height)
+  } else {
+    ctx.fillStyle = '#e2e8f0'
+    ctx.strokeStyle = '#cbd5f5'
+    ctx.lineWidth = 1 / scaleFactor
+    ctx.fillRect(-width / 2, -height / 2, width, height)
+    ctx.strokeRect(-width / 2, -height / 2, width, height)
+  }
   ctx.restore()
 }
 
@@ -2638,6 +2722,63 @@ function drawShapeSelection(
   ctx.restore()
 }
 
+function drawImageSelection(
+  ctx: CanvasRenderingContext2D,
+  element: ImageElement,
+  camera: CameraState,
+  options: { withHandles: boolean }
+) {
+  const bounds = getImageElementBounds(element)
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
+  ctx.save()
+  ctx.strokeStyle = ACCENT_COLOR
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  const first = toScreen(bounds.corners[0])
+  ctx.moveTo(first.x, first.y)
+  for (let index = 1; index < bounds.corners.length; index += 1) {
+    const point = toScreen(bounds.corners[index])
+    ctx.lineTo(point.x, point.y)
+  }
+  ctx.closePath()
+  ctx.stroke()
+  if (options.withHandles) {
+    const handleRadius = RESIZE_HANDLE_RADIUS
+    const drawHandle = (point: { x: number; y: number }) => {
+      const screen = toScreen(point)
+      ctx.beginPath()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = ACCENT_COLOR
+      ctx.lineWidth = 1
+      ctx.arc(screen.x, screen.y, handleRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+    const handles = getTransformHandleSpecs(bounds, {
+      cornerMode: 'scale',
+      verticalMode: 'scale',
+      horizontalMode: 'width',
+    })
+    handles.forEach((handle) => {
+      if (handle.kind === 'rotate' && handle.anchor) {
+        const anchor = toScreen(handle.anchor)
+        const rotationScreen = toScreen(handle.position)
+        ctx.beginPath()
+        ctx.strokeStyle = ACCENT_COLOR
+        ctx.lineWidth = 1
+        ctx.moveTo(anchor.x, anchor.y)
+        ctx.lineTo(rotationScreen.x, rotationScreen.y)
+        ctx.stroke()
+      }
+      drawHandle(handle.position)
+    })
+  }
+  ctx.restore()
+}
+
 function drawLineSelection(
   ctx: CanvasRenderingContext2D,
   element: LineElement,
@@ -2742,6 +2883,10 @@ function drawElementSelection(
   }
   if (isEllipseElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
+    return
+  }
+  if (isImageElement(element)) {
+    drawImageSelection(ctx, element, camera, options)
   }
 }
 
@@ -2793,17 +2938,17 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
         nextOrientation: 'horizontal' | 'vertical'
       }
   >(null)
-const shapeCreationRef = useRef<
-  | null
-  | {
-      pointerId: number
-      start: { x: number; y: number }
-      id: string
-      baseSize: number
-      hasDragged: boolean
-      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
-    }
->(null)
+  const shapeCreationRef = useRef<
+    | null
+    | {
+        pointerId: number
+        start: { x: number; y: number }
+        id: string
+        baseSize: number
+        hasDragged: boolean
+        elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+      }
+  >(null)
   const lineCreationRef = useRef<
     | null
     | {
@@ -2859,6 +3004,9 @@ const shapeCreationRef = useRef<
   const measurementCtxRef = useRef<CanvasRenderingContext2D | null>(null)
   const commentAvatarCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map())
   const [commentAvatarVersion, setCommentAvatarVersion] = useState(0)
+  const imageCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map())
+  const [imageCacheVersion, setImageCacheVersion] = useState(0)
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const releaseClickSuppression = useCallback(() => {
     requestAnimationFrame(() => {
       suppressClickRef.current = false
@@ -2925,6 +3073,24 @@ const shapeCreationRef = useRef<
     }
   }, [])
 
+  const ensureBoardImage = useCallback((url: string) => {
+    const cache = imageCacheRef.current
+    if (cache.has(url)) return
+    const image = new Image()
+    image.onload = () => {
+      setImageCacheVersion((prev) => prev + 1)
+    }
+    image.onerror = () => {
+      cache.set(url, null)
+      setImageCacheVersion((prev) => prev + 1)
+    }
+    image.src = url
+    cache.set(url, image)
+    if (image.complete) {
+      setImageCacheVersion((prev) => prev + 1)
+    }
+  }, [])
+
   useEffect(() => {
     const pubkeys = new Set<string>()
     let hasAnonymous = false
@@ -2945,6 +3111,15 @@ const shapeCreationRef = useRef<
       })
     })
   }, [elements, ensureAvatarImage])
+
+  useEffect(() => {
+    const urls = new Set<string>()
+    Object.values(elements).forEach((element) => {
+      if (!isImageElement(element)) return
+      if (element.url) urls.add(element.url)
+    })
+    urls.forEach((url) => ensureBoardImage(url))
+  }, [elements, ensureBoardImage])
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
       const value = typeof next === 'function' ? (next as (prev: MarqueeState | null) => MarqueeState | null)(marqueeRef.current) : next
@@ -3069,6 +3244,22 @@ const shapeCreationRef = useRef<
   const handleZoomReset = useCallback(() => {
     setCameraState(initialCameraState)
   }, [])
+
+  const openAttachmentPicker = useCallback(() => {
+    const input = attachmentInputRef.current
+    if (!input) return
+    input.value = ''
+    input.click()
+  }, [])
+
+  const getCanvasCenterBoardPoint = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return { x: -cameraState.offsetX, y: -cameraState.offsetY }
+    }
+    const rect = canvas.getBoundingClientRect()
+    return screenToBoard({ x: rect.width / 2, y: rect.height / 2 })
+  }, [cameraState.offsetX, cameraState.offsetY, screenToBoard])
 
   const handleZoomFit = useCallback(() => {
     const canvas = canvasRef.current
@@ -3719,6 +3910,13 @@ const shapeCreationRef = useRef<
             }
             continue
           }
+          if (isImageElement(element)) {
+            const bounds = getImageElementBounds(element)
+            if (pointInPolygon({ x, y }, bounds.corners)) {
+              return element.id
+            }
+            continue
+          }
           if (isCommentElement(element)) {
             const dx = x - element.x
             const dy = y - element.y
@@ -3821,6 +4019,127 @@ const shapeCreationRef = useRef<
     },
     [beginEditingSticky, boardId, getMeasureContext, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
   )
+
+  const getImageDimensions = useCallback((file: File) => {
+    return new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const url = URL.createObjectURL(file)
+      const image = new Image()
+      image.onload = () => {
+        URL.revokeObjectURL(url)
+        resolve({ width: image.naturalWidth, height: image.naturalHeight })
+      }
+      image.onerror = () => {
+        URL.revokeObjectURL(url)
+        reject(new Error('Unable to read image dimensions'))
+      }
+      image.src = url
+    })
+  }, [])
+
+  const createImageElement = useCallback(
+    (attachment: { id: string; url: string; mimeType: string }, boardPoint: { x: number; y: number }, size: { width: number; height: number }) => {
+      if (!boardId) return
+      const maxDimension = Math.max(size.width, size.height)
+      const scale = maxDimension > 0 ? Math.min(1, IMAGE_MAX_DIMENSION / maxDimension) : 1
+      const width = Math.max(IMAGE_MIN_SIZE, size.width * scale)
+      const height = Math.max(IMAGE_MIN_SIZE, size.height * scale)
+      const element: ImageElement = {
+        id: randomId(),
+        type: 'image',
+        x: boardPoint.x - width / 2,
+        y: boardPoint.y - height / 2,
+        w: width,
+        h: height,
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        attachmentId: attachment.id,
+        rotation: 0,
+      }
+      upsertElement(element)
+      sendElementUpdate(element)
+      setSelection(new Set([element.id]))
+      void persistElementCreate(boardId, element)
+    },
+    [boardId, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+  )
+
+  const uploadAttachment = useCallback(
+    async (file: File) => {
+      if (!boardId) return null
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch(`${API_BASE_URL}/boards/${boardId}/attachments`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        throw new Error('Unable to upload attachment')
+      }
+      const data = (await response.json()) as {
+        attachment?: { id: string; url: string; mimeType: string }
+      }
+      return data.attachment ?? null
+    },
+    [boardId]
+  )
+
+  const handleAttachmentFiles = useCallback(
+    async (files: FileList | File[], boardPoint: { x: number; y: number }) => {
+      const list = Array.from(files)
+      let offset = 0
+      for (const file of list) {
+        if (!file.type.startsWith('image/')) continue
+        try {
+          const [dims, attachment] = await Promise.all([
+            getImageDimensions(file),
+            uploadAttachment(file),
+          ])
+          if (!attachment) continue
+          const point = { x: boardPoint.x + offset, y: boardPoint.y + offset }
+          createImageElement(attachment, point, dims)
+          offset += 24
+        } catch (error) {
+          console.error('Failed to attach image', error)
+        }
+      }
+    },
+    [createImageElement, getImageDimensions, uploadAttachment]
+  )
+
+  const handleAttachmentInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files
+      if (!files || files.length === 0) {
+        setToolMode('select')
+        return
+      }
+      const uploadPromise = handleAttachmentFiles(files, getCanvasCenterBoardPoint())
+      void uploadPromise.then(() => {
+        setToolMode('select')
+      })
+    },
+    [getCanvasCenterBoardPoint, handleAttachmentFiles]
+  )
+
+  const handleCanvasDrop = useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      event.preventDefault()
+      if (editingStateRef.current || isCommentEditing) return
+      const files = event.dataTransfer?.files
+      if (!files || files.length === 0) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const boardPoint = screenToBoard({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      void handleAttachmentFiles(files, boardPoint)
+    },
+    [handleAttachmentFiles, isCommentEditing, screenToBoard]
+  )
+
+  const handleCanvasDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault()
+  }, [])
 
   const createTextAtPoint = useCallback(
     (boardPoint: { x: number; y: number }) => {
@@ -4791,10 +5110,15 @@ const shapeCreationRef = useRef<
               nextElement = { ...target, scale: nextScale }
             }
           } else if (transformState.mode === 'shapeScale') {
-            if (!isShapeElement(target) && !isFrameElement(target)) return prev
+            if (!isShapeElement(target) && !isFrameElement(target) && !isImageElement(target)) return prev
             const bounds = transformState.startBounds
             const pointerLocal = toTextLocalCoordinates(boardPoint, bounds)
-            const minDimension = transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE
+            const minDimension =
+              transformState.elementType === 'frame'
+                ? FRAME_MIN_SIZE
+                : transformState.elementType === 'image'
+                  ? IMAGE_MIN_SIZE
+                  : RECT_MIN_SIZE
             const baseHalfWidth = Math.max(minDimension / 2, bounds.width / 2)
             const baseHalfHeight = Math.max(minDimension / 2, bounds.height / 2)
             const scaleX = baseHalfWidth > 0 ? Math.abs(pointerLocal.x) / baseHalfWidth : 1
@@ -4806,7 +5130,7 @@ const shapeCreationRef = useRef<
             const newCenter = bounds.center
             const newX = newCenter.x - newWidth / 2
             const newY = newCenter.y - newHeight / 2
-            let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
+            let shapeNext: FrameOrShapeElement | ImageElement = { ...target, x: newX, y: newY, w: newWidth, h: newHeight }
             if (isSpeechBubbleElement(shapeNext)) {
               shapeNext = withSpeechBubbleTail(shapeNext, newWidth, newHeight)
             }
@@ -4844,11 +5168,15 @@ const shapeCreationRef = useRef<
               nextElement = { ...target, x: newX, y: newY, w: newWrapWidth }
             } else if (
               transformState.elementType !== 'text' &&
-              (isShapeElement(target) || isFrameElement(target))
+              (isShapeElement(target) || isFrameElement(target) || isImageElement(target))
             ) {
               const bounds = transformState.startBounds
               const minHalfWidth =
-                (transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE) / 2
+                (transformState.elementType === 'frame'
+                  ? FRAME_MIN_SIZE
+                  : transformState.elementType === 'image'
+                    ? IMAGE_MIN_SIZE
+                    : RECT_MIN_SIZE) / 2
               const targetHalf = direction * pointerLocal.x
               const newHalfWidth = Math.max(minHalfWidth, targetHalf)
               const newWidth = newHalfWidth * 2
@@ -4863,7 +5191,7 @@ const shapeCreationRef = useRef<
               }
               const newX = newCenter.x - newWidth / 2
               const newY = newCenter.y - bounds.height / 2
-              let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, w: newWidth }
+              let shapeNext: FrameOrShapeElement | ImageElement = { ...target, x: newX, y: newY, w: newWidth }
               if (isSpeechBubbleElement(shapeNext)) {
                 shapeNext = withSpeechBubbleTail(shapeNext, newWidth, bounds.height)
               }
@@ -4871,13 +5199,17 @@ const shapeCreationRef = useRef<
             }
           } else if (
             transformState.mode === 'height' &&
-            (isShapeElement(target) || isFrameElement(target))
+            (isShapeElement(target) || isFrameElement(target) || isImageElement(target))
           ) {
             const pointerLocal = toTextLocalCoordinates(boardPoint, transformState.startBounds)
             const direction = transformState.handle === 's' ? 1 : -1
             const bounds = transformState.startBounds
             const minHalfHeight =
-              (transformState.elementType === 'frame' ? FRAME_MIN_SIZE : RECT_MIN_SIZE) / 2
+              (transformState.elementType === 'frame'
+                ? FRAME_MIN_SIZE
+                : transformState.elementType === 'image'
+                  ? IMAGE_MIN_SIZE
+                  : RECT_MIN_SIZE) / 2
             const targetHalf = direction * pointerLocal.y
             const newHalfHeight = Math.max(minHalfHeight, targetHalf)
             const newHeight = newHalfHeight * 2
@@ -4892,13 +5224,13 @@ const shapeCreationRef = useRef<
             }
             const newX = newCenter.x - bounds.width / 2
             const newY = newCenter.y - newHeight / 2
-            let shapeNext: FrameOrShapeElement = { ...target, x: newX, y: newY, h: newHeight }
+            let shapeNext: FrameOrShapeElement | ImageElement = { ...target, x: newX, y: newY, h: newHeight }
             if (isSpeechBubbleElement(shapeNext)) {
               shapeNext = withSpeechBubbleTail(shapeNext, bounds.width, newHeight)
             }
             nextElement = shapeNext
           } else if (transformState.mode === 'rotate') {
-            if (!isTextElement(target) && !isShapeElement(target)) return prev
+            if (!isTextElement(target) && !isShapeElement(target) && !isImageElement(target)) return prev
             const dx = boardPoint.x - transformState.startBounds.center.x
             const dy = boardPoint.y - transformState.startBounds.center.y
             if (Math.abs(dx) + Math.abs(dy) >= 0.0001) {
@@ -5628,6 +5960,16 @@ const shapeCreationRef = useRef<
   }, [toolMode])
 
   useEffect(() => {
+    if (toolMode !== 'attachment') return
+    if (!attachmentInputRef.current) {
+      setToolMode('select')
+      return
+    }
+    openAttachmentPicker()
+    setToolMode('select')
+  }, [openAttachmentPicker, toolMode])
+
+  useEffect(() => {
     selectedIdsRef.current = selectedIds
   }, [selectedIds])
 
@@ -5968,6 +6310,9 @@ const shapeCreationRef = useRef<
         const renderShape =
           editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
         drawRoundedRectElement(ctx, renderShape, cameraState)
+      } else if (isImageElement(element)) {
+        const image = imageCacheRef.current.get(element.url) ?? null
+        drawImageElement(ctx, element, cameraState, image)
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
       }
@@ -6002,7 +6347,7 @@ const shapeCreationRef = useRef<
         sharedMeasureCtx
       )
     })
-  }, [cameraState, commentAvatarVersion, connectorHighlight, editingState, elements, selectedIds, toolMode])
+  }, [cameraState, commentAvatarVersion, connectorHighlight, editingState, elements, imageCacheVersion, selectedIds, toolMode])
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
@@ -6308,6 +6653,8 @@ const shapeCreationRef = useRef<
       data-camera-x={cameraState.offsetX}
       data-camera-y={cameraState.offsetY}
       data-camera-zoom={cameraState.zoom}
+      onDrop={handleCanvasDrop}
+      onDragOver={handleCanvasDragOver}
     >
       <canvas
         ref={canvasRef}
@@ -6320,6 +6667,13 @@ const shapeCreationRef = useRef<
         onPointerCancel={handlePointerCancel}
         onDoubleClick={handleCanvasDoubleClick}
         onMouseMove={handleLinkHover}
+      />
+      <input
+        ref={attachmentInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        style={{ display: 'none' }}
+        onChange={handleAttachmentInputChange}
       />
       <ToolRail
         toolMode={toolMode}

@@ -1,8 +1,8 @@
 import { mkdirSync } from "fs";
 import { dirname, extname, join } from "path";
 
-import { createAttachment, type Attachment } from "../db";
 import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
+import { createAttachment, type Attachment } from "../db";
 
 export function storeAttachment(params: {
   id: string;
@@ -12,7 +12,7 @@ export function storeAttachment(params: {
   mimeType: string;
   size: number;
   relativePath: string;
-}) {
+}): Attachment | null {
   const storagePath = join(UPLOADS_DIR, params.relativePath);
   const publicUrl = `${UPLOADS_PUBLIC_PATH}/${params.relativePath}`;
   const dir = dirname(storagePath);

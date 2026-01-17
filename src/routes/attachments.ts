@@ -1,8 +1,8 @@
 import { writeFile } from "fs/promises";
 
 import { jsonResponse } from "../http";
-import { fetchBoardById } from "../services/boards";
 import { buildUploadFilename, storeAttachment } from "../services/attachments";
+import { fetchBoardById } from "../services/boards";
 
 import type { Session } from "../types";
 
