@@ -5795,9 +5795,12 @@ const shapeCreationRef = useRef<
     const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     const editingFrameId = editingState?.elementType === 'frame' ? editingState.id : null
+    const editingShapeId = editingState?.elementType === 'shape' ? editingState.id : null
     const renderElement = (element: BoardElement) => {
       if (isFrameElement(element)) {
-        drawFrameElement(ctx, element, cameraState, { hideLabel: editingFrameId === element.id })
+        const renderFrame =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawFrameElement(ctx, renderFrame, cameraState, { hideLabel: editingFrameId === element.id })
       } else if (isCommentElement(element)) {
         const avatarKey = element.authorPubkey ?? 'anonymous'
         const avatarImage = commentAvatarCacheRef.current.get(avatarKey) ?? null
@@ -5808,17 +5811,29 @@ const shapeCreationRef = useRef<
         if (editingTextId && element.id === editingTextId) return
         drawTextElement(ctx, element, cameraState)
       } else if (isRectangleElement(element)) {
-        drawRectangleElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawRectangleElement(ctx, renderShape, cameraState)
       } else if (isEllipseElement(element)) {
-        drawEllipseElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawEllipseElement(ctx, renderShape, cameraState)
       } else if (isDiamondElement(element)) {
-        drawDiamondElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawDiamondElement(ctx, renderShape, cameraState)
       } else if (isTriangleElement(element)) {
-        drawTriangleElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawTriangleElement(ctx, renderShape, cameraState)
       } else if (isSpeechBubbleElement(element)) {
-        drawSpeechBubbleElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawSpeechBubbleElement(ctx, renderShape, cameraState)
       } else if (isRoundedRectElement(element)) {
-        drawRoundedRectElement(ctx, element, cameraState)
+        const renderShape =
+          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
+        drawRoundedRectElement(ctx, renderShape, cameraState)
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
       }
