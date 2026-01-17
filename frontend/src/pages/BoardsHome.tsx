@@ -67,7 +67,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       {error && <p className="boards-home__error">{error}</p>}
       {loading ? (
         <p className="boards-home__empty">Loading boards...</p>
-      ) : boards.length === 0 ? (
+      ) : error ? null : boards.length === 0 ? (
         <p className="boards-home__empty">No boards yet.</p>
       ) : (
         <ul className="boards-home__list">
