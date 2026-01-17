@@ -128,7 +128,6 @@ const BASE_STICKY_FONT_MAX = 32
 const BASE_STICKY_FONT_MIN = 12
 const STICKY_TEXT_LINE_HEIGHT = 1.35
 const STICKY_PADDING_X = 16
-const CARET_PLACEHOLDER = '\u200b'
 const STICKY_PADDING_Y = 14
 const FRAME_MIN_SIZE = 80
 const FRAME_DEFAULT_WIDTH = 640
@@ -5937,20 +5936,19 @@ const shapeCreationRef = useRef<
       const ctx = getMeasureContext()
       const stickyTarget = editingStickyElement
       const shapeTarget = editingShapeElement
-      const sanitized = nextValue.split(CARET_PLACEHOLDER).join('')
       updateEditingState((prev) => {
         if (!prev) return prev
         if (prev.elementType === 'sticky' && stickyTarget && ctx) {
           const inner = getStickyInnerSize(stickyTarget)
           const bounds = getStickyFontBounds(stickyTarget)
-          const fitted = fitFontSize(ctx, sanitized, inner.width, inner.height, bounds.max, bounds.min)
-          return { ...prev, text: sanitized, fontSize: fitted }
+          const fitted = fitFontSize(ctx, nextValue, inner.width, inner.height, bounds.max, bounds.min)
+          return { ...prev, text: nextValue, fontSize: fitted }
         }
         if (prev.elementType === 'shape' && shapeTarget && ctx) {
-          const fitted = fitShapeFontSize(ctx, shapeTarget, sanitized)
-          return { ...prev, text: sanitized, fontSize: fitted }
+          const fitted = fitShapeFontSize(ctx, shapeTarget, nextValue)
+          return { ...prev, text: nextValue, fontSize: fitted }
         }
-        return { ...prev, text: sanitized }
+        return { ...prev, text: nextValue }
       })
     },
     [editingShapeElement, editingStickyElement, getMeasureContext, updateEditingState]
@@ -5960,17 +5958,8 @@ const shapeCreationRef = useRef<
     const content = editingContentRef.current
     if (!content) return
     const nextValue = content.textContent ?? ''
-    if (editingState?.elementType === 'shape' && nextValue === CARET_PLACEHOLDER) {
-      return
-    }
-    if (nextValue.includes(CARET_PLACEHOLDER)) {
-      const sanitized = nextValue.split(CARET_PLACEHOLDER).join('')
-      content.textContent = sanitized
-      updateEditingText(sanitized)
-      return
-    }
     updateEditingText(nextValue)
-  }, [editingState?.elementType, updateEditingText])
+  }, [updateEditingText])
 
   const insertPlainText = useCallback(
     (text: string) => {
@@ -5992,23 +5981,14 @@ const shapeCreationRef = useRef<
       content.textContent = ''
       return
     }
-    if (editingState.elementType === 'shape' && editingState.text.length === 0) {
-      content.textContent = CARET_PLACEHOLDER
-    } else {
-      content.textContent = editingState.text
-    }
+    content.textContent = editingState.text
     requestAnimationFrame(() => {
       content.focus()
       const selection = window.getSelection()
       if (!selection) return
       const range = document.createRange()
-      if (editingState.elementType === 'shape' && editingState.text.length === 0 && content.firstChild) {
-        range.setStart(content.firstChild, content.firstChild.textContent?.length ?? 0)
-        range.collapse(true)
-      } else {
-        range.selectNodeContents(content)
-        range.collapse(false)
-      }
+      range.selectNodeContents(content)
+      range.collapse(false)
       selection.removeAllRanges()
       selection.addRange(range)
     })
@@ -6486,6 +6466,7 @@ const shapeCreationRef = useRef<
             <div
               ref={editingContentRef}
               className="canvas-board__shape-editor-content"
+              data-empty={editingState.text.length === 0 ? 'true' : 'false'}
               contentEditable
               suppressContentEditableWarning
               role="textbox"

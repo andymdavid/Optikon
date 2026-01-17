@@ -309,10 +309,7 @@
 .canvas-board__shape-editor-content {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: block;
   line-height: inherit;
   white-space: pre-wrap;
   word-break: break-word;
@@ -320,4 +317,30 @@
   border: none;
   background: transparent;
   text-align: inherit;
+}
+
+.canvas-board__shape-editor-content[data-empty="true"] {
+  caret-color: transparent;
+  position: relative;
+  min-height: 1em;
+}
+
+.canvas-board__shape-editor-content[data-empty="true"]:focus::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  background: #0f172a;
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
