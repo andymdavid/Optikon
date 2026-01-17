@@ -5601,6 +5601,7 @@ const shapeCreationRef = useRef<
   const editingTextFontFamily = editingTextElement?.fontFamily ?? STICKY_FONT_FAMILY
   const editingTextFontWeight = editingTextElement?.style?.fontWeight ?? 400
   const editingTextFontStyle = editingTextElement?.style?.fontStyle ?? 'normal'
+  const editingTextScale = editingTextElement ? resolveTextScale(editingTextElement.scale) : 1
   const editingTextLayout =
     editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
       ? getTextLayoutForContent(
@@ -5619,23 +5620,26 @@ const shapeCreationRef = useRef<
           left: editingTextElement.x,
           top: editingTextElement.y,
           right:
-            editingTextElement.x + editingTextWrapWidth + TEXT_SAFETY_INSET * 2,
+            editingTextElement.x +
+            (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * editingTextScale,
           bottom:
-            editingTextElement.y + editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2,
+            editingTextElement.y +
+            (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * editingTextScale,
         }
       : null
   const editingTextRect = editingTextBounds && editingTextLayout
     ? {
         x: (editingTextBounds.left + cameraState.offsetX) * cameraState.zoom,
         y: (editingTextBounds.top + cameraState.offsetY) * cameraState.zoom,
-        width: (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * cameraState.zoom,
-        height: (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * cameraState.zoom,
+        width: (editingTextWrapWidth + TEXT_SAFETY_INSET * 2) * editingTextScale * cameraState.zoom,
+        height: (editingTextLayout.totalHeight + TEXT_SAFETY_INSET * 2) * editingTextScale * cameraState.zoom,
       }
     : null
   const editingTextFontSizePx =
     editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
-      ? editingState.fontSize * cameraState.zoom
+      ? editingState.fontSize * editingTextScale * cameraState.zoom
       : null
+  const editingTextPaddingPx = editingTextScale * cameraState.zoom * TEXT_SAFETY_INSET
   const editingFrameElement = isFrameElement(editingElement) ? editingElement : null
   const editingFrameLabelRect = editingFrameElement ? getFrameLabelRect(editingFrameElement, cameraState) : null
   const editingFrameFontSizePx =
@@ -6040,7 +6044,7 @@ const shapeCreationRef = useRef<
               style={{
                 fontSize: `${editingTextFontSizePx}px`,
                 lineHeight: TEXT_LINE_HEIGHT,
-                padding: `${TEXT_SAFETY_INSET}px`,
+                padding: `${editingTextPaddingPx}px`,
                 fontWeight: editingTextElement.style?.fontWeight ?? 400,
                 fontStyle: editingTextElement.style?.fontStyle ?? 'normal',
                 fontFamily: editingTextElement.fontFamily ?? STICKY_FONT_FAMILY,
