@@ -4,6 +4,21 @@ This app stores todos and AI summaries in SQLite (`do-the-other-stuff.sqlite`). 
 
 ## Tables
 
+### `attachments`
+Uploaded assets stored on disk and referenced by boards.
+
+| Column             | Type    | Notes                                                   |
+| ------------------ | ------- | ------------------------------------------------------- |
+| `id`               | TEXT    | PK (UUID)                                               |
+| `board_id`         | INTEGER | FK to `boards`                                          |
+| `owner_pubkey`     | TEXT    | Pubkey or NULL                                          |
+| `original_filename`| TEXT    | Client-provided filename                                |
+| `mime_type`        | TEXT    | Image MIME type                                         |
+| `size`             | INTEGER | Bytes                                                   |
+| `storage_path`     | TEXT    | Absolute path on disk                                   |
+| `public_url`       | TEXT    | Public URL (`/uploads/...`)                             |
+| `created_at`       | TEXT    | Default `CURRENT_TIMESTAMP`                             |
+
 ### `todos`
 Tasks owned by a user.
 

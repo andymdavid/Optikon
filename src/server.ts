@@ -11,6 +11,7 @@ import {
 import { applyCorsHeaders, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
+import { handleAttachmentUpload } from "./routes/attachments";
 import { createAuthHandlers } from "./routes/auth";
 import {
   handleBoardCreate,
@@ -24,7 +25,7 @@ import {
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import { AuthService } from "./services/auth";
-import { serveStatic } from "./static";
+import { serveStatic, serveUpload } from "./static";
 
 import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
@@ -293,6 +294,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   }
 
   if (req.method === "GET") {
+    const uploadResponse = await serveUpload(pathname);
+    if (uploadResponse) return uploadResponse;
     const staticResponse = await serveStatic(pathname);
     if (staticResponse) return staticResponse;
 
@@ -317,6 +320,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/todos") return handleTodoCreate(req, session);
     const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]));
+    const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
+    if (attachmentMatch) return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
 
     const updateMatch = pathname.match(/^\/todos\/(\d+)\/update$/);
     if (updateMatch) return handleTodoUpdate(req, session, Number(updateMatch[1]));

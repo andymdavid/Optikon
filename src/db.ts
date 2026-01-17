@@ -50,6 +50,18 @@ export type BoardComment = {
   created_at: string;
 };
 
+export type Attachment = {
+  id: string;
+  board_id: number;
+  owner_pubkey: string | null;
+  original_filename: string;
+  mime_type: string;
+  size: number;
+  storage_path: string;
+  public_url: string;
+  created_at: string;
+};
+
 const db = new Database(Bun.env.DB_PATH || "do-the-other-stuff.sqlite");
 db.run("PRAGMA foreign_keys = ON");
 
@@ -170,6 +182,21 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    board_id INTEGER NOT NULL,
+    owner_pubkey TEXT NULL,
+    original_filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    storage_path TEXT NOT NULL,
+    public_url TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+  )
+`);
+
 const listByOwnerStmt = db.query<Todo>(
   "SELECT * FROM todos WHERE deleted = 0 AND owner = ? ORDER BY created_at DESC"
 );
@@ -240,6 +267,12 @@ const latestWeekSummaryStmt = db.query<Summary>(
    WHERE owner = ? AND summary_date BETWEEN ? AND ?
    ORDER BY updated_at DESC
    LIMIT 1`
+);
+const insertAttachmentStmt = db.query<Attachment>(
+  `INSERT INTO attachments
+   (id, board_id, owner_pubkey, original_filename, mime_type, size, storage_path, public_url)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+   RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
   `INSERT INTO boards (title)
@@ -426,6 +459,30 @@ export function deleteBoardElements(boardId: number, ids: string[]) {
     removed += 1;
   }
   return removed;
+}
+
+export function createAttachment(record: {
+  id: string;
+  boardId: number;
+  ownerPubkey: string | null;
+  originalFilename: string;
+  mimeType: string;
+  size: number;
+  storagePath: string;
+  publicUrl: string;
+}) {
+  return (
+    insertAttachmentStmt.get(
+      record.id,
+      record.boardId,
+      record.ownerPubkey,
+      record.originalFilename,
+      record.mimeType,
+      record.size,
+      record.storagePath,
+      record.publicUrl
+    ) ?? null
+  );
 }
 
 export function resetDatabase() {
