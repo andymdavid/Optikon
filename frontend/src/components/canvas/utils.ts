@@ -127,7 +127,7 @@ export function measureTextLayout(
   }
 
   const paragraphs = normalizedText.split(/\n/)
-  paragraphs.forEach((paragraph, paragraphIndex) => {
+  paragraphs.forEach((paragraph) => {
     const words = paragraph.split(/\s+/).filter(Boolean)
     if (words.length === 0) {
       pushLine('')
@@ -154,9 +154,6 @@ export function measureTextLayout(
         }
       }
       pushLine(current)
-    }
-    if (paragraphIndex < paragraphs.length - 1) {
-      pushLine('')
     }
   })
 
