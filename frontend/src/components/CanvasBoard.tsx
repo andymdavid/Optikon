@@ -5960,6 +5960,9 @@ const shapeCreationRef = useRef<
     const content = editingContentRef.current
     if (!content) return
     const nextValue = content.textContent ?? ''
+    if (editingState?.elementType === 'shape' && nextValue === CARET_PLACEHOLDER) {
+      return
+    }
     if (nextValue.includes(CARET_PLACEHOLDER)) {
       const sanitized = nextValue.split(CARET_PLACEHOLDER).join('')
       content.textContent = sanitized
@@ -5967,7 +5970,7 @@ const shapeCreationRef = useRef<
       return
     }
     updateEditingText(nextValue)
-  }, [updateEditingText])
+  }, [editingState?.elementType, updateEditingText])
 
   const insertPlainText = useCallback(
     (text: string) => {
