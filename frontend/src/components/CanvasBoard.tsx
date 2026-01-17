@@ -4436,8 +4436,8 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
     (
       point: { x: number; y: number }
     ): {
-      element: TextElement | ShapeElement | FrameElement
-      bounds: TextElementBounds | ShapeElementBounds
+      element: TextElement | ShapeElement | FrameElement | ImageElement
+      bounds: TextElementBounds | ShapeElementBounds | ImageElementBounds
       handle: TransformHandleSpec
     } | null => {
       const selected = selectedIdsRef.current
@@ -4445,11 +4445,13 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
       const [id] = Array.from(selected)
       const element = elements[id]
       const isFrame = isFrameElement(element)
-      if (!isTextElement(element) && !isShapeElement(element) && !isFrame) return null
+      if (!isTextElement(element) && !isShapeElement(element) && !isFrame && !isImageElement(element)) return null
       const ctx = getSharedMeasureContext()
       const bounds = isTextElement(element)
         ? getTextElementBounds(element, ctx)
-        : getShapeElementBounds(element)
+        : isImageElement(element)
+          ? getImageElementBounds(element)
+          : getShapeElementBounds(element)
       const handleOptions = isTextElement(element)
         ? { cornerMode: 'scale' as const, verticalMode: 'scale' as const, horizontalMode: 'width' as const }
         : { cornerMode: 'corner' as const, verticalMode: 'height' as const, horizontalMode: 'width' as const }
@@ -4563,6 +4565,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
             | 'diamond'
             | 'triangle'
             | 'speechBubble'
+            | 'image'
           transformStateRef.current = {
             mode: 'shapeScale',
             pointerId: event.pointerId,
@@ -4589,6 +4592,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
             | 'diamond'
             | 'triangle'
             | 'speechBubble'
+            | 'image'
           transformStateRef.current = {
             mode: 'height',
             pointerId: event.pointerId,
