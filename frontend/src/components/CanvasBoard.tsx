@@ -5598,13 +5598,19 @@ const shapeCreationRef = useRef<
       : null
   const editingTextElement = isTextElement(editingElement) ? editingElement : null
   const editingTextWrapWidth = editingTextElement ? resolveTextWrapWidth(editingTextElement.w) : TEXT_DEFAULT_MAX_WIDTH
+  const editingTextFontFamily = editingTextElement?.fontFamily ?? STICKY_FONT_FAMILY
+  const editingTextFontWeight = editingTextElement?.style?.fontWeight ?? 400
+  const editingTextFontStyle = editingTextElement?.style?.fontStyle ?? 'normal'
   const editingTextLayout =
     editingState?.elementType === 'text' && typeof editingState.fontSize === 'number'
       ? getTextLayoutForContent(
           editingState.text,
           editingState.fontSize,
           editingTextWrapWidth,
-          getSharedMeasureContext()
+          getSharedMeasureContext(),
+          editingTextFontFamily,
+          editingTextFontWeight,
+          editingTextFontStyle
         )
       : null
   const editingTextBounds =
@@ -5965,6 +5971,7 @@ const shapeCreationRef = useRef<
               lineHeight: STICKY_TEXT_LINE_HEIGHT,
               fontWeight: editingStickyElement.style?.fontWeight ?? 400,
               fontStyle: editingStickyElement.style?.fontStyle ?? 'normal',
+              fontFamily: STICKY_FONT_FAMILY,
               textAlign: editingStickyElement.style?.textAlign ?? 'center',
             }}
             onPointerDown={(event) => {
@@ -6036,6 +6043,7 @@ const shapeCreationRef = useRef<
                 padding: `${TEXT_SAFETY_INSET}px`,
                 fontWeight: editingTextElement.style?.fontWeight ?? 400,
                 fontStyle: editingTextElement.style?.fontStyle ?? 'normal',
+                fontFamily: editingTextElement.fontFamily ?? STICKY_FONT_FAMILY,
                 textAlign: editingTextElement.style?.textAlign ?? 'left',
               }}
               onInput={syncEditingTextFromDom}
