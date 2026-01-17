@@ -2,6 +2,7 @@ import {
   createBoard,
   deleteBoardElements,
   getBoardById,
+  listBoards,
   getBoardElement,
   insertOrUpdateBoardElement,
   listBoardElements,
@@ -18,6 +19,10 @@ export function createBoardRecord(title: string | null | undefined) {
 
 export function fetchBoardById(id: number) {
   return getBoardById(id);
+}
+
+export function fetchBoards() {
+  return listBoards();
 }
 
 export function fetchBoardElements(boardId: number) {

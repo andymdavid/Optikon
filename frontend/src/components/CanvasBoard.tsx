@@ -106,8 +106,6 @@ const initialCameraState: CameraState = {
   zoom: 1,
 }
 
-const BOARD_STORAGE_KEY = 'optikon.devBoardId'
-const BOARD_TITLE = 'Dev Board'
 const API_BASE_URL = 'http://localhost:3025'
 const resolveImageUrl = (url: string) => (url.startsWith('/') ? `${API_BASE_URL}${url}` : url)
 const STICKY_SIZE = 220
@@ -2897,11 +2895,16 @@ function drawElementSelection(
   }
 }
 
-export function CanvasBoard({ session }: { session: { pubkey: string; npub: string } | null }) {
+export function CanvasBoard({
+  session,
+  boardId,
+}: {
+  session: { pubkey: string; npub: string } | null
+  boardId: string | null
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
-  const createBoardInFlightRef = useRef(false)
   const dragStateRef = useRef<
     | {
         ids: string[]
@@ -3044,7 +3047,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
   }
   const [cameraState, setCameraState] = useState<CameraState>(initialCameraState)
   const [elements, setElements] = useState<ElementMap>({})
-  const [boardId, setBoardId] = useState<string | null>(null)
+  const [boardError, setBoardError] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
   const [toolMode, setToolMode] = useState<ToolMode>('select')
@@ -5847,42 +5850,6 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
   }, [cameraState.zoom, handleWheel, isCommentEditing, screenToBoard])
 
   useEffect(() => {
-    let cancelled = false
-
-    const resolveBoardId = async () => {
-      const stored = localStorage.getItem(BOARD_STORAGE_KEY)
-      if (stored) {
-        setBoardId(stored)
-        return
-      }
-      if (createBoardInFlightRef.current) return
-      createBoardInFlightRef.current = true
-      try {
-        const response = await fetch(`${API_BASE_URL}/boards`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: BOARD_TITLE }),
-        })
-        if (!response.ok) throw new Error('Failed to create board')
-        const board = (await response.json()) as { id?: number | string }
-        const newId = board?.id ? String(board.id) : null
-        if (!newId) throw new Error('Invalid board response')
-        localStorage.setItem(BOARD_STORAGE_KEY, newId)
-        if (!cancelled) setBoardId(newId)
-      } catch (error) {
-        console.error('Failed to resolve board id', error)
-      }
-      createBoardInFlightRef.current = false
-    }
-
-    void resolveBoardId()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (editingStateRef.current || isCommentEditing) return
       if (event.metaKey || event.ctrlKey) {
@@ -5996,6 +5963,8 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
 
   useEffect(() => {
     setSelection(new Set())
+    setElements({})
+    setBoardError(null)
   }, [boardId, setSelection])
 
   useEffect(() => {
@@ -6146,13 +6115,17 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
   }, [commentPopoverMode])
 
   useEffect(() => {
-    if (!boardId) return
+    if (!boardId || boardError) return
     let cancelled = false
 
     const loadPersistedElements = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`)
-        if (!response.ok) throw new Error('Failed to load elements')
+        if (!response.ok) {
+          const message = response.status === 404 ? 'Board not found.' : 'Unable to load board.'
+          if (!cancelled) setBoardError(message)
+          return
+        }
         const data = (await response.json()) as {
           elements?: Array<{ id?: string; element?: BoardElement | null }>
         }
@@ -6174,6 +6147,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
         }
       } catch (error) {
         console.error('Failed to load board elements', error)
+        if (!cancelled) setBoardError('Unable to load board.')
       }
     }
 
@@ -6291,7 +6265,7 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
       }
       socket.close()
     }
-  }, [boardId, removeElements, sendElementUpdate, upsertElement])
+  }, [boardError, boardId, removeElements, sendElementUpdate, upsertElement])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -6690,6 +6664,16 @@ export function CanvasBoard({ session }: { session: { pubkey: string; npub: stri
     selectedIds.size > 0 &&
     !editingState &&
     commentPopoverMode === 'closed'
+
+  if (!boardId || boardError) {
+    return (
+      <div className="canvas-board__error">
+        <h2>Board unavailable</h2>
+        <p>{boardError ?? 'Missing board id.'}</p>
+        <a href="/">Back to boards</a>
+      </div>
+    )
+  }
 
   return (
     <section

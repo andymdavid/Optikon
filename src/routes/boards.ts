@@ -3,6 +3,7 @@ import {
   createBoardElementRecord,
   createBoardRecord,
   deleteBoardElementsRecord,
+  fetchBoards,
   fetchBoardById,
   fetchBoardElement,
   fetchBoardElements,
@@ -26,6 +27,16 @@ export function handleBoardShow(boardId: number) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   return jsonResponse(board);
+}
+
+export function handleBoardsList() {
+  const boards = fetchBoards();
+  const summaries = boards.map((board) => ({
+    id: board.id,
+    title: board.title,
+    updatedAt: board.created_at,
+  }));
+  return jsonResponse({ boards: summaries });
 }
 
 function parseStoredElement(propsJson: string): SharedBoardElement | null {

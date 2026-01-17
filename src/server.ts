@@ -8,7 +8,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
 } from "./config";
-import { applyCorsHeaders, withErrorHandling } from "./http";
+import { applyCorsHeaders, jsonResponse, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { handleAttachmentUpload } from "./routes/attachments";
@@ -21,6 +21,7 @@ import {
   handleBoardElementUpdate,
   handleBoardElements,
   handleBoardShow,
+  handleBoardsList,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
@@ -312,7 +313,11 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   }
 
   if (req.method === "POST") {
-    if (pathname === "/boards") return handleBoardCreate(req);
+    if (pathname === "/boards") {
+      if (req.method === "GET") return handleBoardsList();
+      if (req.method === "POST") return handleBoardCreate(req);
+      return jsonResponse({ message: "Method not allowed." }, 405);
+    }
     if (pathname === "/auth/login") return login(req);
     if (pathname === "/auth/logout") return logout(req);
     if (pathname === "/ai/summary") return handleSummaryPost(req);

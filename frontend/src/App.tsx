@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
-import { AccountMenu } from './components/account/AccountMenu'
-import { CanvasBoard } from './components/CanvasBoard'
+import { BoardsHome } from './pages/BoardsHome'
+import { CanvasPage } from './pages/CanvasPage'
 
 import './App.css'
 
@@ -37,10 +38,21 @@ function App() {
   }, [])
 
   return (
-    <div className="app-shell">
-      <AccountMenu apiBaseUrl={API_BASE_URL} session={session} onSessionChange={setSession} />
-      <CanvasBoard session={session} />
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<BoardsHome apiBaseUrl={API_BASE_URL} />} />
+        <Route
+          path="/b/:boardId"
+          element={
+            <CanvasPage
+              apiBaseUrl={API_BASE_URL}
+              session={session}
+              onSessionChange={setSession}
+            />
+          }
+        />
+      </Routes>
+    </BrowserRouter>
   )
 }
 

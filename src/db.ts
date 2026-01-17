@@ -280,6 +280,7 @@ const insertBoardStmt = db.query<Board>(
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
+const listBoardsStmt = db.query<Board>(`SELECT * FROM boards ORDER BY created_at DESC`);
 const listBoardElementsStmt = db.query<BoardElement>(
   `SELECT * FROM board_elements
    WHERE board_id = ?
@@ -431,6 +432,10 @@ export function createBoard(title: string) {
 
 export function getBoardById(id: number) {
   return getBoardStmt.get(id) ?? null;
+}
+
+export function listBoards() {
+  return listBoardsStmt.all();
 }
 
 export function listBoardElements(boardId: number) {
