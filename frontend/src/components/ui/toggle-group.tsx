@@ -22,7 +22,7 @@ const ToggleGroupItem = React.forwardRef<
   <ToggleGroupPrimitive.Item
     ref={ref}
     className={cn(
-      'inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition data-[state=on]:bg-slate-900 data-[state=on]:text-white disabled:cursor-not-allowed disabled:opacity-50',
+      'inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-slate-500 transition data-[state=on]:bg-slate-900 data-[state=on]:text-white disabled:cursor-not-allowed disabled:opacity-50',
       className
     )}
     {...props}
