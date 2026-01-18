@@ -426,8 +426,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             aria-label={board.starred ? 'Unstar board' : 'Star board'}
           >
             <Star
-              size={18}
-              className={board.starred ? 'fill-amber-400 text-amber-500' : 'text-slate-400'}
+              size={16}
+              strokeWidth={board.starred ? 2 : 1.5}
+              className={board.starred ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}
             />
           </Button>
         </TableCell>
