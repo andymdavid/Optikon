@@ -83,10 +83,10 @@ function getInitials(name: string): string {
 
 function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   const initials = getInitials(name)
-  const sizeClasses = size === 'sm' ? 'h-6 w-6 text-xs' : 'h-8 w-8 text-sm'
+  const sizeClasses = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-8 w-8 text-xs'
   return (
     <div
-      className={`${sizeClasses} flex items-center justify-center rounded-full bg-slate-200 font-medium text-slate-600`}
+      className={`${sizeClasses} flex items-center justify-center rounded-full bg-slate-100 font-medium text-slate-500`}
     >
       {initials}
     </div>
@@ -259,7 +259,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const BoardsHeader = () => (
     <header className="flex flex-wrap items-center justify-between gap-4">
-      <h1 className="text-2xl font-semibold text-slate-900">Boards in this team</h1>
+      <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
       <div className="flex items-center gap-3">
         <div className="relative">
           <Search
@@ -283,7 +283,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
-      <span className="text-sm text-slate-600">Filter by</span>
+      <span className="text-[13px] text-slate-500">Filter by</span>
       <Select defaultValue="all">
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="All boards" />
@@ -300,7 +300,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <SelectItem value="anyone">Owned by anyone</SelectItem>
         </SelectContent>
       </Select>
-      <span className="ml-3 text-sm text-slate-600">Sort by</span>
+      <span className="ml-3 text-[13px] text-slate-500">Sort by</span>
       <Select defaultValue="last-opened">
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="Last opened" />
@@ -330,9 +330,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       <Table>
         <TableHeader>
           <TableRow className="border-b border-slate-100">
-            <TableHead className="text-sm font-normal text-slate-500">Name</TableHead>
-            <TableHead className="text-sm font-normal text-slate-500">Online users</TableHead>
-            <TableHead className="text-sm font-normal text-slate-500">Owner</TableHead>
+            <TableHead className="text-xs font-normal text-slate-400">Name</TableHead>
+            <TableHead className="text-xs font-normal text-slate-400">Online users</TableHead>
+            <TableHead className="text-xs font-normal text-slate-400">Owner</TableHead>
             <TableHead className="w-[70px]"></TableHead>
             <TableHead className="w-[60px]"></TableHead>
           </TableRow>
@@ -395,7 +395,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                   disabled={savingId === String(board.id)}
                 />
               ) : (
-                <span className="font-semibold text-slate-900">{board.title}</span>
+                <span className="font-medium text-slate-800">{board.title}</span>
               )}
               <span className="text-sm text-slate-500">
                 Modified by {ownerLabel}, {formatRelativeDate(timestamp)}
@@ -483,7 +483,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100">
         <FileText size={28} className="text-slate-400" />
       </div>
-      <h3 className="mb-2 text-lg font-semibold text-slate-900">Create your first board</h3>
+      <h3 className="mb-2 text-base font-medium text-slate-800">Create your first board</h3>
       <p className="mb-6 max-w-sm text-sm text-slate-500">
         Kick off a new canvas and start mapping ideas.
       </p>
