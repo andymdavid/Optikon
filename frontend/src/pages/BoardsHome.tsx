@@ -72,6 +72,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const beginRename = (board: BoardSummary) => {
     setEditingId(String(board.id))
     setTitleDraft(board.title)
+    setMenuId(null)
   }
 
   const cancelRename = () => {
@@ -173,105 +174,144 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   return (
     <div className="boards-home">
       <header className="boards-home__header">
-        <h1>Boards</h1>
+        <div>
+          <h1>Boards in this team</h1>
+          <p className="boards-home__subtitle">Recent activity across your workspace.</p>
+        </div>
         <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
           New board
         </button>
       </header>
+      <div className="boards-home__controls">
+        <select className="boards-home__control" aria-label="Filter boards">
+          <option>All boards</option>
+        </select>
+        <select className="boards-home__control" aria-label="Owner filter">
+          <option>Owned by anyone</option>
+        </select>
+        <select className="boards-home__control" aria-label="Sort boards">
+          <option>Last opened</option>
+        </select>
+        <div className="boards-home__view-toggle" aria-label="View toggle">
+          <button type="button" className="is-active" disabled>
+            List
+          </button>
+          <button type="button" disabled>
+            Grid
+          </button>
+        </div>
+      </div>
       {error && <p className="boards-home__error">{error}</p>}
       {loading ? (
         <p className="boards-home__empty">Loading boards...</p>
       ) : error ? null : boards.length === 0 ? (
         <p className="boards-home__empty">No boards yet.</p>
       ) : (
-        <ul className="boards-home__list">
+        <div className="boards-home__table">
+          <div className="boards-home__row boards-home__row--header">
+            <div>Name</div>
+            <div>Online users</div>
+            <div>Owner</div>
+            <div>Star</div>
+            <div></div>
+          </div>
           {boards.map((board) => {
             const isEditing = editingId === String(board.id)
             const isMenuOpen = menuId === String(board.id)
-            const timestamp = board.lastAccessedAt ?? board.updatedAt
-            const label = board.lastAccessedAt ? 'Last opened' : 'Last updated'
+            const ownerLabel = 'You'
+            const timestamp = board.updatedAt
             return (
-              <li key={board.id}>
-                <div className="boards-home__row">
+              <div
+                key={board.id}
+                className="boards-home__row boards-home__row--item"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (isEditing) return
+                  navigate(`/b/${board.id}`)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    if (isEditing) return
+                    navigate(`/b/${board.id}`)
+                  }
+                }}
+              >
+                <div className="boards-home__name">
+                  {isEditing ? (
+                    <input
+                      className="boards-home__rename"
+                      value={titleDraft}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      onClick={(event) => event.stopPropagation()}
+                      onBlur={() => void commitRename()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          void commitRename()
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          cancelRename()
+                        }
+                      }}
+                      autoFocus
+                      disabled={savingId === String(board.id)}
+                    />
+                  ) : (
+                    <span className="boards-home__title">{board.title}</span>
+                  )}
+                  <span className="boards-home__meta">
+                    Modified by {ownerLabel}, {new Date(timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <div className="boards-home__online">—</div>
+                <div className="boards-home__owner">{ownerLabel}</div>
+                <button
+                  type="button"
+                  className={`boards-home__star${board.starred ? ' is-active' : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void toggleStar(board)
+                  }}
+                  aria-label={board.starred ? 'Unstar board' : 'Star board'}
+                >
+                  {board.starred ? '★' : '☆'}
+                </button>
+                <div className="boards-home__menu">
                   <button
                     type="button"
-                    className="boards-home__link"
-                    onClick={() => {
-                      if (isEditing) return
-                      navigate(`/b/${board.id}`)
+                    className="boards-home__menu-trigger"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setMenuId((prev) => (prev === String(board.id) ? null : String(board.id)))
                     }}
                   >
-                    {isEditing ? (
-                      <input
-                        className="boards-home__rename"
-                        value={titleDraft}
-                        onChange={(event) => setTitleDraft(event.target.value)}
-                        onClick={(event) => event.stopPropagation()}
-                        onBlur={() => void commitRename()}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            void commitRename()
-                          }
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            cancelRename()
-                          }
-                        }}
-                        autoFocus
-                        disabled={savingId === String(board.id)}
-                      />
-                    ) : (
-                      <span
-                        className="boards-home__title"
-                        onDoubleClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          beginRename(board)
-                        }}
-                      >
-                        {board.starred ? '★ ' : ''}
-                        {board.title}
-                      </span>
-                    )}
-                    <span className="boards-home__meta">
-                      {label}: {new Date(timestamp).toLocaleString()}
-                    </span>
+                    ⋯
                   </button>
-                  <div className="boards-home__menu">
-                    <button
-                      type="button"
-                      className="boards-home__menu-trigger"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setMenuId((prev) => (prev === String(board.id) ? null : String(board.id)))
-                      }}
+                  {isMenuOpen && (
+                    <div
+                      className="boards-home__menu-popover"
+                      onClick={(event) => event.stopPropagation()}
                     >
-                      ⋯
-                    </button>
-                    {isMenuOpen && (
-                      <div
-                        className="boards-home__menu-popover"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <button type="button" onClick={() => void toggleStar(board)}>
-                          {board.starred ? 'Unstar' : 'Star'}
-                        </button>
-                        <button type="button" onClick={() => void duplicateBoard(board)}>
-                          Duplicate
-                        </button>
-                        <button type="button" onClick={() => void archiveBoard(board)}>
-                          Archive
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      <button type="button" onClick={() => beginRename(board)}>
+                        Rename
+                      </button>
+                      <button type="button" onClick={() => void duplicateBoard(board)}>
+                        Duplicate
+                      </button>
+                      <button type="button" onClick={() => void archiveBoard(board)}>
+                        Archive
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </li>
+              </div>
             )
           })}
-        </ul>
+        </div>
       )}
     </div>
   )
