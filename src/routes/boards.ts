@@ -1,15 +1,20 @@
 import { jsonResponse, safeJson } from "../http";
 import {
+  archiveBoardRecord,
   createBoardElementRecord,
   createBoardElementsBatchRecord,
   createBoardRecord,
+  createBoardCopyRecord,
   deleteBoardElementsRecord,
   fetchBoards,
   fetchBoardById,
   fetchBoardElement,
   fetchBoardElements,
   touchBoardLastAccessedAtRecord,
+  touchBoardUpdatedAtRecord,
   updateBoardTitleRecord,
+  updateBoardStarredRecord,
+  unarchiveBoardRecord,
   updateBoardElementRecord,
 } from "../services/boards";
 
@@ -29,6 +34,9 @@ export function handleBoardShow(boardId: number) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
   const touched = touchBoardLastAccessedAtRecord(boardId) ?? board;
   return jsonResponse({
     id: touched.id,
@@ -36,16 +44,19 @@ export function handleBoardShow(boardId: number) {
     createdAt: touched.created_at,
     updatedAt: touched.updated_at,
     lastAccessedAt: touched.last_accessed_at,
+    starred: touched.starred,
   });
 }
 
-export function handleBoardsList() {
-  const boards = fetchBoards();
+export function handleBoardsList(url: URL) {
+  const includeArchived = url.searchParams.get("archived") === "1";
+  const boards = fetchBoards(includeArchived);
   const summaries = boards.map((board) => ({
     id: board.id,
     title: board.title,
     updatedAt: board.updated_at,
     lastAccessedAt: board.last_accessed_at,
+    starred: board.starred,
   }));
   return jsonResponse({ boards: summaries });
 }
@@ -54,6 +65,9 @@ export async function handleBoardUpdate(req: Request, boardId: number) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
   }
   const body = (await safeJson(req)) as { title?: string } | null;
   const nextTitle = typeof body?.title === "string" ? body.title.trim() : "";
@@ -70,7 +84,87 @@ export async function handleBoardUpdate(req: Request, boardId: number) {
     createdAt: updated.created_at,
     updatedAt: updated.updated_at,
     lastAccessedAt: updated.last_accessed_at,
+    starred: updated.starred,
   });
+}
+
+export async function handleBoardStar(req: Request, boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const body = (await safeJson(req)) as { starred?: boolean } | null;
+  const starred = body?.starred === true ? 1 : 0;
+  const updated = updateBoardStarredRecord(boardId, starred);
+  if (!updated) {
+    return jsonResponse({ message: "Unable to update board." }, 500);
+  }
+  return jsonResponse({
+    id: updated.id,
+    title: updated.title,
+    createdAt: updated.created_at,
+    updatedAt: updated.updated_at,
+    lastAccessedAt: updated.last_accessed_at,
+    starred: updated.starred,
+  });
+}
+
+export function handleBoardArchive(boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const updated = archiveBoardRecord(boardId);
+  if (!updated) {
+    return jsonResponse({ message: "Unable to archive board." }, 500);
+  }
+  return jsonResponse({ ok: true });
+}
+
+export function handleBoardUnarchive(boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const updated = unarchiveBoardRecord(boardId);
+  if (!updated) {
+    return jsonResponse({ message: "Unable to unarchive board." }, 500);
+  }
+  return jsonResponse({ ok: true });
+}
+
+export function handleBoardDuplicate(boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`);
+  if (!newBoard) {
+    return jsonResponse({ message: "Unable to duplicate board." }, 500);
+  }
+  const elements = fetchBoardElements(boardId);
+  for (const element of elements) {
+    try {
+      const parsed = JSON.parse(element.props_json) as SharedBoardElement;
+      if (!parsed || typeof parsed.id !== "string") continue;
+      const newId = crypto.randomUUID();
+      const next = { ...parsed, id: newId };
+      createBoardElementRecord(newBoard.id, next);
+    } catch (error) {
+      console.error("Failed to duplicate element", error);
+    }
+  }
+  touchBoardUpdatedAtRecord(newBoard.id);
+  return jsonResponse({ id: newBoard.id, title: newBoard.title }, 201);
 }
 
 function parseStoredElement(propsJson: string): SharedBoardElement | null {
@@ -86,6 +180,9 @@ export function handleBoardElements(boardId: number) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
   }
   const rows = fetchBoardElements(boardId);
   const elements = rows.map((row) => ({
@@ -103,6 +200,9 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
   }
   const body = (await safeJson(req)) as { element?: SharedBoardElement } | null;
   const allowedElementTypes: Array<SharedBoardElement["type"]> = [
@@ -164,6 +264,9 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
   const elementIdString = String(elementId);
   const body = (await safeJson(req)) as { element?: SharedBoardElement | null } | null;
   if (!body?.element) {
@@ -193,6 +296,9 @@ export async function handleBoardElementsDelete(req: Request, boardId: number) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
   const body = (await safeJson(req)) as { ids?: unknown } | null;
   const ids = Array.isArray(body?.ids)
     ? body.ids.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -208,6 +314,9 @@ export async function handleBoardElementsBatchUpdate(req: Request, boardId: numb
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
   }
   const body = (await safeJson(req)) as { elements?: SharedBoardElement[] | null } | null;
   if (!Array.isArray(body?.elements) || body!.elements.length === 0) {

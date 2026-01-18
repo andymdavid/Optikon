@@ -1,14 +1,18 @@
 import {
   createBoard,
+  createBoardCopy,
+  archiveBoard,
   deleteBoardElements,
   getBoardById,
   listBoards,
   getBoardElement,
   insertOrUpdateBoardElement,
   listBoardElements,
+  unarchiveBoard,
   touchBoardLastAccessedAt,
   touchBoardUpdatedAt,
   updateBoardTitle,
+  updateBoardStarred,
   updateBoardElement,
 } from "../db";
 
@@ -24,12 +28,28 @@ export function fetchBoardById(id: number) {
   return getBoardById(id);
 }
 
-export function fetchBoards() {
-  return listBoards();
+export function fetchBoards(includeArchived: boolean) {
+  return listBoards(includeArchived);
 }
 
 export function updateBoardTitleRecord(boardId: number, title: string) {
   return updateBoardTitle(boardId, title);
+}
+
+export function updateBoardStarredRecord(boardId: number, starred: number) {
+  return updateBoardStarred(boardId, starred);
+}
+
+export function archiveBoardRecord(boardId: number) {
+  return archiveBoard(boardId);
+}
+
+export function unarchiveBoardRecord(boardId: number) {
+  return unarchiveBoard(boardId);
+}
+
+export function createBoardCopyRecord(title: string) {
+  return createBoardCopy(title);
 }
 
 export function touchBoardUpdatedAtRecord(boardId: number) {

@@ -23,6 +23,10 @@ import {
   handleBoardShow,
   handleBoardsList,
   handleBoardUpdate,
+  handleBoardStar,
+  handleBoardArchive,
+  handleBoardUnarchive,
+  handleBoardDuplicate,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
@@ -310,7 +314,7 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
     if (boardMatch) return handleBoardShow(Number(boardMatch[1]));
-    if (pathname === "/boards") return handleBoardsList();
+    if (pathname === "/boards") return handleBoardsList(url);
     if (pathname === "/") return handleHome(url, session);
   }
 
@@ -323,6 +327,12 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/todos") return handleTodoCreate(req, session);
     const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]));
+    const boardArchiveMatch = pathname.match(/^\/boards\/(\d+)\/archive$/);
+    if (boardArchiveMatch) return handleBoardArchive(Number(boardArchiveMatch[1]));
+    const boardUnarchiveMatch = pathname.match(/^\/boards\/(\d+)\/unarchive$/);
+    if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]));
+    const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
+    if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]));
     const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
     if (attachmentMatch) return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
 
@@ -339,6 +349,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   if (req.method === "PATCH") {
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
     if (boardMatch) return handleBoardUpdate(req, Number(boardMatch[1]));
+    const starMatch = pathname.match(/^\/boards\/(\d+)\/star$/);
+    if (starMatch) return handleBoardStar(req, Number(starMatch[1]));
   }
 
   if (req.method === "PUT") {

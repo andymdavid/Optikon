@@ -6,6 +6,7 @@ type BoardSummary = {
   title: string
   updatedAt: string
   lastAccessedAt?: string | null
+  starred?: number
 }
 
 export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
@@ -15,6 +16,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [menuId, setMenuId] = useState<string | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -43,6 +45,13 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       controller.abort()
     }
   }, [apiBaseUrl])
+
+  useEffect(() => {
+    if (!menuId) return
+    const handleClick = () => setMenuId(null)
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [menuId])
 
   const handleCreateBoard = async () => {
     try {
@@ -88,14 +97,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       const data = (await response.json()) as BoardSummary
       setBoards((prev) =>
         prev.map((board) =>
-          String(board.id) === editingId
-            ? {
-                ...board,
-                title: data.title,
-                updatedAt: data.updatedAt,
-                lastAccessedAt: data.lastAccessedAt ?? board.lastAccessedAt,
-              }
-            : board
+              String(board.id) === editingId
+                ? {
+                    ...board,
+                    title: data.title,
+                    updatedAt: data.updatedAt,
+                    lastAccessedAt: data.lastAccessedAt ?? board.lastAccessedAt,
+                    starred: data.starred ?? board.starred,
+                  }
+                : board
         )
       )
       setError(null)
@@ -104,6 +114,59 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       setError('Unable to rename board.')
     } finally {
       setSavingId(null)
+    }
+  }
+
+  const toggleStar = async (board: BoardSummary) => {
+    const nextStarred = board.starred ? 0 : 1
+    setBoards((prev) =>
+      prev.map((item) =>
+        String(item.id) === String(board.id) ? { ...item, starred: nextStarred } : item
+      )
+    )
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}/star`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ starred: nextStarred === 1 }),
+      })
+      if (!response.ok) throw new Error('Failed to star board')
+    } catch (_err) {
+      setBoards((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(board.id) ? { ...item, starred: board.starred ?? 0 } : item
+        )
+      )
+      setError('Unable to update star.')
+    }
+  }
+
+  const duplicateBoard = async (board: BoardSummary) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}/duplicate`, {
+        method: 'POST',
+      })
+      if (!response.ok) throw new Error('Failed to duplicate board')
+      const data = (await response.json()) as { id?: number | string }
+      if (!data?.id) throw new Error('Invalid duplicate response')
+      navigate(`/b/${data.id}`)
+    } catch (_err) {
+      setError('Unable to duplicate board.')
+    }
+  }
+
+  const archiveBoard = async (board: BoardSummary) => {
+    const confirmed = window.confirm('Archive board?')
+    if (!confirmed) return
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}/archive`, {
+        method: 'POST',
+      })
+      if (!response.ok) throw new Error('Failed to archive board')
+      setBoards((prev) => prev.filter((item) => String(item.id) !== String(board.id)))
+      setMenuId(null)
+    } catch (_err) {
+      setError('Unable to archive board.')
     }
   }
 
@@ -124,53 +187,87 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         <ul className="boards-home__list">
           {boards.map((board) => {
             const isEditing = editingId === String(board.id)
+            const isMenuOpen = menuId === String(board.id)
             const timestamp = board.lastAccessedAt ?? board.updatedAt
             const label = board.lastAccessedAt ? 'Last opened' : 'Last updated'
             return (
               <li key={board.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isEditing) return
-                    navigate(`/b/${board.id}`)
-                  }}
-                >
-                  {isEditing ? (
-                    <input
-                      className="boards-home__rename"
-                      value={titleDraft}
-                      onChange={(event) => setTitleDraft(event.target.value)}
-                      onClick={(event) => event.stopPropagation()}
-                      onBlur={() => void commitRename()}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
+                <div className="boards-home__row">
+                  <button
+                    type="button"
+                    className="boards-home__link"
+                    onClick={() => {
+                      if (isEditing) return
+                      navigate(`/b/${board.id}`)
+                    }}
+                  >
+                    {isEditing ? (
+                      <input
+                        className="boards-home__rename"
+                        value={titleDraft}
+                        onChange={(event) => setTitleDraft(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onBlur={() => void commitRename()}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            void commitRename()
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            cancelRename()
+                          }
+                        }}
+                        autoFocus
+                        disabled={savingId === String(board.id)}
+                      />
+                    ) : (
+                      <span
+                        className="boards-home__title"
+                        onDoubleClick={(event) => {
                           event.preventDefault()
-                          void commitRename()
-                        }
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          cancelRename()
-                        }
-                      }}
-                      autoFocus
-                      disabled={savingId === String(board.id)}
-                    />
-                  ) : (
-                    <span
-                      className="boards-home__title"
-                      onDoubleClick={(event) => {
+                          event.stopPropagation()
+                          beginRename(board)
+                        }}
+                      >
+                        {board.starred ? '★ ' : ''}
+                        {board.title}
+                      </span>
+                    )}
+                    <span className="boards-home__meta">
+                      {label}: {new Date(timestamp).toLocaleString()}
+                    </span>
+                  </button>
+                  <div className="boards-home__menu">
+                    <button
+                      type="button"
+                      className="boards-home__menu-trigger"
+                      onClick={(event) => {
                         event.preventDefault()
                         event.stopPropagation()
-                        beginRename(board)
+                        setMenuId((prev) => (prev === String(board.id) ? null : String(board.id)))
                       }}
                     >
-                      {board.title}
-                    </span>
-                  )}
-                  <span className="boards-home__meta">
-                    {label}: {new Date(timestamp).toLocaleString()}
-                  </span>
-                </button>
+                      ⋯
+                    </button>
+                    {isMenuOpen && (
+                      <div
+                        className="boards-home__menu-popover"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button type="button" onClick={() => void toggleStar(board)}>
+                          {board.starred ? 'Unstar' : 'Star'}
+                        </button>
+                        <button type="button" onClick={() => void duplicateBoard(board)}>
+                          Duplicate
+                        </button>
+                        <button type="button" onClick={() => void archiveBoard(board)}>
+                          Archive
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </li>
             )
           })}

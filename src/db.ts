@@ -33,6 +33,8 @@ export type Board = {
   created_at: string;
   updated_at: string;
   last_accessed_at: string | null;
+  starred: number;
+  archived_at: string | null;
 };
 
 export type BoardElement = {
@@ -114,7 +116,9 @@ db.run(`
     title TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_accessed_at TEXT
+    last_accessed_at TEXT,
+    starred INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT
   )
 `);
 
@@ -122,6 +126,8 @@ function ensureBoardsSchema() {
   const info = db.query<{ name: string }>(`PRAGMA table_info('boards')`).all();
   const hasUpdatedAt = info.some((column) => column.name === "updated_at");
   const hasLastAccessedAt = info.some((column) => column.name === "last_accessed_at");
+  const hasStarred = info.some((column) => column.name === "starred");
+  const hasArchivedAt = info.some((column) => column.name === "archived_at");
 
   if (!hasUpdatedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
@@ -130,6 +136,14 @@ function ensureBoardsSchema() {
 
   if (!hasLastAccessedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN last_accessed_at TEXT`);
+  }
+
+  if (!hasStarred) {
+    db.run(`ALTER TABLE boards ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`);
+  }
+
+  if (!hasArchivedAt) {
+    db.run(`ALTER TABLE boards ADD COLUMN archived_at TEXT`);
   }
 }
 
@@ -303,7 +317,34 @@ const insertBoardStmt = db.query<Board>(
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
 const listBoardsStmt = db.query<Board>(
   `SELECT * FROM boards
-   ORDER BY last_accessed_at DESC, updated_at DESC`
+   WHERE (? = 1 OR archived_at IS NULL)
+   ORDER BY starred DESC,
+            last_accessed_at IS NULL,
+            last_accessed_at DESC,
+            updated_at DESC`
+);
+const updateBoardStarredStmt = db.query<Board>(
+  `UPDATE boards
+   SET starred = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const archiveBoardStmt = db.query<Board>(
+  `UPDATE boards
+   SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const unarchiveBoardStmt = db.query<Board>(
+  `UPDATE boards
+   SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const insertBoardCopyStmt = db.query<Board>(
+  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at)
+   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL)
+   RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board>(
   `UPDATE boards
@@ -476,12 +517,28 @@ export function getBoardById(id: number) {
   return getBoardStmt.get(id) ?? null;
 }
 
-export function listBoards() {
-  return listBoardsStmt.all();
+export function listBoards(includeArchived: boolean) {
+  return listBoardsStmt.all(includeArchived ? 1 : 0);
 }
 
 export function updateBoardTitle(id: number, title: string) {
   return updateBoardTitleStmt.get(title, id) ?? null;
+}
+
+export function updateBoardStarred(id: number, starred: number) {
+  return updateBoardStarredStmt.get(starred, id) ?? null;
+}
+
+export function archiveBoard(id: number) {
+  return archiveBoardStmt.get(id) ?? null;
+}
+
+export function unarchiveBoard(id: number) {
+  return unarchiveBoardStmt.get(id) ?? null;
+}
+
+export function createBoardCopy(title: string) {
+  return insertBoardCopyStmt.get(title) ?? null;
 }
 
 export function touchBoardUpdatedAt(id: number) {

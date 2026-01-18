@@ -46,7 +46,18 @@
   gap: 12px;
 }
 
-.boards-home__list li button {
+.boards-home__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.boards-home__list li {
+  margin: 0;
+}
+
+.boards-home__link {
+  flex: 1;
   width: 100%;
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 12px;
@@ -76,6 +87,48 @@
   border: 1px solid rgba(15, 23, 42, 0.2);
   border-radius: 8px;
   padding: 6px 8px;
+}
+
+.boards-home__menu {
+  position: relative;
+}
+
+.boards-home__menu-trigger {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.boards-home__menu-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+  z-index: 40;
+}
+
+.boards-home__menu-popover button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.boards-home__menu-popover button:hover {
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .board-title {
