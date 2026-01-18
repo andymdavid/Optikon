@@ -359,7 +359,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     const IconComponent = iconConfig.icon
     return (
       <TableRow
-        className="cursor-pointer align-middle transition hover:bg-slate-50"
+        className="cursor-pointer align-middle transition-colors hover:bg-slate-100"
         onClick={() => handleRowOpen(board.id, isEditing)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
