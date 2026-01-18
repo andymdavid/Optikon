@@ -1,7 +1,9 @@
-.app-shell,
+:root,
 body,
-#root {
+#root,
+.app-shell {
   background: #ffffff;
+  color: #0f172a;
 }
 
 .app-shell {
