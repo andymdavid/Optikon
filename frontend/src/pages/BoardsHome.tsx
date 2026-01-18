@@ -17,6 +17,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu'
 import { Input } from '../components/ui/input'
@@ -243,6 +244,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
+  const copyBoardLink = async (board: BoardSummary) => {
+    try {
+      const origin = window.location.origin
+      await navigator.clipboard.writeText(`${origin}/b/${board.id}`)
+    } catch (_err) {
+      setError('Unable to copy board link.')
+    }
+  }
+
   const archiveBoard = async (board: BoardSummary) => {
     const confirmed = window.confirm('Archive board?')
     if (!confirmed) return
@@ -445,16 +455,31 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-40"
+              className="w-56"
               onClick={(event) => event.stopPropagation()}
             >
+              <DropdownMenuItem onSelect={() => {}}>Share</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void copyBoardLink(board)}>
+                Copy board link
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  window.open(`/b/${board.id}`, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                Open in new tab
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => beginRename(board)}>Rename</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void duplicateBoard(board)}>Duplicate</DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-rose-600 focus:text-rose-600"
-                onSelect={() => void archiveBoard(board)}
-              >
-                Archive
+              <DropdownMenuItem onSelect={() => {}}>Board details</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => {}}>Make private</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => {}}>Download backup</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => {}}>Leave</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void archiveBoard(board)}>Archive</DropdownMenuItem>
+              <DropdownMenuItem className="text-rose-600 focus:text-rose-600" onSelect={() => {}}>
+                Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
