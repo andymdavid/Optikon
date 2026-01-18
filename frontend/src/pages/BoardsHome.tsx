@@ -46,9 +46,9 @@ type BoardSummary = {
 }
 
 const boardIcons = [
-  { icon: Cloud, bg: 'bg-cyan-100', color: 'text-cyan-500' },
-  { icon: Pencil, bg: 'bg-purple-100', color: 'text-purple-500' },
-  { icon: FileText, bg: 'bg-teal-100', color: 'text-teal-500' },
+  { icon: Cloud, bg: 'bg-cyan-50', color: 'text-cyan-400' },
+  { icon: Pencil, bg: 'bg-purple-50', color: 'text-purple-400' },
+  { icon: FileText, bg: 'bg-teal-50', color: 'text-teal-400' },
 ]
 
 function formatRelativeDate(dateString: string): string {
@@ -370,9 +370,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         tabIndex={0}
       >
         <TableCell>
-          <div className="flex items-center gap-4">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${iconConfig.bg}`}>
-              <IconComponent size={20} className={iconConfig.color} />
+          <div className="flex items-center gap-3">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconConfig.bg}`}>
+              <IconComponent size={16} strokeWidth={1.5} className={iconConfig.color} />
             </div>
             <div className="flex flex-col gap-0.5">
               {isEditing ? (
