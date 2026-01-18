@@ -397,7 +397,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               ) : (
                 <span className="font-medium text-slate-800">{board.title}</span>
               )}
-              <span className="text-sm text-slate-500">
+              <span className="text-xs text-slate-400">
                 Modified by {ownerLabel}, {formatRelativeDate(timestamp)}
               </span>
             </div>
@@ -412,7 +412,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         <TableCell>
           <div className="flex items-center gap-2">
             <Avatar name={ownerLabel} size="sm" />
-            <span className="text-sm text-slate-700">{ownerLabel}</span>
+            <span className="text-xs text-slate-500">{ownerLabel}</span>
           </div>
         </TableCell>
         <TableCell>
