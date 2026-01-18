@@ -184,12 +184,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const BoardsHeader = () => (
-    <header className="boards-home__header">
+    <header className="flex items-center justify-between gap-6">
       <div>
-        <h1>Boards in this team</h1>
-        <p className="boards-home__subtitle">Recent activity across your workspace.</p>
+        <h1 className="text-3xl font-semibold text-slate-900">Boards in this team</h1>
+        <p className="mt-2 text-sm text-slate-500">Recent activity across your workspace.</p>
       </div>
-      <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
+      <button
+        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+        type="button"
+        onClick={() => void handleCreateBoard()}
+      >
         <Plus size={16} />
         New board
       </button>
@@ -197,22 +201,42 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   )
 
   const BoardsFilters = () => (
-    <div className="boards-home__controls">
-      <select className="boards-home__control" aria-label="Filter boards">
+    <div className="mt-6 flex flex-wrap items-center gap-3">
+      <select
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+        aria-label="Filter boards"
+      >
         <option>All boards</option>
       </select>
-      <select className="boards-home__control" aria-label="Owner filter">
+      <select
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+        aria-label="Owner filter"
+      >
         <option>Owned by anyone</option>
       </select>
-      <select className="boards-home__control" aria-label="Sort boards">
+      <select
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
+        aria-label="Sort boards"
+      >
         <option>Last opened</option>
       </select>
-      <div className="boards-home__view-toggle" aria-label="View toggle">
-        <button type="button" className="is-active" disabled>
+      <div
+        className="ml-auto inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        aria-label="View toggle"
+      >
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+          disabled
+        >
           <List size={16} />
           List
         </button>
-        <button type="button" disabled>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-400"
+          disabled
+        >
           <LayoutGrid size={16} />
           Grid
         </button>
@@ -221,8 +245,8 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   )
 
   const BoardsTable = () => (
-    <div className="boards-home__table">
-      <div className="boards-home__row boards-home__row--header">
+    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid grid-cols-[minmax(240px,_1.6fr)_140px_160px_60px_52px] items-center gap-3 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         <div>Name</div>
         <div>Online users</div>
         <div>Owner</div>
@@ -242,7 +266,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     const timestamp = board.lastAccessedAt ?? board.updatedAt
     return (
       <div
-        className="boards-home__row boards-home__row--item"
+        className="grid min-h-[72px] grid-cols-[minmax(240px,_1.6fr)_140px_160px_60px_52px] items-center gap-3 border-t border-slate-100 px-5 py-4 transition hover:bg-slate-50"
         role="button"
         tabIndex={0}
         onClick={() => handleRowOpen(board.id, isEditing)}
@@ -253,10 +277,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           }
         }}
       >
-        <div className="boards-home__name">
+        <div className="flex flex-col gap-1">
           {isEditing ? (
             <input
-              className="boards-home__rename"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200"
               value={titleDraft}
               onChange={(event) => setTitleDraft(event.target.value)}
               onClick={(event) => event.stopPropagation()}
@@ -275,31 +299,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               disabled={savingId === String(board.id)}
             />
           ) : (
-            <span className="boards-home__title">{board.title}</span>
+            <span className="text-base font-semibold text-slate-900">{board.title}</span>
           )}
-          <span className="boards-home__meta">
+          <span className="text-xs text-slate-500">
             Modified by {ownerLabel}, {new Date(timestamp).toLocaleString()}
           </span>
         </div>
-        <div className="boards-home__online">—</div>
-        <div className="boards-home__owner">
-          <span className="boards-home__owner-chip">{ownerLabel}</span>
+        <div className="text-sm text-slate-400">—</div>
+        <div>
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+            {ownerLabel}
+          </span>
         </div>
         <button
           type="button"
-          className={`boards-home__star${board.starred ? ' is-active' : ''}`}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
+            board.starred ? 'text-amber-500' : 'text-slate-400'
+          } hover:bg-slate-100 hover:text-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200`}
           onClick={(event) => {
             event.stopPropagation()
             void toggleStar(board)
           }}
           aria-label={board.starred ? 'Unstar board' : 'Star board'}
         >
-          <Star size={18} />
+          <Star className={board.starred ? 'fill-amber-400' : ''} size={18} />
         </button>
-        <div className="boards-home__menu">
+        <div className="relative justify-self-end">
           <button
             type="button"
-            className="boards-home__menu-trigger"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50"
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -309,14 +337,29 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             <MoreHorizontal size={18} />
           </button>
           {isMenuOpen && (
-            <div className="boards-home__menu-popover" onClick={(event) => event.stopPropagation()}>
-              <button type="button" onClick={() => beginRename(board)}>
+            <div
+              className="absolute right-0 top-full z-50 mt-2 w-40 rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => beginRename(board)}
+              >
                 Rename
               </button>
-              <button type="button" onClick={() => void duplicateBoard(board)}>
+              <button
+                type="button"
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => void duplicateBoard(board)}
+              >
                 Duplicate
               </button>
-              <button type="button" onClick={() => void archiveBoard(board)}>
+              <button
+                type="button"
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                onClick={() => void archiveBoard(board)}
+              >
                 Archive
               </button>
             </div>
@@ -327,8 +370,8 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const BoardsSkeleton = () => (
-    <div className="boards-home__table">
-      <div className="boards-home__row boards-home__row--header">
+    <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid grid-cols-[minmax(240px,_1.6fr)_140px_160px_60px_52px] items-center gap-3 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         <div>Name</div>
         <div>Online users</div>
         <div>Owner</div>
@@ -336,22 +379,29 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         <div></div>
       </div>
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="boards-home__row boards-home__row--item">
-          <div className="boards-home__skeleton-block"></div>
-          <div className="boards-home__skeleton-pill"></div>
-          <div className="boards-home__skeleton-pill"></div>
-          <div className="boards-home__skeleton-icon"></div>
-          <div className="boards-home__skeleton-icon"></div>
+        <div
+          key={index}
+          className="grid min-h-[72px] grid-cols-[minmax(240px,_1.6fr)_140px_160px_60px_52px] items-center gap-3 border-t border-slate-100 px-5 py-4"
+        >
+          <div className="h-4 w-2/3 animate-pulse rounded-full bg-slate-100"></div>
+          <div className="h-3 w-16 animate-pulse rounded-full bg-slate-100"></div>
+          <div className="h-3 w-16 animate-pulse rounded-full bg-slate-100"></div>
+          <div className="h-6 w-6 animate-pulse justify-self-center rounded-lg bg-slate-100"></div>
+          <div className="h-6 w-6 animate-pulse justify-self-end rounded-lg bg-slate-100"></div>
         </div>
       ))}
     </div>
   )
 
   const BoardsEmpty = () => (
-    <div className="boards-home__empty-card">
-      <h2>Create your first board</h2>
-      <p>Kick off a new canvas and start mapping ideas.</p>
-      <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
+    <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-left shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-900">Create your first board</h2>
+      <p className="mt-2 text-sm text-slate-500">Kick off a new canvas and start mapping ideas.</p>
+      <button
+        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+        type="button"
+        onClick={() => void handleCreateBoard()}
+      >
         <Plus size={16} />
         New board
       </button>
@@ -359,10 +409,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   )
 
   return (
-    <div className="boards-home">
+    <div className="mx-auto max-w-6xl px-6 py-10 text-slate-900">
       <BoardsHeader />
       <BoardsFilters />
-      {error && <p className="boards-home__error">{error}</p>}
+      {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
       {loading ? <BoardsSkeleton /> : error ? null : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
     </div>
   )
