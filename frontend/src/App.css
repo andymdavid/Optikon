@@ -23,6 +23,7 @@ body,
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 20px;
+  background: #ffffff;
 }
 
 .boards-home__header h1 {
