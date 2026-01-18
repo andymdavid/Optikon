@@ -6,9 +6,10 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Search,
   Star,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { Button } from '../components/ui/button'
@@ -71,6 +72,27 @@ function formatRelativeDate(dateString: string): string {
   }
 }
 
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
+  const initials = getInitials(name)
+  const sizeClasses = size === 'sm' ? 'h-6 w-6 text-xs' : 'h-8 w-8 text-sm'
+  return (
+    <div
+      className={`${sizeClasses} flex items-center justify-center rounded-full bg-slate-200 font-medium text-slate-600`}
+    >
+      {initials}
+    </div>
+  )
+}
+
 export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [boards, setBoards] = useState<BoardSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -78,7 +100,14 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
+
+  const filteredBoards = useMemo(() => {
+    if (!searchQuery.trim()) return boards
+    const query = searchQuery.toLowerCase()
+    return boards.filter((board) => board.title.toLowerCase().includes(query))
+  }, [boards, searchQuery])
 
   const handleRowOpen = (id: number | string, isEditing: boolean) => {
     if (isEditing) return
@@ -229,12 +258,26 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const BoardsHeader = () => (
-    <header className="flex flex-wrap items-center justify-between gap-6">
+    <header className="flex flex-wrap items-center justify-between gap-4">
       <h1 className="text-2xl font-semibold text-slate-900">Boards in this team</h1>
-      <Button onClick={() => void handleCreateBoard()}>
-        <Plus size={16} />
-        Create new
-      </Button>
+      <div className="flex items-center gap-3">
+        <div className="relative">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <Input
+            placeholder="Search boards..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-64 pl-9"
+          />
+        </div>
+        <Button onClick={() => void handleCreateBoard()}>
+          <Plus size={16} />
+          Create new
+        </Button>
+      </div>
     </header>
   )
 
@@ -286,20 +329,25 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     <div className="mt-6">
       <Table>
         <TableHeader>
-          <TableRow className="border-b border-slate-200">
-            <TableHead className="text-sm font-normal text-slate-600">Name</TableHead>
-            <TableHead className="text-sm font-normal text-slate-600">Online users</TableHead>
-            <TableHead className="text-sm font-normal text-slate-600">Owner</TableHead>
+          <TableRow className="border-b border-slate-100">
+            <TableHead className="text-sm font-normal text-slate-500">Name</TableHead>
+            <TableHead className="text-sm font-normal text-slate-500">Online users</TableHead>
+            <TableHead className="text-sm font-normal text-slate-500">Owner</TableHead>
             <TableHead className="w-[70px]"></TableHead>
             <TableHead className="w-[60px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {boards.map((board, index) => (
+          {filteredBoards.map((board, index) => (
             <BoardRow key={board.id} board={board} index={index} />
           ))}
         </TableBody>
       </Table>
+      {filteredBoards.length === 0 && searchQuery && (
+        <div className="py-12 text-center text-sm text-slate-500">
+          No boards matching "{searchQuery}"
+        </div>
+      )}
     </div>
   )
 
@@ -355,8 +403,18 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             </div>
           </div>
         </TableCell>
-        <TableCell className="text-sm text-slate-400"></TableCell>
-        <TableCell className="text-sm text-slate-700">{ownerLabel}</TableCell>
+        <TableCell>
+          <div className="flex items-center -space-x-2">
+            <Avatar name="Andy David" size="sm" />
+            <Avatar name="Pete Winn" size="sm" />
+          </div>
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-2">
+            <Avatar name={ownerLabel} size="sm" />
+            <span className="text-sm text-slate-700">{ownerLabel}</span>
+          </div>
+        </TableCell>
         <TableCell>
           <Button
             variant="ghost"
