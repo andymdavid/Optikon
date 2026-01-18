@@ -1,10 +1,17 @@
-import { LayoutGrid, List, MoreHorizontal, Plus, Star } from 'lucide-react'
+import {
+  Cloud,
+  FileText,
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Star,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +42,33 @@ type BoardSummary = {
   updatedAt: string
   lastAccessedAt?: string | null
   starred?: number
+}
+
+const boardIcons = [
+  { icon: Cloud, bg: 'bg-cyan-100', color: 'text-cyan-500' },
+  { icon: Pencil, bg: 'bg-purple-100', color: 'text-purple-500' },
+  { icon: FileText, bg: 'bg-teal-100', color: 'text-teal-500' },
+]
+
+function formatRelativeDate(dateString: string): string {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) {
+    return 'Today'
+  } else if (diffDays === 1) {
+    return 'Yesterday'
+  } else if (diffDays < 7) {
+    return `${diffDays} days ago`
+  } else {
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+    })
+  }
 }
 
 export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
@@ -196,21 +230,19 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const BoardsHeader = () => (
     <header className="flex flex-wrap items-center justify-between gap-6">
-      <div>
-        <h1 className="text-3xl font-semibold text-slate-900">Boards in this team</h1>
-        <p className="mt-2 text-sm text-slate-500">Recent activity across your workspace.</p>
-      </div>
+      <h1 className="text-2xl font-semibold text-slate-900">Boards in this team</h1>
       <Button onClick={() => void handleCreateBoard()}>
         <Plus size={16} />
-        New board
+        Create new
       </Button>
     </header>
   )
 
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
+      <span className="text-sm text-slate-600">Filter by</span>
       <Select defaultValue="all">
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="All boards" />
         </SelectTrigger>
         <SelectContent>
@@ -218,15 +250,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         </SelectContent>
       </Select>
       <Select defaultValue="anyone">
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-[160px]">
           <SelectValue placeholder="Owned by anyone" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="anyone">Owned by anyone</SelectItem>
         </SelectContent>
       </Select>
+      <span className="ml-3 text-sm text-slate-600">Sort by</span>
       <Select defaultValue="last-opened">
-        <SelectTrigger className="w-[170px]">
+        <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="Last opened" />
         </SelectTrigger>
         <SelectContent>
@@ -239,45 +272,43 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         className="ml-auto"
         aria-label="View toggle"
       >
-        <ToggleGroupItem value="list" aria-label="List view">
-          <List size={16} />
-          List
-        </ToggleGroupItem>
         <ToggleGroupItem value="grid" aria-label="Grid view" disabled>
-          <LayoutGrid size={16} />
-          Grid
+          <LayoutGrid size={18} />
+        </ToggleGroupItem>
+        <ToggleGroupItem value="list" aria-label="List view">
+          <List size={18} />
         </ToggleGroupItem>
       </ToggleGroup>
     </div>
   )
 
   const BoardsTable = () => (
-    <Card className="mt-6 overflow-hidden">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
-              <TableHead>Name</TableHead>
-              <TableHead>Online users</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead className="w-[70px]"></TableHead>
-              <TableHead className="w-[60px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {boards.map((board) => (
-              <BoardRow key={board.id} board={board} />
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <div className="mt-6">
+      <Table>
+        <TableHeader>
+          <TableRow className="border-b border-slate-200">
+            <TableHead className="text-sm font-normal text-slate-600">Name</TableHead>
+            <TableHead className="text-sm font-normal text-slate-600">Online users</TableHead>
+            <TableHead className="text-sm font-normal text-slate-600">Owner</TableHead>
+            <TableHead className="w-[70px]"></TableHead>
+            <TableHead className="w-[60px]"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {boards.map((board, index) => (
+            <BoardRow key={board.id} board={board} index={index} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 
-  const BoardRow = ({ board }: { board: BoardSummary }) => {
+  const BoardRow = ({ board, index }: { board: BoardSummary; index: number }) => {
     const isEditing = editingId === String(board.id)
-    const ownerLabel = 'You'
+    const ownerLabel = 'Andy David'
     const timestamp = board.lastAccessedAt ?? board.updatedAt
+    const iconConfig = boardIcons[index % boardIcons.length]
+    const IconComponent = iconConfig.icon
     return (
       <TableRow
         className="cursor-pointer align-middle transition hover:bg-slate-50"
@@ -291,38 +322,41 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         tabIndex={0}
       >
         <TableCell>
-          <div className="flex flex-col gap-1">
-            {isEditing ? (
-              <Input
-                value={titleDraft}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                onClick={(event) => event.stopPropagation()}
-                onBlur={() => void commitRename()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    void commitRename()
-                  }
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    cancelRename()
-                  }
-                }}
-                autoFocus
-                disabled={savingId === String(board.id)}
-              />
-            ) : (
-              <span className="text-base font-semibold text-slate-900">{board.title}</span>
-            )}
-            <span className="text-xs text-slate-500">
-              Modified by {ownerLabel}, {new Date(timestamp).toLocaleString()}
-            </span>
+          <div className="flex items-center gap-4">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${iconConfig.bg}`}>
+              <IconComponent size={20} className={iconConfig.color} />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {isEditing ? (
+                <Input
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onBlur={() => void commitRename()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void commitRename()
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelRename()
+                    }
+                  }}
+                  autoFocus
+                  disabled={savingId === String(board.id)}
+                />
+              ) : (
+                <span className="font-semibold text-slate-900">{board.title}</span>
+              )}
+              <span className="text-sm text-slate-500">
+                Modified by {ownerLabel}, {formatRelativeDate(timestamp)}
+              </span>
+            </div>
           </div>
         </TableCell>
-        <TableCell className="text-sm text-slate-400">—</TableCell>
-        <TableCell>
-          <Badge>{ownerLabel}</Badge>
-        </TableCell>
+        <TableCell className="text-sm text-slate-400"></TableCell>
+        <TableCell className="text-sm text-slate-700">{ownerLabel}</TableCell>
         <TableCell>
           <Button
             variant="ghost"
@@ -343,11 +377,11 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 onClick={(event) => event.stopPropagation()}
               >
-                <MoreHorizontal size={18} />
+                <MoreHorizontal size={18} className="text-slate-400" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -371,38 +405,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const BoardsSkeleton = () => (
-    <Card className="mt-6 overflow-hidden">
-      <CardHeader className="border-b border-slate-100 bg-slate-50">
-        <CardTitle className="text-xs uppercase tracking-[0.18em] text-slate-500">
-          Loading boards
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4 p-6">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="grid grid-cols-4 gap-4">
-            <div className="h-4 w-3/5 animate-pulse rounded-full bg-slate-100"></div>
-            <div className="h-4 w-20 animate-pulse rounded-full bg-slate-100"></div>
-            <div className="h-4 w-16 animate-pulse rounded-full bg-slate-100"></div>
-            <div className="h-4 w-10 animate-pulse rounded-full bg-slate-100"></div>
+    <div className="mt-6 space-y-4">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="flex items-center gap-4 py-4">
+          <div className="h-10 w-10 animate-pulse rounded-lg bg-slate-100"></div>
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-48 animate-pulse rounded bg-slate-100"></div>
+            <div className="h-3 w-32 animate-pulse rounded bg-slate-100"></div>
           </div>
-        ))}
-      </CardContent>
-    </Card>
+          <div className="h-4 w-20 animate-pulse rounded bg-slate-100"></div>
+          <div className="h-4 w-20 animate-pulse rounded bg-slate-100"></div>
+        </div>
+      ))}
+    </div>
   )
 
   const BoardsEmpty = () => (
-    <Card className="mt-6 border-dashed">
-      <CardHeader>
-        <CardTitle>Create your first board</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm text-slate-500">Kick off a new canvas and start mapping ideas.</p>
-        <Button onClick={() => void handleCreateBoard()}>
-          <Plus size={16} />
-          New board
-        </Button>
-      </CardContent>
-    </Card>
+    <div className="mt-12 flex flex-col items-center justify-center py-12 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100">
+        <FileText size={28} className="text-slate-400" />
+      </div>
+      <h3 className="mb-2 text-lg font-semibold text-slate-900">Create your first board</h3>
+      <p className="mb-6 max-w-sm text-sm text-slate-500">
+        Kick off a new canvas and start mapping ideas.
+      </p>
+      <Button onClick={() => void handleCreateBoard()}>
+        <Plus size={16} />
+        Create new
+      </Button>
+    </div>
   )
 
   return (
