@@ -22,6 +22,7 @@ import {
   handleBoardElements,
   handleBoardShow,
   handleBoardsList,
+  handleBoardUpdate,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
@@ -333,6 +334,11 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
 
     const deleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
     if (deleteMatch) return handleTodoDelete(session, Number(deleteMatch[1]));
+  }
+
+  if (req.method === "PATCH") {
+    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+    if (boardMatch) return handleBoardUpdate(req, Number(boardMatch[1]));
   }
 
   if (req.method === "PUT") {

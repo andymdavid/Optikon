@@ -6,6 +6,9 @@ import {
   getBoardElement,
   insertOrUpdateBoardElement,
   listBoardElements,
+  touchBoardLastAccessedAt,
+  touchBoardUpdatedAt,
+  updateBoardTitle,
   updateBoardElement,
 } from "../db";
 
@@ -25,13 +28,27 @@ export function fetchBoards() {
   return listBoards();
 }
 
+export function updateBoardTitleRecord(boardId: number, title: string) {
+  return updateBoardTitle(boardId, title);
+}
+
+export function touchBoardUpdatedAtRecord(boardId: number) {
+  return touchBoardUpdatedAt(boardId);
+}
+
+export function touchBoardLastAccessedAtRecord(boardId: number) {
+  return touchBoardLastAccessedAt(boardId);
+}
+
 export function fetchBoardElements(boardId: number) {
   return listBoardElements(boardId);
 }
 
 export function createBoardElementRecord(boardId: number, element: SharedBoardElement) {
   const propsJson = JSON.stringify(element ?? {});
-  return insertOrUpdateBoardElement(boardId, element.id, element.type, propsJson);
+  const record = insertOrUpdateBoardElement(boardId, element.id, element.type, propsJson);
+  if (record) touchBoardUpdatedAt(boardId);
+  return record;
 }
 
 export function fetchBoardElement(boardId: number, elementId: string) {
@@ -40,11 +57,27 @@ export function fetchBoardElement(boardId: number, elementId: string) {
 
 export function updateBoardElementRecord(boardId: number, elementId: string, element: SharedBoardElement) {
   const propsJson = JSON.stringify(element ?? {});
-  return updateBoardElement(boardId, elementId, propsJson);
+  const record = updateBoardElement(boardId, elementId, propsJson);
+  if (record) touchBoardUpdatedAt(boardId);
+  return record;
 }
 
 export function deleteBoardElementsRecord(boardId: number, ids: string[]) {
-  return deleteBoardElements(boardId, ids);
+  const removed = deleteBoardElements(boardId, ids);
+  if (removed > 0) touchBoardUpdatedAt(boardId);
+  return removed;
+}
+
+export function createBoardElementsBatchRecord(boardId: number, elements: SharedBoardElement[]) {
+  let count = 0;
+  for (const element of elements) {
+    if (!element || typeof element.id !== "string") continue;
+    const propsJson = JSON.stringify(element ?? {});
+    const record = insertOrUpdateBoardElement(boardId, element.id, element.type, propsJson);
+    if (record) count += 1;
+  }
+  if (count > 0) touchBoardUpdatedAt(boardId);
+  return count;
 }
 
 export type { Board, BoardElement };

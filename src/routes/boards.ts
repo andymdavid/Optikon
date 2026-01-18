@@ -1,12 +1,15 @@
 import { jsonResponse, safeJson } from "../http";
 import {
   createBoardElementRecord,
+  createBoardElementsBatchRecord,
   createBoardRecord,
   deleteBoardElementsRecord,
   fetchBoards,
   fetchBoardById,
   fetchBoardElement,
   fetchBoardElements,
+  touchBoardLastAccessedAtRecord,
+  updateBoardTitleRecord,
   updateBoardElementRecord,
 } from "../services/boards";
 
@@ -26,7 +29,14 @@ export function handleBoardShow(boardId: number) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
-  return jsonResponse(board);
+  const touched = touchBoardLastAccessedAtRecord(boardId) ?? board;
+  return jsonResponse({
+    id: touched.id,
+    title: touched.title,
+    createdAt: touched.created_at,
+    updatedAt: touched.updated_at,
+    lastAccessedAt: touched.last_accessed_at,
+  });
 }
 
 export function handleBoardsList() {
@@ -34,9 +44,33 @@ export function handleBoardsList() {
   const summaries = boards.map((board) => ({
     id: board.id,
     title: board.title,
-    updatedAt: board.created_at,
+    updatedAt: board.updated_at,
+    lastAccessedAt: board.last_accessed_at,
   }));
   return jsonResponse({ boards: summaries });
+}
+
+export async function handleBoardUpdate(req: Request, boardId: number) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const body = (await safeJson(req)) as { title?: string } | null;
+  const nextTitle = typeof body?.title === "string" ? body.title.trim() : "";
+  if (!nextTitle) {
+    return jsonResponse({ message: "Title is required." }, 400);
+  }
+  const updated = updateBoardTitleRecord(boardId, nextTitle);
+  if (!updated) {
+    return jsonResponse({ message: "Unable to update board." }, 500);
+  }
+  return jsonResponse({
+    id: updated.id,
+    title: updated.title,
+    createdAt: updated.created_at,
+    updatedAt: updated.updated_at,
+    lastAccessedAt: updated.last_accessed_at,
+  });
 }
 
 function parseStoredElement(propsJson: string): SharedBoardElement | null {
@@ -179,11 +213,6 @@ export async function handleBoardElementsBatchUpdate(req: Request, boardId: numb
   if (!Array.isArray(body?.elements) || body!.elements.length === 0) {
     return jsonResponse({ message: "No elements provided." }, 400);
   }
-  let count = 0;
-  for (const element of body!.elements) {
-    if (!element || typeof element.id !== "string") continue;
-    createBoardElementRecord(boardId, element);
-    count += 1;
-  }
+  const count = createBoardElementsBatchRecord(boardId, body.elements);
   return jsonResponse({ ok: true, count });
 }

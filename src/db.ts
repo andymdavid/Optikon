@@ -31,6 +31,8 @@ export type Board = {
   id: number;
   title: string;
   created_at: string;
+  updated_at: string;
+  last_accessed_at: string | null;
 };
 
 export type BoardElement = {
@@ -110,9 +112,28 @@ db.run(`
   CREATE TABLE IF NOT EXISTS boards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_accessed_at TEXT
   )
 `);
+
+function ensureBoardsSchema() {
+  const info = db.query<{ name: string }>(`PRAGMA table_info('boards')`).all();
+  const hasUpdatedAt = info.some((column) => column.name === "updated_at");
+  const hasLastAccessedAt = info.some((column) => column.name === "last_accessed_at");
+
+  if (!hasUpdatedAt) {
+    db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
+    db.run(`UPDATE boards SET updated_at = created_at WHERE updated_at IS NULL`);
+  }
+
+  if (!hasLastAccessedAt) {
+    db.run(`ALTER TABLE boards ADD COLUMN last_accessed_at TEXT`);
+  }
+}
+
+ensureBoardsSchema();
 
 function ensureBoardElementsSchema() {
   const info = db.query<{ name: string; type: string }>(`PRAGMA table_info('board_elements')`).all();
@@ -275,12 +296,33 @@ const insertAttachmentStmt = db.query<Attachment>(
    RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
-  `INSERT INTO boards (title)
-   VALUES (?)
+  `INSERT INTO boards (title, updated_at)
+   VALUES (?, CURRENT_TIMESTAMP)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
-const listBoardsStmt = db.query<Board>(`SELECT * FROM boards ORDER BY created_at DESC`);
+const listBoardsStmt = db.query<Board>(
+  `SELECT * FROM boards
+   ORDER BY last_accessed_at DESC, updated_at DESC`
+);
+const updateBoardTitleStmt = db.query<Board>(
+  `UPDATE boards
+   SET title = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const touchBoardUpdatedAtStmt = db.query<Board>(
+  `UPDATE boards
+   SET updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const touchBoardLastAccessedAtStmt = db.query<Board>(
+  `UPDATE boards
+   SET last_accessed_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
 const listBoardElementsStmt = db.query<BoardElement>(
   `SELECT * FROM board_elements
    WHERE board_id = ?
@@ -436,6 +478,18 @@ export function getBoardById(id: number) {
 
 export function listBoards() {
   return listBoardsStmt.all();
+}
+
+export function updateBoardTitle(id: number, title: string) {
+  return updateBoardTitleStmt.get(title, id) ?? null;
+}
+
+export function touchBoardUpdatedAt(id: number) {
+  return touchBoardUpdatedAtStmt.get(id) ?? null;
+}
+
+export function touchBoardLastAccessedAt(id: number) {
+  return touchBoardLastAccessedAtStmt.get(id) ?? null;
 }
 
 export function listBoardElements(boardId: number) {
