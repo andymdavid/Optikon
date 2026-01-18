@@ -1,3 +1,10 @@
+import {
+  LayoutGrid,
+  List,
+  MoreHorizontal,
+  Plus,
+  Star,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -18,6 +25,11 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  const handleRowOpen = (id: number | string, isEditing: boolean) => {
+    if (isEditing) return
+    navigate(`/b/${id}`)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -171,148 +183,187 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
-  return (
-    <div className="boards-home">
-      <header className="boards-home__header">
-        <div>
-          <h1>Boards in this team</h1>
-          <p className="boards-home__subtitle">Recent activity across your workspace.</p>
-        </div>
-        <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
-          New board
+  const BoardsHeader = () => (
+    <header className="boards-home__header">
+      <div>
+        <h1>Boards in this team</h1>
+        <p className="boards-home__subtitle">Recent activity across your workspace.</p>
+      </div>
+      <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
+        <Plus size={16} />
+        New board
+      </button>
+    </header>
+  )
+
+  const BoardsFilters = () => (
+    <div className="boards-home__controls">
+      <select className="boards-home__control" aria-label="Filter boards">
+        <option>All boards</option>
+      </select>
+      <select className="boards-home__control" aria-label="Owner filter">
+        <option>Owned by anyone</option>
+      </select>
+      <select className="boards-home__control" aria-label="Sort boards">
+        <option>Last opened</option>
+      </select>
+      <div className="boards-home__view-toggle" aria-label="View toggle">
+        <button type="button" className="is-active" disabled>
+          <List size={16} />
+          List
         </button>
-      </header>
-      <div className="boards-home__controls">
-        <select className="boards-home__control" aria-label="Filter boards">
-          <option>All boards</option>
-        </select>
-        <select className="boards-home__control" aria-label="Owner filter">
-          <option>Owned by anyone</option>
-        </select>
-        <select className="boards-home__control" aria-label="Sort boards">
-          <option>Last opened</option>
-        </select>
-        <div className="boards-home__view-toggle" aria-label="View toggle">
-          <button type="button" className="is-active" disabled>
-            List
+        <button type="button" disabled>
+          <LayoutGrid size={16} />
+          Grid
+        </button>
+      </div>
+    </div>
+  )
+
+  const BoardsTable = () => (
+    <div className="boards-home__table">
+      <div className="boards-home__row boards-home__row--header">
+        <div>Name</div>
+        <div>Online users</div>
+        <div>Owner</div>
+        <div></div>
+        <div></div>
+      </div>
+      {boards.map((board) => (
+        <BoardRow key={board.id} board={board} />
+      ))}
+    </div>
+  )
+
+  const BoardRow = ({ board }: { board: BoardSummary }) => {
+    const isEditing = editingId === String(board.id)
+    const isMenuOpen = menuId === String(board.id)
+    const ownerLabel = 'You'
+    const timestamp = board.lastAccessedAt ?? board.updatedAt
+    return (
+      <div
+        className="boards-home__row boards-home__row--item"
+        role="button"
+        tabIndex={0}
+        onClick={() => handleRowOpen(board.id, isEditing)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            handleRowOpen(board.id, isEditing)
+          }
+        }}
+      >
+        <div className="boards-home__name">
+          {isEditing ? (
+            <input
+              className="boards-home__rename"
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              onBlur={() => void commitRename()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void commitRename()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelRename()
+                }
+              }}
+              autoFocus
+              disabled={savingId === String(board.id)}
+            />
+          ) : (
+            <span className="boards-home__title">{board.title}</span>
+          )}
+          <span className="boards-home__meta">
+            Modified by {ownerLabel}, {new Date(timestamp).toLocaleString()}
+          </span>
+        </div>
+        <div className="boards-home__online">—</div>
+        <div className="boards-home__owner">
+          <span className="boards-home__owner-chip">{ownerLabel}</span>
+        </div>
+        <button
+          type="button"
+          className={`boards-home__star${board.starred ? ' is-active' : ''}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            void toggleStar(board)
+          }}
+          aria-label={board.starred ? 'Unstar board' : 'Star board'}
+        >
+          <Star size={18} />
+        </button>
+        <div className="boards-home__menu">
+          <button
+            type="button"
+            className="boards-home__menu-trigger"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setMenuId((prev) => (prev === String(board.id) ? null : String(board.id)))
+            }}
+          >
+            <MoreHorizontal size={18} />
           </button>
-          <button type="button" disabled>
-            Grid
-          </button>
+          {isMenuOpen && (
+            <div className="boards-home__menu-popover" onClick={(event) => event.stopPropagation()}>
+              <button type="button" onClick={() => beginRename(board)}>
+                Rename
+              </button>
+              <button type="button" onClick={() => void duplicateBoard(board)}>
+                Duplicate
+              </button>
+              <button type="button" onClick={() => void archiveBoard(board)}>
+                Archive
+              </button>
+            </div>
+          )}
         </div>
       </div>
-      {error && <p className="boards-home__error">{error}</p>}
-      {loading ? (
-        <p className="boards-home__empty">Loading boards...</p>
-      ) : error ? null : boards.length === 0 ? (
-        <p className="boards-home__empty">No boards yet.</p>
-      ) : (
-        <div className="boards-home__table">
-          <div className="boards-home__row boards-home__row--header">
-            <div>Name</div>
-            <div>Online users</div>
-            <div>Owner</div>
-            <div>Star</div>
-            <div></div>
-          </div>
-          {boards.map((board) => {
-            const isEditing = editingId === String(board.id)
-            const isMenuOpen = menuId === String(board.id)
-            const ownerLabel = 'You'
-            const timestamp = board.updatedAt
-            return (
-              <div
-                key={board.id}
-                className="boards-home__row boards-home__row--item"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  if (isEditing) return
-                  navigate(`/b/${board.id}`)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    if (isEditing) return
-                    navigate(`/b/${board.id}`)
-                  }
-                }}
-              >
-                <div className="boards-home__name">
-                  {isEditing ? (
-                    <input
-                      className="boards-home__rename"
-                      value={titleDraft}
-                      onChange={(event) => setTitleDraft(event.target.value)}
-                      onClick={(event) => event.stopPropagation()}
-                      onBlur={() => void commitRename()}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          void commitRename()
-                        }
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          cancelRename()
-                        }
-                      }}
-                      autoFocus
-                      disabled={savingId === String(board.id)}
-                    />
-                  ) : (
-                    <span className="boards-home__title">{board.title}</span>
-                  )}
-                  <span className="boards-home__meta">
-                    Modified by {ownerLabel}, {new Date(timestamp).toLocaleString()}
-                  </span>
-                </div>
-                <div className="boards-home__online">—</div>
-                <div className="boards-home__owner">{ownerLabel}</div>
-                <button
-                  type="button"
-                  className={`boards-home__star${board.starred ? ' is-active' : ''}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void toggleStar(board)
-                  }}
-                  aria-label={board.starred ? 'Unstar board' : 'Star board'}
-                >
-                  {board.starred ? '★' : '☆'}
-                </button>
-                <div className="boards-home__menu">
-                  <button
-                    type="button"
-                    className="boards-home__menu-trigger"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setMenuId((prev) => (prev === String(board.id) ? null : String(board.id)))
-                    }}
-                  >
-                    ⋯
-                  </button>
-                  {isMenuOpen && (
-                    <div
-                      className="boards-home__menu-popover"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <button type="button" onClick={() => beginRename(board)}>
-                        Rename
-                      </button>
-                      <button type="button" onClick={() => void duplicateBoard(board)}>
-                        Duplicate
-                      </button>
-                      <button type="button" onClick={() => void archiveBoard(board)}>
-                        Archive
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+    )
+  }
+
+  const BoardsSkeleton = () => (
+    <div className="boards-home__table">
+      <div className="boards-home__row boards-home__row--header">
+        <div>Name</div>
+        <div>Online users</div>
+        <div>Owner</div>
+        <div></div>
+        <div></div>
+      </div>
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="boards-home__row boards-home__row--item">
+          <div className="boards-home__skeleton-block"></div>
+          <div className="boards-home__skeleton-pill"></div>
+          <div className="boards-home__skeleton-pill"></div>
+          <div className="boards-home__skeleton-icon"></div>
+          <div className="boards-home__skeleton-icon"></div>
         </div>
-      )}
+      ))}
+    </div>
+  )
+
+  const BoardsEmpty = () => (
+    <div className="boards-home__empty-card">
+      <h2>Create your first board</h2>
+      <p>Kick off a new canvas and start mapping ideas.</p>
+      <button className="boards-home__new" type="button" onClick={() => void handleCreateBoard()}>
+        <Plus size={16} />
+        New board
+      </button>
+    </div>
+  )
+
+  return (
+    <div className="boards-home">
+      <BoardsHeader />
+      <BoardsFilters />
+      {error && <p className="boards-home__error">{error}</p>}
+      {loading ? <BoardsSkeleton /> : error ? null : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
     </div>
   )
 }
