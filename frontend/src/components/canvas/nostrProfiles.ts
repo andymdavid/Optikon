@@ -13,7 +13,7 @@ type ApplesauceLibs = {
 
 let applesauceLibs: ApplesauceLibs | null = null
 let profilePool: any = null
-const profileCache = new Map<string, string | null>()
+const profileCache = new Map<string, { url: string | null; ts: number }>()
 const profileInFlight = new Map<string, Promise<string | null>>()
 
 type NostrWindow = Window & {
@@ -58,7 +58,14 @@ export function getAvatarFallback(pubkey?: string | null) {
 
 export async function fetchProfilePicture(pubkey: string): Promise<string | null> {
   if (!pubkey) return null
-  if (profileCache.has(pubkey)) return profileCache.get(pubkey) ?? null
+  const cached = profileCache.get(pubkey)
+  if (cached) {
+    const ageMs = Date.now() - cached.ts
+    if (cached.url || ageMs < 60_000) {
+      return cached.url ?? null
+    }
+    profileCache.delete(pubkey)
+  }
   if (profileInFlight.has(pubkey)) return profileInFlight.get(pubkey) ?? null
 
   const task = (async () => {
@@ -82,7 +89,7 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
 
   profileInFlight.set(pubkey, task)
   const result = await task
-  profileCache.set(pubkey, result)
+  profileCache.set(pubkey, { url: result, ts: Date.now() })
   profileInFlight.delete(pubkey)
   return result
 }
