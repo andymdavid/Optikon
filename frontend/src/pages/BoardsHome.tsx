@@ -267,30 +267,6 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
-  const BoardsHeader = () => (
-    <header className="flex flex-wrap items-center justify-between gap-4">
-      <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <Input
-            placeholder="Search boards..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-64 pl-9"
-          />
-        </div>
-        <Button onClick={() => void handleCreateBoard()}>
-          <Plus size={16} />
-          Create new
-        </Button>
-      </div>
-    </header>
-  )
-
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
       <span className="text-[13px] text-slate-500">Filter by</span>
@@ -521,8 +497,28 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   )
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10 text-slate-900">
-      <BoardsHeader />
+    <div className="mx-auto max-w-[90%] py-10 text-slate-900">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <Input
+              placeholder="Search boards..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-64 pl-9"
+            />
+          </div>
+          <Button onClick={() => void handleCreateBoard()}>
+            <Plus size={16} />
+            Create new
+          </Button>
+        </div>
+      </header>
       <BoardsFilters />
       {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
       {loading ? <BoardsSkeleton /> : error ? null : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
