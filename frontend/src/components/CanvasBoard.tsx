@@ -2169,6 +2169,8 @@ function drawCommentElement(
   const image = avatarImage
   if (image && image.complete) {
     ctx.save()
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
     ctx.beginPath()
     ctx.arc(screenX, screenY, radius - 1, 0, Math.PI * 2)
     ctx.clip()
