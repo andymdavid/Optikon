@@ -2153,7 +2153,7 @@ function drawCommentElement(
   ctx: CanvasRenderingContext2D,
   element: CommentElement,
   camera: CameraState,
-  avatarImage: HTMLImageElement | null
+  avatarImage: CanvasImageSource | null
 ) {
   const screenX = (element.x + camera.offsetX) * camera.zoom
   const screenY = (element.y + camera.offsetY) * camera.zoom
@@ -2167,15 +2167,25 @@ function drawCommentElement(
   ctx.fill()
   ctx.stroke()
   const image = avatarImage
-  if (image && image.complete) {
+  if (image) {
     ctx.save()
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.beginPath()
     ctx.arc(screenX, screenY, radius - 1, 0, Math.PI * 2)
     ctx.clip()
-    const sourceWidth = image.naturalWidth || image.width
-    const sourceHeight = image.naturalHeight || image.height
+    let sourceWidth = 0
+    let sourceHeight = 0
+    if (image instanceof HTMLImageElement) {
+      sourceWidth = image.naturalWidth || image.width
+      sourceHeight = image.naturalHeight || image.height
+    } else if ('displayWidth' in image && typeof image.displayWidth === 'number') {
+      sourceWidth = image.displayWidth
+      sourceHeight = image.displayHeight
+    } else if ('width' in image && typeof image.width === 'number') {
+      sourceWidth = image.width
+      sourceHeight = typeof image.height === 'number' ? image.height : 0
+    }
     if (sourceWidth > 0 && sourceHeight > 0) {
       const size = Math.min(sourceWidth, sourceHeight)
       const sx = Math.floor((sourceWidth - size) / 2)
@@ -3037,7 +3047,7 @@ export function CanvasBoard({
   const lastSelectedCommentIdRef = useRef<string | null>(null)
   const skipCommentPopoverCloseRef = useRef(false)
   const measurementCtxRef = useRef<CanvasRenderingContext2D | null>(null)
-  const commentAvatarCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map())
+  const commentAvatarCacheRef = useRef<Map<string, CanvasImageSource | null>>(new Map())
   const [commentAvatarVersion, setCommentAvatarVersion] = useState(0)
   const imageCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map())
   const [imageCacheVersion, setImageCacheVersion] = useState(0)
@@ -3092,10 +3102,32 @@ export function CanvasBoard({
   const ensureAvatarImage = useCallback((key: string, url: string) => {
     const cache = commentAvatarCacheRef.current
     const existing = cache.get(key) ?? null
-    if (existing && existing.src === url) return
+    if (existing instanceof HTMLImageElement && existing.src === url) return
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => {
+      const sourceWidth = image.naturalWidth || image.width
+      const sourceHeight = image.naturalHeight || image.height
+      if (sourceWidth > 0 && sourceHeight > 0 && 'createImageBitmap' in window) {
+        const size = Math.min(sourceWidth, sourceHeight)
+        const sx = Math.floor((sourceWidth - size) / 2)
+        const sy = Math.floor((sourceHeight - size) / 2)
+        void createImageBitmap(image, sx, sy, size, size, {
+          resizeWidth: 128,
+          resizeHeight: 128,
+          resizeQuality: 'high',
+        })
+          .then((bitmap) => {
+            cache.set(key, bitmap)
+            setCommentAvatarVersion((prev) => prev + 1)
+          })
+          .catch(() => {
+            cache.set(key, image)
+            setCommentAvatarVersion((prev) => prev + 1)
+          })
+        return
+      }
+      cache.set(key, image)
       setCommentAvatarVersion((prev) => prev + 1)
     }
     image.onerror = () => {
