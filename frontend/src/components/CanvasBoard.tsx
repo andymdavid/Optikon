@@ -2174,33 +2174,27 @@ function drawCommentElement(
     ctx.beginPath()
     ctx.arc(screenX, screenY, radius - 1, 0, Math.PI * 2)
     ctx.clip()
-    let sourceWidth = 0
-    let sourceHeight = 0
     if (image instanceof HTMLImageElement) {
-      sourceWidth = image.naturalWidth || image.width
-      sourceHeight = image.naturalHeight || image.height
-    } else if ('displayWidth' in image && typeof image.displayWidth === 'number') {
-      sourceWidth = image.displayWidth
-      sourceHeight = image.displayHeight
-    } else if ('width' in image && typeof image.width === 'number') {
-      sourceWidth = image.width
-      sourceHeight = typeof image.height === 'number' ? image.height : 0
-    }
-    if (sourceWidth > 0 && sourceHeight > 0) {
-      const size = Math.min(sourceWidth, sourceHeight)
-      const sx = Math.floor((sourceWidth - size) / 2)
-      const sy = Math.floor((sourceHeight - size) / 2)
-      ctx.drawImage(
-        image,
-        sx,
-        sy,
-        size,
-        size,
-        screenX - radius,
-        screenY - radius,
-        radius * 2,
-        radius * 2
-      )
+      const sourceWidth = image.naturalWidth || image.width
+      const sourceHeight = image.naturalHeight || image.height
+      if (sourceWidth > 0 && sourceHeight > 0) {
+        const size = Math.min(sourceWidth, sourceHeight)
+        const sx = Math.floor((sourceWidth - size) / 2)
+        const sy = Math.floor((sourceHeight - size) / 2)
+        ctx.drawImage(
+          image,
+          sx,
+          sy,
+          size,
+          size,
+          screenX - radius,
+          screenY - radius,
+          radius * 2,
+          radius * 2
+        )
+      } else {
+        ctx.drawImage(image, screenX - radius, screenY - radius, radius * 2, radius * 2)
+      }
     } else {
       ctx.drawImage(image, screenX - radius, screenY - radius, radius * 2, radius * 2)
     }
