@@ -3168,12 +3168,15 @@ export function CanvasBoard({
       if (element.authorPubkey) pubkeys.add(element.authorPubkey)
       else hasAnonymous = true
     })
-    if (hasAnonymous) {
+    const cache = commentAvatarCacheRef.current
+    if (hasAnonymous && !cache.has('anonymous')) {
       ensureAvatarImage('anonymous', getAvatarFallback('anonymous'))
     }
     if (pubkeys.size === 0) return
     pubkeys.forEach((pubkey) => {
-      ensureAvatarImage(pubkey, getAvatarFallback(pubkey))
+      if (!cache.has(pubkey)) {
+        ensureAvatarImage(pubkey, getAvatarFallback(pubkey))
+      }
       void fetchProfilePicture(pubkey).then((url) => {
         if (!url) return
         ensureAvatarImage(pubkey, url)
