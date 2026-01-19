@@ -6183,7 +6183,7 @@ export function CanvasBoard({
           type: 'joinBoard',
           payload: {
             boardId,
-            user: { pubkey: 'anon' },
+            user: session ? { pubkey: session.pubkey, npub: session.npub } : null,
           },
         }
         logOutbound(joinPayload)

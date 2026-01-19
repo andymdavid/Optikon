@@ -48,6 +48,7 @@ type CanvasMessageEnvelope = {
 type WebSocketData = {
   session: Session | null;
   boardId: string | null;
+  presenceUser: { pubkey: string; npub: string } | null;
 };
 
 type OnlineUser = {
@@ -90,6 +91,17 @@ function extractBoardId(payload: unknown) {
   return boardId;
 }
 
+function extractPresenceUser(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+  const user = (payload as { user?: unknown }).user;
+  if (!user || typeof user !== "object") return null;
+  const pubkey = (user as { pubkey?: unknown }).pubkey;
+  const npub = (user as { npub?: unknown }).npub;
+  if (typeof pubkey !== "string" || !pubkey.trim()) return null;
+  if (typeof npub !== "string" || !npub.trim()) return null;
+  return { pubkey, npub };
+}
+
 function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: CanvasMessageEnvelope) {
   switch (message.type) {
     case "joinBoard": {
@@ -97,6 +109,10 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
       if (!boardId) {
         sendJson(ws, { type: "error", payload: { message: "Invalid boardId" } });
         return;
+      }
+      const presenceUser = extractPresenceUser(message.payload);
+      if (presenceUser) {
+        ws.data.presenceUser = presenceUser;
       }
       attachSocketToBoard(ws, boardId);
       sendJson(ws, { type: "joinAck", payload: { boardId, ok: true } });
@@ -156,9 +172,12 @@ function collectOnlineUsersByBoard() {
     const unique = new Map<string, OnlineUser>();
     for (const socket of sockets) {
       const session = socket.data.session;
-      if (!session?.pubkey) continue;
-      if (!unique.has(session.pubkey)) {
-        unique.set(session.pubkey, { pubkey: session.pubkey, npub: session.npub });
+      const presence = socket.data.presenceUser;
+      const pubkey = presence?.pubkey ?? session?.pubkey ?? null;
+      const npub = presence?.npub ?? session?.npub ?? null;
+      if (!pubkey || !npub) continue;
+      if (!unique.has(pubkey)) {
+        unique.set(pubkey, { pubkey, npub });
       }
     }
     result[boardId] = Array.from(unique.values());
@@ -300,7 +319,9 @@ function handleWebSocketUpgrade(req: Request, serverInstance: Server<WebSocketDa
     return new Response("Expected WebSocket upgrade", { status: 400 });
   }
 
-  const upgraded = serverInstance.upgrade(req, { data: { session, boardId: null } });
+  const upgraded = serverInstance.upgrade(req, {
+    data: { session, boardId: null, presenceUser: session ? { pubkey: session.pubkey, npub: session.npub } : null },
+  });
   if (upgraded) {
     return new Response(null, { status: 101 });
   }
