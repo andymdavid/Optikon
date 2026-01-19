@@ -3070,7 +3070,8 @@ export function CanvasBoard({
 
   const ensureAvatarImage = useCallback((key: string, url: string) => {
     const cache = commentAvatarCacheRef.current
-    if (cache.has(key)) return
+    const existing = cache.get(key) ?? null
+    if (existing && existing.src === url) return
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => {
