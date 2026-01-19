@@ -2174,33 +2174,65 @@ function drawCommentElement(
     ctx.beginPath()
     ctx.arc(screenX, screenY, radius - 1, 0, Math.PI * 2)
     ctx.clip()
-    if (image instanceof HTMLImageElement) {
-      const sourceWidth = image.naturalWidth || image.width
-      const sourceHeight = image.naturalHeight || image.height
-      if (sourceWidth > 0 && sourceHeight > 0) {
-        const size = Math.min(sourceWidth, sourceHeight)
-        const sx = Math.floor((sourceWidth - size) / 2)
-        const sy = Math.floor((sourceHeight - size) / 2)
-        ctx.drawImage(
-          image,
-          sx,
-          sy,
-          size,
-          size,
-          screenX - radius,
-          screenY - radius,
-          radius * 2,
-          radius * 2
-        )
-      } else {
-        ctx.drawImage(image, screenX - radius, screenY - radius, radius * 2, radius * 2)
+    const sourceSize = getCanvasSourceSize(image)
+    if (sourceSize) {
+      const { width: sourceWidth, height: sourceHeight } = sourceSize
+      const targetSize = radius * 2
+      const sourceAspect = sourceWidth / sourceHeight
+      const targetAspect = 1
+      let sx = 0
+      let sy = 0
+      let sw = sourceWidth
+      let sh = sourceHeight
+      if (sourceAspect > targetAspect) {
+        sh = sourceHeight
+        sw = sourceHeight * targetAspect
+        sx = Math.floor((sourceWidth - sw) / 2)
+      } else if (sourceAspect < targetAspect) {
+        sw = sourceWidth
+        sh = sourceWidth / targetAspect
+        sy = Math.floor((sourceHeight - sh) / 2)
       }
+      ctx.drawImage(image, sx, sy, sw, sh, screenX - radius, screenY - radius, targetSize, targetSize)
     } else {
       ctx.drawImage(image, screenX - radius, screenY - radius, radius * 2, radius * 2)
     }
     ctx.restore()
   }
   ctx.restore()
+}
+
+function getCanvasSourceSize(image: CanvasImageSource): { width: number; height: number } | null {
+  if (image instanceof HTMLImageElement) {
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+    return width > 0 && height > 0 ? { width, height } : null
+  }
+  if (image instanceof ImageBitmap) {
+    return image.width > 0 && image.height > 0 ? { width: image.width, height: image.height } : null
+  }
+  if (image instanceof HTMLCanvasElement) {
+    return image.width > 0 && image.height > 0 ? { width: image.width, height: image.height } : null
+  }
+  if (typeof OffscreenCanvas !== 'undefined' && image instanceof OffscreenCanvas) {
+    return image.width > 0 && image.height > 0 ? { width: image.width, height: image.height } : null
+  }
+  if (image instanceof HTMLVideoElement) {
+    const width = image.videoWidth || image.width
+    const height = image.videoHeight || image.height
+    return width > 0 && height > 0 ? { width, height } : null
+  }
+  if ('displayWidth' in image && typeof image.displayWidth === 'number') {
+    const width = image.displayWidth
+    const height = image.displayHeight
+    return width > 0 && height > 0 ? { width, height } : null
+  }
+  if (image instanceof SVGImageElement) {
+    const width = image.width?.baseVal?.value ?? 0
+    const height = image.height?.baseVal?.value ?? 0
+    return width > 0 && height > 0 ? { width, height } : null
+  }
+  return null
 }
 
 function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
