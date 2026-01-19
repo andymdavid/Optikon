@@ -6265,7 +6265,23 @@ export function CanvasBoard({
       }
       socket.close()
     }
-  }, [boardError, boardId, removeElements, sendElementUpdate, upsertElement])
+  }, [boardError, boardId, removeElements, sendElementUpdate, upsertElement, session])
+
+  useEffect(() => {
+    if (!boardId) return
+    if (!session) return
+    const socket = socketRef.current
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    const joinPayload = {
+      type: 'joinBoard',
+      payload: {
+        boardId,
+        user: { pubkey: session.pubkey, npub: session.npub },
+      },
+    }
+    logOutbound(joinPayload)
+    socket.send(JSON.stringify(joinPayload))
+  }, [boardId, session])
 
   useEffect(() => {
     const canvas = canvasRef.current
