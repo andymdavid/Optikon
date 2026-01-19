@@ -12,6 +12,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { fetchProfilePicture, getAvatarFallback } from '../components/canvas/nostrProfiles'
 import { Button } from '../components/ui/button'
 import {
   DropdownMenu,
@@ -44,6 +45,9 @@ type BoardSummary = {
   updatedAt: string
   lastAccessedAt?: string | null
   starred?: number
+  ownerPubkey?: string | null
+  ownerNpub?: string | null
+  onlineUsers?: Array<{ pubkey: string; npub: string }>
 }
 
 const boardIcons = [
@@ -82,9 +86,34 @@ function getInitials(name: string): string {
     .slice(0, 2)
 }
 
-function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
+function formatNpub(npub: string | null | undefined) {
+  if (!npub) return 'Unknown'
+  const start = npub.slice(0, 8)
+  const end = npub.slice(-4)
+  return `${start}…${end}`
+}
+
+function Avatar({
+  name,
+  imageUrl,
+  size = 'md',
+}: {
+  name: string
+  imageUrl?: string | null
+  size?: 'sm' | 'md'
+}) {
   const initials = getInitials(name)
   const sizeClasses = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-8 w-8 text-xs'
+  if (imageUrl) {
+    return (
+      <div
+        className={`${sizeClasses} overflow-hidden rounded-full bg-slate-100`}
+        aria-label={name}
+      >
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+      </div>
+    )
+  }
   return (
     <div
       className={`${sizeClasses} flex items-center justify-center rounded-full bg-slate-100 font-medium text-slate-500`}
@@ -102,6 +131,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [titleDraft, setTitleDraft] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
   const navigate = useNavigate()
 
   const filteredBoards = useMemo(() => {
@@ -141,6 +171,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       controller.abort()
     }
   }, [apiBaseUrl])
+
+  useEffect(() => {
+    let cancelled = false
+    const pubkeys = new Set<string>()
+    boards.forEach((board) => {
+      if (board.ownerPubkey) pubkeys.add(board.ownerPubkey)
+      board.onlineUsers?.forEach((user) => {
+        if (user?.pubkey) pubkeys.add(user.pubkey)
+      })
+    })
+    const missing = Array.from(pubkeys).filter((pubkey) => !avatarUrls[pubkey])
+    if (missing.length === 0) return
+    setAvatarUrls((prev) => {
+      const next = { ...prev }
+      for (const pubkey of missing) {
+        if (!next[pubkey]) next[pubkey] = getAvatarFallback(pubkey)
+      }
+      return next
+    })
+    missing.forEach((pubkey) => {
+      void fetchProfilePicture(pubkey).then((url) => {
+        if (cancelled || !url) return
+        setAvatarUrls((prev) => (prev[pubkey] === url ? prev : { ...prev, [pubkey]: url }))
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [boards, avatarUrls])
 
   const handleCreateBoard = async () => {
     try {
@@ -339,10 +398,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const BoardRow = ({ board, index }: { board: BoardSummary; index: number }) => {
     const isEditing = editingId === String(board.id)
-    const ownerLabel = 'Andy David'
+    const ownerLabel = formatNpub(board.ownerNpub)
+    const ownerAvatarUrl = board.ownerPubkey
+      ? avatarUrls[board.ownerPubkey] ?? getAvatarFallback(board.ownerPubkey)
+      : null
     const timestamp = board.lastAccessedAt ?? board.updatedAt
     const iconConfig = boardIcons[index % boardIcons.length]
     const IconComponent = iconConfig.icon
+    const onlineUsers = board.onlineUsers ?? []
+    const visibleUsers = onlineUsers.slice(0, 3)
+    const overflowCount = onlineUsers.length - visibleUsers.length
     return (
       <TableRow
         className="cursor-pointer align-middle transition-colors hover:bg-slate-100"
@@ -384,20 +449,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 <span className="font-medium text-slate-800">{board.title}</span>
               )}
               <span className="text-xs text-slate-400">
-                Modified by {ownerLabel}, {formatRelativeDate(timestamp)}
+                Owned by {ownerLabel}, {formatRelativeDate(timestamp)}
               </span>
             </div>
           </div>
         </TableCell>
         <TableCell>
           <div className="flex items-center -space-x-2">
-            <Avatar name="Andy David" size="sm" />
-            <Avatar name="Pete Winn" size="sm" />
+            {visibleUsers.length > 0 ? (
+              visibleUsers.map((user) => (
+                <Avatar
+                  key={user.pubkey}
+                  name={formatNpub(user.npub)}
+                  imageUrl={avatarUrls[user.pubkey] ?? getAvatarFallback(user.pubkey)}
+                  size="sm"
+                />
+              ))
+            ) : (
+              <span className="text-xs text-slate-400">No one online</span>
+            )}
+            {overflowCount > 0 && (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10px] font-medium text-slate-500">
+                +{overflowCount}
+              </div>
+            )}
           </div>
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2">
-            <Avatar name={ownerLabel} size="sm" />
+            <Avatar name={ownerLabel} imageUrl={ownerAvatarUrl} size="sm" />
             <span className="text-xs text-slate-500">{ownerLabel}</span>
           </div>
         </TableCell>
