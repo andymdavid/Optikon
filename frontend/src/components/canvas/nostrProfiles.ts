@@ -37,9 +37,9 @@ function isDebugEnabled() {
 
 async function loadApplesauceLibs(): Promise<ApplesauceLibs> {
   if (applesauceLibs) return applesauceLibs
-  const relayUrl = 'https://esm.sh/applesauce-relay@4.0.0?bundle'
-  const helpersUrl = 'https://esm.sh/applesauce-core@4.0.0/helpers?bundle'
-  const rxjsUrl = 'https://esm.sh/rxjs@7.8.1?bundle'
+  const relayUrl = 'https://esm.sh/applesauce-relay@4.0.0?bundle&no-sourcemap=1'
+  const helpersUrl = 'https://esm.sh/applesauce-core@4.0.0/helpers?bundle&no-sourcemap=1'
+  const rxjsUrl = 'https://esm.sh/rxjs@7.8.1?bundle&no-sourcemap=1'
   applesauceLibs = {
     relay: await import(/* @vite-ignore */ relayUrl),
     helpers: await import(/* @vite-ignore */ helpersUrl),
