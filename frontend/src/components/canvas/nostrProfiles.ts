@@ -3,6 +3,11 @@ const DEFAULT_RELAYS = [
   'wss://nos.lol',
   'wss://relay.devvul.com',
   'wss://purplepag.es',
+  'wss://relay.nostr.band',
+  'wss://relay.snort.social',
+  'wss://relay.primal.net',
+  'wss://nostr.wine',
+  'wss://relay.nostr.info',
 ]
 
 type ApplesauceLibs = {
@@ -44,8 +49,13 @@ async function resolveRelayList() {
     const entries = Object.entries(relays)
       .filter(([_url, perms]) => perms?.read !== false)
       .map(([url]) => url)
-      .filter((url) => typeof url === 'string' && url.startsWith('wss://'))
-    return entries.length > 0 ? entries : fallback
+      .filter(
+        (url) =>
+          typeof url === 'string' &&
+          (url.startsWith('wss://') || url.startsWith('ws://'))
+      )
+    const combined = Array.from(new Set([...entries, ...fallback]))
+    return combined.length > 0 ? combined : fallback
   } catch (_err) {
     return fallback
   }
