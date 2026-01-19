@@ -9,7 +9,7 @@ import {
   Search,
   Star,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { fetchProfilePicture, getAvatarFallback } from '../components/canvas/nostrProfiles'
@@ -133,6 +133,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
   const navigate = useNavigate()
+  const requestedAvatarsRef = useRef<Set<string>>(new Set())
 
   const filteredBoards = useMemo(() => {
     if (!searchQuery.trim()) return boards
@@ -212,16 +213,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (user?.pubkey) pubkeys.add(user.pubkey)
       })
     })
-    const missing = Array.from(pubkeys).filter((pubkey) => !avatarUrls[pubkey])
-    if (missing.length === 0) return
+    if (pubkeys.size === 0) return
     setAvatarUrls((prev) => {
       const next = { ...prev }
-      for (const pubkey of missing) {
+      pubkeys.forEach((pubkey) => {
         if (!next[pubkey]) next[pubkey] = getAvatarFallback(pubkey)
-      }
+      })
       return next
     })
-    missing.forEach((pubkey) => {
+    pubkeys.forEach((pubkey) => {
+      if (requestedAvatarsRef.current.has(pubkey)) return
+      requestedAvatarsRef.current.add(pubkey)
       void fetchProfilePicture(pubkey).then((url) => {
         if (cancelled || !url) return
         setAvatarUrls((prev) => (prev[pubkey] === url ? prev : { ...prev, [pubkey]: url }))
@@ -230,7 +232,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     return () => {
       cancelled = true
     }
-  }, [boards, avatarUrls])
+  }, [boards])
 
   const handleCreateBoard = async () => {
     try {
