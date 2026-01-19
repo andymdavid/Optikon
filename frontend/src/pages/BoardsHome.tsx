@@ -133,7 +133,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
   const navigate = useNavigate()
-  const requestedAvatarsRef = useRef<Set<string>>(new Set())
+  const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
 
   const filteredBoards = useMemo(() => {
     if (!searchQuery.trim()) return boards
@@ -222,12 +222,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       return next
     })
     pubkeys.forEach((pubkey) => {
-      if (requestedAvatarsRef.current.has(pubkey)) return
-      requestedAvatarsRef.current.add(pubkey)
-      void fetchProfilePicture(pubkey).then((url) => {
-        if (cancelled || !url) return
-        setAvatarUrls((prev) => (prev[pubkey] === url ? prev : { ...prev, [pubkey]: url }))
-      })
+      if (avatarFetchInFlightRef.current.has(pubkey)) return
+      avatarFetchInFlightRef.current.add(pubkey)
+      void fetchProfilePicture(pubkey)
+        .then((url) => {
+          if (cancelled || !url) return
+          setAvatarUrls((prev) => (prev[pubkey] === url ? prev : { ...prev, [pubkey]: url }))
+        })
+        .finally(() => {
+          avatarFetchInFlightRef.current.delete(pubkey)
+        })
     })
     return () => {
       cancelled = true
