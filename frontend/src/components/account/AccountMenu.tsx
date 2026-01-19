@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
 
+import { fetchProfilePicture, getAvatarFallback } from '../canvas/nostrProfiles'
+
 import { NostrLoginModal } from './NostrLoginModal'
 
 type SessionInfo = {
   pubkey: string
   npub: string
 }
-
-const avatarUrlFor = (session: SessionInfo) =>
-  `https://robohash.org/${encodeURIComponent(session.pubkey || session.npub || 'nostr')}.png?set=set3`
 
 const formatNpub = (npub: string) => {
   if (!npub) return 'Unknown'
@@ -28,6 +27,7 @@ export function AccountMenu({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   const displayName = useMemo(() => {
@@ -46,6 +46,25 @@ export function AccountMenu({
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [menuOpen])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!session?.pubkey) {
+      setAvatarUrl(null)
+      return () => {
+        cancelled = true
+      }
+    }
+    const fallback = getAvatarFallback(session.pubkey)
+    setAvatarUrl(fallback)
+    void fetchProfilePicture(session.pubkey).then((url) => {
+      if (cancelled || !url) return
+      setAvatarUrl(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.pubkey])
 
   const stopPropagation = (event: SyntheticEvent) => {
     event.stopPropagation()
@@ -113,7 +132,7 @@ export function AccountMenu({
         aria-expanded={menuOpen}
       >
         <span className="account-menu__avatar">
-          <img src={avatarUrlFor(session)} alt="" />
+          <img src={avatarUrl ?? getAvatarFallback(session.pubkey)} alt="" />
         </span>
         <span className="account-menu__name">{displayName}</span>
       </button>
