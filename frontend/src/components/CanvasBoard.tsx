@@ -76,7 +76,6 @@ import type {
   TextStyle,
 } from '@shared/boardElements'
 
-console.log("CANVASBOARD_BUILD", "4e3d65c")
 
 declare global {
   interface HTMLElementEventMap {
