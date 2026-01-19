@@ -27,6 +27,16 @@ type NostrWindow = Window & {
   }
 }
 
+const DEBUG_STORAGE_KEY = 'nostrProfileDebug'
+
+function isDebugEnabled() {
+  try {
+    return window.localStorage.getItem(DEBUG_STORAGE_KEY) === '1'
+  } catch (_err) {
+    return false
+  }
+}
+
 async function loadApplesauceLibs(): Promise<ApplesauceLibs> {
   if (applesauceLibs) return applesauceLibs
   const relayUrl = 'https://esm.sh/applesauce-relay@4.0.0?bundle'
@@ -86,12 +96,24 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
       const { firstValueFrom, take, takeUntil, timer } = libs.rxjs
       profilePool = profilePool || new RelayPool()
       const relays = await resolveRelayList()
+      if (isDebugEnabled()) {
+        console.log('[nostrProfile] relays', relays)
+      }
       const observable = profilePool
         .subscription(relays, [{ authors: [pubkey], kinds: [0], limit: 1 }])
         .pipe(onlyEvents(), take(1), takeUntil(timer(5000)))
       const event = await firstValueFrom(observable, { defaultValue: null })
-      if (!event) return null
-      return getProfilePicture(event, null)
+      if (!event) {
+        if (isDebugEnabled()) {
+          console.log('[nostrProfile] no kind-0 event found')
+        }
+        return null
+      }
+      const picture = getProfilePicture(event, null)
+      if (isDebugEnabled()) {
+        console.log('[nostrProfile] picture', picture ?? null)
+      }
+      return picture
     } catch (_error) {
       return null
     }
