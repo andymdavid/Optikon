@@ -3134,24 +3134,34 @@ export function CanvasBoard({
     image.onload = () => {
       const sourceWidth = image.naturalWidth || image.width
       const sourceHeight = image.naturalHeight || image.height
-      if (sourceWidth > 0 && sourceHeight > 0 && 'createImageBitmap' in window) {
-        const size = Math.min(sourceWidth, sourceHeight)
-        const sx = Math.floor((sourceWidth - size) / 2)
-        const sy = Math.floor((sourceHeight - size) / 2)
-        void createImageBitmap(image, sx, sy, size, size, {
-          resizeWidth: 128,
-          resizeHeight: 128,
-          resizeQuality: 'high',
-        })
-          .then((bitmap) => {
-            cache.set(key, bitmap)
-            setCommentAvatarVersion((prev) => prev + 1)
-          })
-          .catch(() => {
-            cache.set(key, image)
-            setCommentAvatarVersion((prev) => prev + 1)
-          })
-        return
+      if (sourceWidth > 0 && sourceHeight > 0) {
+        const size = 128
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true
+          ctx.imageSmoothingQuality = 'high'
+          const sourceAspect = sourceWidth / sourceHeight
+          let sx = 0
+          let sy = 0
+          let sw = sourceWidth
+          let sh = sourceHeight
+          if (sourceAspect > 1) {
+            sh = sourceHeight
+            sw = sourceHeight
+            sx = Math.floor((sourceWidth - sw) / 2)
+          } else if (sourceAspect < 1) {
+            sw = sourceWidth
+            sh = sourceWidth
+            sy = Math.floor((sourceHeight - sh) / 2)
+          }
+          ctx.drawImage(image, sx, sy, sw, sh, 0, 0, size, size)
+          cache.set(key, canvas)
+          setCommentAvatarVersion((prev) => prev + 1)
+          return
+        }
       }
       cache.set(key, image)
       setCommentAvatarVersion((prev) => prev + 1)
