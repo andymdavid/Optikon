@@ -16,6 +16,12 @@ let profilePool: any = null
 const profileCache = new Map<string, string | null>()
 const profileInFlight = new Map<string, Promise<string | null>>()
 
+type NostrWindow = Window & {
+  nostr?: {
+    getRelays?: () => Promise<Record<string, { read?: boolean; write?: boolean }>> | Record<string, { read?: boolean; write?: boolean }>
+  }
+}
+
 async function loadApplesauceLibs(): Promise<ApplesauceLibs> {
   if (applesauceLibs) return applesauceLibs
   const relayUrl = 'https://esm.sh/applesauce-relay@4.0.0?bundle'
@@ -27,6 +33,22 @@ async function loadApplesauceLibs(): Promise<ApplesauceLibs> {
     rxjs: await import(/* @vite-ignore */ rxjsUrl),
   }
   return applesauceLibs
+}
+
+async function resolveRelayList() {
+  const fallback = DEFAULT_RELAYS
+  try {
+    const windowWithNostr = window as NostrWindow
+    const relays = await windowWithNostr.nostr?.getRelays?.()
+    if (!relays || typeof relays !== 'object') return fallback
+    const entries = Object.entries(relays)
+      .filter(([_url, perms]) => perms?.read !== false)
+      .map(([url]) => url)
+      .filter((url) => typeof url === 'string' && url.startsWith('wss://'))
+    return entries.length > 0 ? entries : fallback
+  } catch (_err) {
+    return fallback
+  }
 }
 
 export function getAvatarFallback(pubkey?: string | null) {
@@ -46,8 +68,9 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
       const { getProfilePicture } = libs.helpers
       const { firstValueFrom, take, takeUntil, timer } = libs.rxjs
       profilePool = profilePool || new RelayPool()
+      const relays = await resolveRelayList()
       const observable = profilePool
-        .subscription(DEFAULT_RELAYS, [{ authors: [pubkey], kinds: [0], limit: 1 }])
+        .subscription(relays, [{ authors: [pubkey], kinds: [0], limit: 1 }])
         .pipe(onlyEvents(), take(1), takeUntil(timer(5000)))
       const event = await firstValueFrom(observable, { defaultValue: null })
       if (!event) return null
