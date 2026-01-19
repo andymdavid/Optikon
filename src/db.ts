@@ -35,6 +35,8 @@ export type Board = {
   last_accessed_at: string | null;
   starred: number;
   archived_at: string | null;
+  owner_pubkey: string | null;
+  owner_npub: string | null;
 };
 
 export type BoardElement = {
@@ -118,7 +120,9 @@ db.run(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_accessed_at TEXT,
     starred INTEGER NOT NULL DEFAULT 0,
-    archived_at TEXT
+    archived_at TEXT,
+    owner_pubkey TEXT NULL,
+    owner_npub TEXT NULL
   )
 `);
 
@@ -128,6 +132,8 @@ function ensureBoardsSchema() {
   const hasLastAccessedAt = info.some((column) => column.name === "last_accessed_at");
   const hasStarred = info.some((column) => column.name === "starred");
   const hasArchivedAt = info.some((column) => column.name === "archived_at");
+  const hasOwnerPubkey = info.some((column) => column.name === "owner_pubkey");
+  const hasOwnerNpub = info.some((column) => column.name === "owner_npub");
 
   if (!hasUpdatedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
@@ -144,6 +150,14 @@ function ensureBoardsSchema() {
 
   if (!hasArchivedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN archived_at TEXT`);
+  }
+
+  if (!hasOwnerPubkey) {
+    db.run(`ALTER TABLE boards ADD COLUMN owner_pubkey TEXT NULL`);
+  }
+
+  if (!hasOwnerNpub) {
+    db.run(`ALTER TABLE boards ADD COLUMN owner_npub TEXT NULL`);
   }
 }
 
@@ -310,8 +324,8 @@ const insertAttachmentStmt = db.query<Attachment>(
    RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at)
-   VALUES (?, CURRENT_TIMESTAMP)
+  `INSERT INTO boards (title, updated_at, owner_pubkey, owner_npub)
+   VALUES (?, CURRENT_TIMESTAMP, ?, ?)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
@@ -342,8 +356,8 @@ const unarchiveBoardStmt = db.query<Board>(
    RETURNING *`
 );
 const insertBoardCopyStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at)
-   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL)
+  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub)
+   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?)
    RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board>(
@@ -509,8 +523,8 @@ export function getLatestSummaries(owner: string, today: string, weekStart: stri
   return { day: day ?? null, week: week ?? null };
 }
 
-export function createBoard(title: string) {
-  return insertBoardStmt.get(title) ?? null;
+export function createBoard(title: string, owner: { pubkey: string; npub: string } | null) {
+  return insertBoardStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null) ?? null;
 }
 
 export function getBoardById(id: number) {
@@ -537,8 +551,8 @@ export function unarchiveBoard(id: number) {
   return unarchiveBoardStmt.get(id) ?? null;
 }
 
-export function createBoardCopy(title: string) {
-  return insertBoardCopyStmt.get(title) ?? null;
+export function createBoardCopy(title: string, owner: { pubkey: string; npub: string } | null) {
+  return insertBoardCopyStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null) ?? null;
 }
 
 export function touchBoardUpdatedAt(id: number) {

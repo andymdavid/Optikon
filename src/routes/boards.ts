@@ -1,4 +1,5 @@
 import { jsonResponse, safeJson } from "../http";
+import type { Session } from "../types";
 import {
   archiveBoardRecord,
   createBoardElementRecord,
@@ -20,9 +21,15 @@ import {
 
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
 
-export async function handleBoardCreate(req: Request) {
+type OnlineUser = {
+  pubkey: string;
+  npub: string;
+};
+
+export async function handleBoardCreate(req: Request, session: Session | null) {
   const body = (await safeJson(req)) as { title?: string } | null;
-  const board = createBoardRecord(body?.title ?? null);
+  const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
+  const board = createBoardRecord(body?.title ?? null, owner);
   if (!board) {
     return jsonResponse({ message: "Unable to create board." }, 500);
   }
@@ -45,10 +52,12 @@ export function handleBoardShow(boardId: number) {
     updatedAt: touched.updated_at,
     lastAccessedAt: touched.last_accessed_at,
     starred: touched.starred,
+    ownerPubkey: touched.owner_pubkey,
+    ownerNpub: touched.owner_npub,
   });
 }
 
-export function handleBoardsList(url: URL) {
+export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, OnlineUser[]>) {
   const includeArchived = url.searchParams.get("archived") === "1";
   const boards = fetchBoards(includeArchived);
   const summaries = boards.map((board) => ({
@@ -57,6 +66,9 @@ export function handleBoardsList(url: URL) {
     updatedAt: board.updated_at,
     lastAccessedAt: board.last_accessed_at,
     starred: board.starred,
+    ownerPubkey: board.owner_pubkey,
+    ownerNpub: board.owner_npub,
+    onlineUsers: onlineUsersByBoard?.[String(board.id)] ?? [],
   }));
   return jsonResponse({ boards: summaries });
 }
@@ -139,7 +151,7 @@ export function handleBoardUnarchive(boardId: number) {
   return jsonResponse({ ok: true });
 }
 
-export function handleBoardDuplicate(boardId: number) {
+export function handleBoardDuplicate(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -147,7 +159,8 @@ export function handleBoardDuplicate(boardId: number) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
-  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`);
+  const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
+  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`, owner);
   if (!newBoard) {
     return jsonResponse({ message: "Unable to duplicate board." }, 500);
   }

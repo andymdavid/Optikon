@@ -19,9 +19,12 @@ import {
 import type { Board, BoardElement } from "../db";
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
 
-export function createBoardRecord(title: string | null | undefined) {
+export function createBoardRecord(
+  title: string | null | undefined,
+  owner: { pubkey: string; npub: string } | null
+) {
   const normalizedTitle = typeof title === "string" && title.trim() ? title.trim() : "Untitled Board";
-  return createBoard(normalizedTitle);
+  return createBoard(normalizedTitle, owner);
 }
 
 export function fetchBoardById(id: number) {
@@ -48,8 +51,8 @@ export function unarchiveBoardRecord(boardId: number) {
   return unarchiveBoard(boardId);
 }
 
-export function createBoardCopyRecord(title: string) {
-  return createBoardCopy(title);
+export function createBoardCopyRecord(title: string, owner: { pubkey: string; npub: string } | null) {
+  return createBoardCopy(title, owner);
 }
 
 export function touchBoardUpdatedAtRecord(boardId: number) {

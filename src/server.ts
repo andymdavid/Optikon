@@ -49,6 +49,11 @@ type WebSocketData = {
   boardId: string | null;
 };
 
+type OnlineUser = {
+  pubkey: string;
+  npub: string;
+};
+
 const boardSockets = new Map<string, Set<ServerWebSocket<WebSocketData>>>();
 
 function isCanvasMessageType(value: string): value is CanvasMessageType {
@@ -142,6 +147,22 @@ function detachSocketFromBoard(ws: ServerWebSocket<WebSocketData>) {
     boardSockets.delete(boardId);
   }
   ws.data.boardId = null;
+}
+
+function collectOnlineUsersByBoard() {
+  const result: Record<string, OnlineUser[]> = {};
+  for (const [boardId, sockets] of boardSockets) {
+    const unique = new Map<string, OnlineUser>();
+    for (const socket of sockets) {
+      const session = socket.data.session;
+      if (!session?.pubkey) continue;
+      if (!unique.has(session.pubkey)) {
+        unique.set(session.pubkey, { pubkey: session.pubkey, npub: session.npub });
+      }
+    }
+    result[boardId] = Array.from(unique.values());
+  }
+  return result;
 }
 
 function handleElementUpdate(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
@@ -314,12 +335,12 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
     if (boardMatch) return handleBoardShow(Number(boardMatch[1]));
-    if (pathname === "/boards") return handleBoardsList(url);
+    if (pathname === "/boards") return handleBoardsList(url, collectOnlineUsersByBoard());
     if (pathname === "/") return handleHome(url, session);
   }
 
   if (req.method === "POST") {
-    if (pathname === "/boards") return handleBoardCreate(req);
+    if (pathname === "/boards") return handleBoardCreate(req, session);
     if (pathname === "/auth/login") return login(req);
     if (pathname === "/auth/logout") return logout(req);
     if (pathname === "/ai/summary") return handleSummaryPost(req);
@@ -332,7 +353,7 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     const boardUnarchiveMatch = pathname.match(/^\/boards\/(\d+)\/unarchive$/);
     if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]));
     const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
-    if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]));
+    if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]), session);
     const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
     if (attachmentMatch) return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
 
