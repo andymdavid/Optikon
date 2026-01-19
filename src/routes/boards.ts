@@ -73,6 +73,10 @@ export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, O
   return jsonResponse({ boards: summaries });
 }
 
+export function handleBoardsPresence(onlineUsersByBoard?: Record<string, OnlineUser[]>) {
+  return jsonResponse({ onlineUsersByBoard: onlineUsersByBoard ?? {} });
+}
+
 export async function handleBoardUpdate(req: Request, boardId: number) {
   const board = fetchBoardById(boardId);
   if (!board) {

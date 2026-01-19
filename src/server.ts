@@ -21,6 +21,7 @@ import {
   handleBoardElementUpdate,
   handleBoardElements,
   handleBoardShow,
+  handleBoardsPresence,
   handleBoardsList,
   handleBoardUpdate,
   handleBoardStar,
@@ -335,6 +336,7 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
     if (boardMatch) return handleBoardShow(Number(boardMatch[1]));
+    if (pathname === "/boards/presence") return handleBoardsPresence(collectOnlineUsersByBoard());
     if (pathname === "/boards") return handleBoardsList(url, collectOnlineUsersByBoard());
     if (pathname === "/") return handleHome(url, session);
   }

@@ -174,6 +174,37 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   useEffect(() => {
     let cancelled = false
+    const pollPresence = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/boards/presence`)
+        if (!response.ok) return
+        const data = (await response.json()) as {
+          onlineUsersByBoard?: Record<string, Array<{ pubkey: string; npub: string }>>
+        }
+        if (cancelled) return
+        const onlineUsersByBoard = data.onlineUsersByBoard ?? {}
+        setBoards((prev) =>
+          prev.map((board) => ({
+            ...board,
+            onlineUsers: onlineUsersByBoard[String(board.id)] ?? [],
+          }))
+        )
+      } catch (_err) {
+        if (cancelled) return
+      }
+    }
+    void pollPresence()
+    const intervalId = window.setInterval(() => {
+      void pollPresence()
+    }, 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [apiBaseUrl])
+
+  useEffect(() => {
+    let cancelled = false
     const pubkeys = new Set<string>()
     boards.forEach((board) => {
       if (board.ownerPubkey) pubkeys.add(board.ownerPubkey)
