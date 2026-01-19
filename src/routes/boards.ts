@@ -1,5 +1,4 @@
 import { jsonResponse, safeJson } from "../http";
-import type { Session } from "../types";
 import {
   archiveBoardRecord,
   createBoardElementRecord,
@@ -20,6 +19,7 @@ import {
 } from "../services/boards";
 
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
+import type { Session } from "../types";
 
 type OnlineUser = {
   pubkey: string;
