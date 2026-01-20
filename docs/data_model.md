@@ -11,6 +11,7 @@ Boards and metadata.
 | --------------- | ------- | -------------------------------------- |
 | `id`            | INTEGER | PK AUTOINCREMENT                       |
 | `title`         | TEXT    | Required                               |
+| `description`   | TEXT    | Optional                               |
 | `created_at`    | TEXT    | Default `CURRENT_TIMESTAMP`            |
 | `updated_at`    | TEXT    | Default `CURRENT_TIMESTAMP`            |
 | `last_accessed_at` | TEXT | Nullable                               |
