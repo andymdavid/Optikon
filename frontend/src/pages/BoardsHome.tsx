@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   Star,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -132,6 +133,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
+  const [shareBoard, setShareBoard] = useState<BoardSummary | null>(null)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
 
@@ -363,6 +365,75 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
+  const ShareModal = () => {
+    if (!shareBoard) return null
+    const shareUrl = `${window.location.origin}/b/${shareBoard.id}`
+    const close = () => setShareBoard(null)
+    const handleCopy = async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(shareUrl)
+        } else {
+          window.prompt('Copy board link:', shareUrl)
+        }
+      } catch (_err) {
+        window.prompt('Copy board link:', shareUrl)
+      }
+    }
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+        onClick={close}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Share board</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Share this board with Nostr collaborators.
+              </p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={close} aria-label="Close share dialog">
+              <X size={18} className="text-slate-500" />
+            </Button>
+          </div>
+          <div className="mt-5 space-y-3">
+            <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Board link
+            </label>
+            <div className="flex items-center gap-2">
+              <Input readOnly value={shareUrl} className="font-mono text-xs" />
+              <Button onClick={() => void handleCopy()}>Copy</Button>
+            </div>
+          </div>
+          <div className="mt-6">
+            <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Default access
+            </label>
+            <Select defaultValue="viewer">
+              <SelectTrigger className="mt-2 w-full">
+                <SelectValue placeholder="Viewer" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="commenter">Commenter</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-2 text-xs text-slate-400">
+              Permissions are UI-only for now; server enforcement comes next.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
       <span className="text-[13px] text-slate-500">Filter by</span>
@@ -541,17 +612,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <MoreHorizontal size={18} className="text-slate-400" />
-              </Button>
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal size={18} className="text-slate-400" />
+            </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
               className="w-56"
               onClick={(event) => event.stopPropagation()}
             >
-              <DropdownMenuItem onSelect={() => {}}>Share</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setShareBoard(board)}>Share</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void copyBoardLink(board)}>
                 Copy board link
               </DropdownMenuItem>
@@ -615,6 +686,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   return (
     <div className="mx-auto max-w-[90%] py-10 text-slate-900">
+      <ShareModal />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
         <div className="flex items-center gap-3">
