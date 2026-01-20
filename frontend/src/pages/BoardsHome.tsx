@@ -43,6 +43,8 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 type BoardSummary = {
   id: number | string
   title: string
+  description?: string | null
+  createdAt?: string
   updatedAt: string
   lastAccessedAt?: string | null
   starred?: number
@@ -77,6 +79,16 @@ function formatRelativeDate(dateString: string): string {
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     })
   }
+}
+
+function formatAbsoluteDate(dateString: string): string {
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
 function getInitials(name: string): string {
@@ -136,6 +148,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
   const [shareBoard, setShareBoard] = useState<BoardSummary | null>(null)
   const [shareRole, setShareRole] = useState<'viewer' | 'commenter' | 'editor'>('editor')
+  const [detailsBoard, setDetailsBoard] = useState<BoardSummary | null>(null)
+  const [detailsTitle, setDetailsTitle] = useState('')
+  const [detailsDescription, setDetailsDescription] = useState('')
+  const [detailsSaving, setDetailsSaving] = useState(false)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
 
@@ -344,6 +360,29 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
+  const deleteBoard = async (board: BoardSummary) => {
+    const confirmed = window.confirm('Delete this board? This cannot be undone.')
+    if (!confirmed) return
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) throw new Error('Failed to delete board')
+      setBoards((prev) => prev.filter((item) => String(item.id) !== String(board.id)))
+      if (detailsBoard && String(detailsBoard.id) === String(board.id)) {
+        setDetailsBoard(null)
+      }
+    } catch (_err) {
+      setError('Unable to delete board.')
+    }
+  }
+
+  const openDetails = (board: BoardSummary) => {
+    setDetailsBoard(board)
+    setDetailsTitle(board.title)
+    setDetailsDescription(board.description ?? '')
+  }
+
   const copyBoardLink = async (board: BoardSummary) => {
     try {
       const origin = window.location.origin
@@ -453,6 +492,144 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             <p className="mt-2 text-xs text-slate-400">
               Anonymous access is always viewer-only. Signed-in users use this default role.
             </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const DetailsModal = () => {
+    if (!detailsBoard) return null
+    const ownerLabel = formatNpub(detailsBoard.ownerNpub)
+    const ownerAvatarUrl = detailsBoard.ownerPubkey
+      ? avatarUrls[detailsBoard.ownerPubkey] ?? getAvatarFallback(detailsBoard.ownerPubkey)
+      : null
+    const createdAt = detailsBoard.createdAt ?? detailsBoard.updatedAt
+    const modifiedAt = detailsBoard.updatedAt
+    const handleSave = async () => {
+      if (detailsSaving) return
+      setDetailsSaving(true)
+      try {
+        const response = await fetch(`${apiBaseUrl}/boards/${detailsBoard.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: detailsTitle.trim(),
+            description: detailsDescription.trim() ? detailsDescription.trim() : null,
+          }),
+        })
+        if (!response.ok) throw new Error('Failed to update board')
+        const data = (await response.json()) as BoardSummary
+        setBoards((prev) =>
+          prev.map((board) =>
+            String(board.id) === String(detailsBoard.id)
+              ? { ...board, ...data }
+              : board
+          )
+        )
+        setDetailsBoard((prev) => (prev ? { ...prev, ...data } : prev))
+      } catch (_err) {
+        setError('Unable to update board.')
+      } finally {
+        setDetailsSaving(false)
+      }
+    }
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+        onClick={() => setDetailsBoard(null)}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Board details</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage board metadata and sharing defaults.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDetailsBoard(null)}
+              aria-label="Close board details"
+            >
+              <X size={18} className="text-slate-500" />
+            </Button>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Board name
+              </label>
+              <Input
+                value={detailsTitle}
+                onChange={(event) => setDetailsTitle(event.target.value)}
+                disabled={detailsSaving}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Board description
+              </label>
+              <textarea
+                value={detailsDescription}
+                onChange={(event) => setDetailsDescription(event.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                disabled={detailsSaving}
+              />
+            </div>
+            <div className="grid gap-4 text-sm text-slate-600 md:grid-cols-3">
+              <div className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Owner</span>
+                <div className="flex items-center gap-2">
+                  <Avatar name={ownerLabel} imageUrl={ownerAvatarUrl} size="sm" />
+                  <span>{ownerLabel}</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Created</span>
+                <div>{formatAbsoluteDate(createdAt)}</div>
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Last modified</span>
+                <div>{formatAbsoluteDate(modifiedAt)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <Button
+              variant="ghost"
+              className="text-rose-600 hover:text-rose-600"
+              onClick={() => void deleteBoard(detailsBoard)}
+            >
+              Delete
+            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => void duplicateBoard(detailsBoard)}>
+                Duplicate
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShareBoard(detailsBoard)
+                  setShareRole(detailsBoard.defaultRole ?? 'editor')
+                }}
+              >
+                Share
+              </Button>
+              <Button onClick={() => void handleSave()} disabled={detailsSaving}>
+                Save
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -668,7 +845,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => beginRename(board)}>Rename</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void duplicateBoard(board)}>Duplicate</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => {}}>Board details</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openDetails(board)}>Board details</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => {}}>Make private</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => {}}>Download backup</DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -719,6 +896,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   return (
     <div className="mx-auto max-w-[90%] py-10 text-slate-900">
       <ShareModal />
+      <DetailsModal />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
         <div className="flex items-center gap-3">
