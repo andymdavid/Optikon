@@ -1,4 +1,5 @@
 import { jsonResponse, safeJson } from "../http";
+import { canComment, canEditBoard, normalizeBoardRole, resolveBoardRole } from "../services/boardAccess";
 import {
   archiveBoardRecord,
   createBoardElementRecord,
@@ -14,6 +15,7 @@ import {
   touchBoardUpdatedAtRecord,
   updateBoardTitleRecord,
   updateBoardStarredRecord,
+  updateBoardDefaultRoleRecord,
   unarchiveBoardRecord,
   updateBoardElementRecord,
 } from "../services/boards";
@@ -54,6 +56,7 @@ export function handleBoardShow(boardId: number) {
     starred: touched.starred,
     ownerPubkey: touched.owner_pubkey,
     ownerNpub: touched.owner_npub,
+    defaultRole: touched.default_role,
   });
 }
 
@@ -68,6 +71,7 @@ export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, O
     starred: board.starred,
     ownerPubkey: board.owner_pubkey,
     ownerNpub: board.owner_npub,
+    defaultRole: board.default_role,
     onlineUsers: onlineUsersByBoard?.[String(board.id)] ?? [],
   }));
   return jsonResponse({ boards: summaries });
@@ -77,7 +81,7 @@ export function handleBoardsPresence(onlineUsersByBoard?: Record<string, OnlineU
   return jsonResponse({ onlineUsersByBoard: onlineUsersByBoard ?? {} });
 }
 
-export async function handleBoardUpdate(req: Request, boardId: number) {
+export async function handleBoardUpdate(req: Request, boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -85,14 +89,41 @@ export async function handleBoardUpdate(req: Request, boardId: number) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
-  const body = (await safeJson(req)) as { title?: string } | null;
-  const nextTitle = typeof body?.title === "string" ? body.title.trim() : "";
-  if (!nextTitle) {
-    return jsonResponse({ message: "Title is required." }, 400);
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
-  const updated = updateBoardTitleRecord(boardId, nextTitle);
-  if (!updated) {
-    return jsonResponse({ message: "Unable to update board." }, 500);
+  const body = (await safeJson(req)) as { title?: string; defaultRole?: string } | null;
+  const hasTitle = typeof body?.title !== "undefined";
+  const hasDefaultRole = typeof body?.defaultRole !== "undefined";
+  if (!hasTitle && !hasDefaultRole) {
+    return jsonResponse({ message: "No updates provided." }, 400);
+  }
+  let updated = board;
+  if (hasTitle) {
+    const nextTitle = typeof body?.title === "string" ? body.title.trim() : "";
+    if (!nextTitle) {
+      return jsonResponse({ message: "Title is required." }, 400);
+    }
+    const next = updateBoardTitleRecord(boardId, nextTitle);
+    if (!next) {
+      return jsonResponse({ message: "Unable to update board." }, 500);
+    }
+    updated = next;
+  }
+  if (hasDefaultRole) {
+    if (typeof body?.defaultRole !== "string") {
+      return jsonResponse({ message: "Invalid default role." }, 400);
+    }
+    const normalizedRole = normalizeBoardRole(body.defaultRole);
+    if (normalizedRole !== body.defaultRole) {
+      return jsonResponse({ message: "Invalid default role." }, 400);
+    }
+    const next = updateBoardDefaultRoleRecord(boardId, normalizedRole);
+    if (!next) {
+      return jsonResponse({ message: "Unable to update board access." }, 500);
+    }
+    updated = next;
   }
   return jsonResponse({
     id: updated.id,
@@ -101,16 +132,23 @@ export async function handleBoardUpdate(req: Request, boardId: number) {
     updatedAt: updated.updated_at,
     lastAccessedAt: updated.last_accessed_at,
     starred: updated.starred,
+    ownerPubkey: updated.owner_pubkey,
+    ownerNpub: updated.owner_npub,
+    defaultRole: updated.default_role,
   });
 }
 
-export async function handleBoardStar(req: Request, boardId: number) {
+export async function handleBoardStar(req: Request, boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const body = (await safeJson(req)) as { starred?: boolean } | null;
   const starred = body?.starred === true ? 1 : 0;
@@ -125,16 +163,23 @@ export async function handleBoardStar(req: Request, boardId: number) {
     updatedAt: updated.updated_at,
     lastAccessedAt: updated.last_accessed_at,
     starred: updated.starred,
+    ownerPubkey: updated.owner_pubkey,
+    ownerNpub: updated.owner_npub,
+    defaultRole: updated.default_role,
   });
 }
 
-export function handleBoardArchive(boardId: number) {
+export function handleBoardArchive(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const updated = archiveBoardRecord(boardId);
   if (!updated) {
@@ -143,10 +188,14 @@ export function handleBoardArchive(boardId: number) {
   return jsonResponse({ ok: true });
 }
 
-export function handleBoardUnarchive(boardId: number) {
+export function handleBoardUnarchive(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const updated = unarchiveBoardRecord(boardId);
   if (!updated) {
@@ -163,8 +212,12 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
-  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`, owner);
+  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`, owner, board.default_role);
   if (!newBoard) {
     return jsonResponse({ message: "Unable to duplicate board." }, 500);
   }
@@ -213,13 +266,19 @@ export function handleBoardElements(boardId: number) {
   return jsonResponse({ elements });
 }
 
-export async function handleBoardElementCreate(req: Request, boardId: number) {
+export async function handleBoardElementCreate(req: Request, boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  const canEdit = canEditBoard(role);
+  const canCommentOnly = !canEdit && canComment(role);
+  if (!canEdit && !canCommentOnly) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const body = (await safeJson(req)) as { element?: SharedBoardElement } | null;
   const allowedElementTypes: Array<SharedBoardElement["type"]> = [
@@ -261,6 +320,9 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   if (!isAllowedType(element.type)) {
     return logAndReject("unsupported type");
   }
+  if (canCommentOnly && element.type !== "comment") {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (typeof (element as { x?: unknown }).x !== "number" || typeof (element as { y?: unknown }).y !== "number") {
     return logAndReject("missing coordinates");
   }
@@ -276,13 +338,19 @@ export async function handleBoardElementCreate(req: Request, boardId: number) {
   return jsonResponse({ ok: true, id: elementRecord.id }, 201);
 }
 
-export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: string) {
+export async function handleBoardElementUpdate(req: Request, boardId: number, elementId: string, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  const canEdit = canEditBoard(role);
+  const canCommentOnly = !canEdit && canComment(role);
+  if (!canEdit && !canCommentOnly) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const elementIdString = String(elementId);
   const body = (await safeJson(req)) as { element?: SharedBoardElement | null } | null;
@@ -291,6 +359,9 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   }
   const resolvedId = typeof body.element.id === "string" && body.element.id.trim() ? body.element.id : elementIdString;
   const payload = { ...body.element, id: resolvedId } as SharedBoardElement;
+  if (canCommentOnly && payload.type !== "comment") {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const existing = fetchBoardElement(boardId, payload.id);
   if (!existing) {
     const created = createBoardElementRecord(boardId, payload);
@@ -298,6 +369,9 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
       return jsonResponse({ message: "Unable to upsert element." }, 500);
     }
     return jsonResponse({ ok: true });
+  }
+  if (canCommentOnly && existing.type !== "comment") {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
 
   const updated = updateBoardElementRecord(boardId, payload.id, payload);
@@ -308,7 +382,7 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   return jsonResponse({ ok: true });
 }
 
-export async function handleBoardElementsDelete(req: Request, boardId: number) {
+export async function handleBoardElementsDelete(req: Request, boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -316,6 +390,9 @@ export async function handleBoardElementsDelete(req: Request, boardId: number) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  const role = resolveBoardRole(board, session);
+  const canEdit = canEditBoard(role);
+  const canCommentOnly = !canEdit && canComment(role);
   const body = (await safeJson(req)) as { ids?: unknown } | null;
   const ids = Array.isArray(body?.ids)
     ? body.ids.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -323,11 +400,21 @@ export async function handleBoardElementsDelete(req: Request, boardId: number) {
   if (ids.length === 0) {
     return jsonResponse({ message: "No valid ids provided." }, 400);
   }
+  if (canCommentOnly) {
+    for (const id of ids) {
+      const existing = fetchBoardElement(boardId, id);
+      if (!existing || existing.type !== "comment") {
+        return jsonResponse({ message: "Forbidden." }, 403);
+      }
+    }
+  } else if (!canEdit) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const deletedCount = deleteBoardElementsRecord(boardId, ids);
   return jsonResponse({ ok: true, deletedCount });
 }
 
-export async function handleBoardElementsBatchUpdate(req: Request, boardId: number) {
+export async function handleBoardElementsBatchUpdate(req: Request, boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -335,9 +422,18 @@ export async function handleBoardElementsBatchUpdate(req: Request, boardId: numb
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  const role = resolveBoardRole(board, session);
+  const canEdit = canEditBoard(role);
+  const canCommentOnly = !canEdit && canComment(role);
   const body = (await safeJson(req)) as { elements?: SharedBoardElement[] | null } | null;
   if (!Array.isArray(body?.elements) || body!.elements.length === 0) {
     return jsonResponse({ message: "No elements provided." }, 400);
+  }
+  if (canCommentOnly && body.elements.some((element) => element.type !== "comment")) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  if (!canEdit && !canCommentOnly) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const count = createBoardElementsBatchRecord(boardId, body.elements);
   return jsonResponse({ ok: true, count });

@@ -370,11 +370,11 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/ai/tasks") return handleAiTasksPost(req);
     if (pathname === "/todos") return handleTodoCreate(req, session);
     const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]));
+    if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]), session);
     const boardArchiveMatch = pathname.match(/^\/boards\/(\d+)\/archive$/);
-    if (boardArchiveMatch) return handleBoardArchive(Number(boardArchiveMatch[1]));
+    if (boardArchiveMatch) return handleBoardArchive(Number(boardArchiveMatch[1]), session);
     const boardUnarchiveMatch = pathname.match(/^\/boards\/(\d+)\/unarchive$/);
-    if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]));
+    if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]), session);
     const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
     if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]), session);
     const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
@@ -392,26 +392,26 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
 
   if (req.method === "PATCH") {
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-    if (boardMatch) return handleBoardUpdate(req, Number(boardMatch[1]));
+    if (boardMatch) return handleBoardUpdate(req, Number(boardMatch[1]), session);
     const starMatch = pathname.match(/^\/boards\/(\d+)\/star$/);
-    if (starMatch) return handleBoardStar(req, Number(starMatch[1]));
+    if (starMatch) return handleBoardStar(req, Number(starMatch[1]), session);
   }
 
   if (req.method === "PUT") {
     const boardElementsBatchMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementsBatchMatch) {
-      return handleBoardElementsBatchUpdate(req, Number(boardElementsBatchMatch[1]));
+      return handleBoardElementsBatchUpdate(req, Number(boardElementsBatchMatch[1]), session);
     }
     const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/([^/]+)$/);
     if (boardElementUpdateMatch) {
-      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2]);
+      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2], session);
     }
   }
 
   if (req.method === "DELETE") {
     const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementsDeleteMatch) {
-      return handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]));
+      return handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session);
     }
 
     const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);

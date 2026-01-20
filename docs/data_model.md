@@ -4,6 +4,22 @@ This app stores todos and AI summaries in SQLite (`do-the-other-stuff.sqlite`). 
 
 ## Tables
 
+### `boards`
+Boards and metadata.
+
+| Column          | Type    | Notes                                  |
+| --------------- | ------- | -------------------------------------- |
+| `id`            | INTEGER | PK AUTOINCREMENT                       |
+| `title`         | TEXT    | Required                               |
+| `created_at`    | TEXT    | Default `CURRENT_TIMESTAMP`            |
+| `updated_at`    | TEXT    | Default `CURRENT_TIMESTAMP`            |
+| `last_accessed_at` | TEXT | Nullable                               |
+| `starred`       | INTEGER | 0/1                                    |
+| `archived_at`   | TEXT    | Nullable                               |
+| `owner_pubkey`  | TEXT    | Pubkey or NULL                         |
+| `owner_npub`    | TEXT    | npub or NULL                           |
+| `default_role`  | TEXT    | `viewer` \| `commenter` \| `editor`     |
+
 ### `attachments`
 Uploaded assets stored on disk and referenced by boards.
 

@@ -13,6 +13,7 @@ import {
   touchBoardUpdatedAt,
   updateBoardTitle,
   updateBoardStarred,
+  updateBoardDefaultRole,
   updateBoardElement,
 } from "../db";
 
@@ -21,10 +22,11 @@ import type { BoardElement as SharedBoardElement } from "../shared/boardElements
 
 export function createBoardRecord(
   title: string | null | undefined,
-  owner: { pubkey: string; npub: string } | null
+  owner: { pubkey: string; npub: string } | null,
+  defaultRole: string = "editor"
 ) {
   const normalizedTitle = typeof title === "string" && title.trim() ? title.trim() : "Untitled Board";
-  return createBoard(normalizedTitle, owner);
+  return createBoard(normalizedTitle, owner, defaultRole);
 }
 
 export function fetchBoardById(id: number) {
@@ -43,6 +45,10 @@ export function updateBoardStarredRecord(boardId: number, starred: number) {
   return updateBoardStarred(boardId, starred);
 }
 
+export function updateBoardDefaultRoleRecord(boardId: number, defaultRole: string) {
+  return updateBoardDefaultRole(boardId, defaultRole);
+}
+
 export function archiveBoardRecord(boardId: number) {
   return archiveBoard(boardId);
 }
@@ -51,8 +57,12 @@ export function unarchiveBoardRecord(boardId: number) {
   return unarchiveBoard(boardId);
 }
 
-export function createBoardCopyRecord(title: string, owner: { pubkey: string; npub: string } | null) {
-  return createBoardCopy(title, owner);
+export function createBoardCopyRecord(
+  title: string,
+  owner: { pubkey: string; npub: string } | null,
+  defaultRole: string = "editor"
+) {
+  return createBoardCopy(title, owner, defaultRole);
 }
 
 export function touchBoardUpdatedAtRecord(boardId: number) {

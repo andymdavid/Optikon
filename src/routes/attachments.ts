@@ -2,6 +2,7 @@ import { writeFile } from "fs/promises";
 
 import { jsonResponse } from "../http";
 import { buildUploadFilename, storeAttachment } from "../services/attachments";
+import { canEditBoard, resolveBoardRole } from "../services/boardAccess";
 import { fetchBoardById } from "../services/boards";
 
 import type { Session } from "../types";
@@ -18,6 +19,10 @@ export async function handleAttachmentUpload(req: Request, boardId: number, sess
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const form = await req.formData();
   const file = form.get("file");

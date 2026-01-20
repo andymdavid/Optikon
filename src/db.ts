@@ -37,6 +37,7 @@ export type Board = {
   archived_at: string | null;
   owner_pubkey: string | null;
   owner_npub: string | null;
+  default_role: string;
 };
 
 export type BoardElement = {
@@ -122,7 +123,8 @@ db.run(`
     starred INTEGER NOT NULL DEFAULT 0,
     archived_at TEXT,
     owner_pubkey TEXT NULL,
-    owner_npub TEXT NULL
+    owner_npub TEXT NULL,
+    default_role TEXT NOT NULL DEFAULT 'editor'
   )
 `);
 
@@ -134,6 +136,7 @@ function ensureBoardsSchema() {
   const hasArchivedAt = info.some((column) => column.name === "archived_at");
   const hasOwnerPubkey = info.some((column) => column.name === "owner_pubkey");
   const hasOwnerNpub = info.some((column) => column.name === "owner_npub");
+  const hasDefaultRole = info.some((column) => column.name === "default_role");
 
   if (!hasUpdatedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
@@ -158,6 +161,11 @@ function ensureBoardsSchema() {
 
   if (!hasOwnerNpub) {
     db.run(`ALTER TABLE boards ADD COLUMN owner_npub TEXT NULL`);
+  }
+
+  if (!hasDefaultRole) {
+    db.run(`ALTER TABLE boards ADD COLUMN default_role TEXT NOT NULL DEFAULT 'editor'`);
+    db.run(`UPDATE boards SET default_role = 'editor' WHERE default_role IS NULL OR default_role = ''`);
   }
 }
 
@@ -324,8 +332,8 @@ const insertAttachmentStmt = db.query<Attachment>(
    RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at, owner_pubkey, owner_npub)
-   VALUES (?, CURRENT_TIMESTAMP, ?, ?)
+  `INSERT INTO boards (title, updated_at, owner_pubkey, owner_npub, default_role)
+   VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
@@ -343,6 +351,12 @@ const updateBoardStarredStmt = db.query<Board>(
    WHERE id = ?
    RETURNING *`
 );
+const updateBoardDefaultRoleStmt = db.query<Board>(
+  `UPDATE boards
+   SET default_role = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
 const archiveBoardStmt = db.query<Board>(
   `UPDATE boards
    SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -356,8 +370,8 @@ const unarchiveBoardStmt = db.query<Board>(
    RETURNING *`
 );
 const insertBoardCopyStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub)
-   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?)
+  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role)
+   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?)
    RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board>(
@@ -523,8 +537,14 @@ export function getLatestSummaries(owner: string, today: string, weekStart: stri
   return { day: day ?? null, week: week ?? null };
 }
 
-export function createBoard(title: string, owner: { pubkey: string; npub: string } | null) {
-  return insertBoardStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null) ?? null;
+export function createBoard(
+  title: string,
+  owner: { pubkey: string; npub: string } | null,
+  defaultRole: string = "editor"
+) {
+  return (
+    insertBoardStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null, defaultRole) ?? null
+  );
 }
 
 export function getBoardById(id: number) {
@@ -543,6 +563,10 @@ export function updateBoardStarred(id: number, starred: number) {
   return updateBoardStarredStmt.get(starred, id) ?? null;
 }
 
+export function updateBoardDefaultRole(id: number, defaultRole: string) {
+  return updateBoardDefaultRoleStmt.get(defaultRole, id) ?? null;
+}
+
 export function archiveBoard(id: number) {
   return archiveBoardStmt.get(id) ?? null;
 }
@@ -551,8 +575,14 @@ export function unarchiveBoard(id: number) {
   return unarchiveBoardStmt.get(id) ?? null;
 }
 
-export function createBoardCopy(title: string, owner: { pubkey: string; npub: string } | null) {
-  return insertBoardCopyStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null) ?? null;
+export function createBoardCopy(
+  title: string,
+  owner: { pubkey: string; npub: string } | null,
+  defaultRole: string = "editor"
+) {
+  return (
+    insertBoardCopyStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null, defaultRole) ?? null
+  );
 }
 
 export function touchBoardUpdatedAt(id: number) {
