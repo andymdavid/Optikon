@@ -30,6 +30,7 @@ export type Summary = {
 export type Board = {
   id: number;
   title: string;
+  description: string | null;
   created_at: string;
   updated_at: string;
   last_accessed_at: string | null;
@@ -117,6 +118,7 @@ db.run(`
   CREATE TABLE IF NOT EXISTS boards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
+    description TEXT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_accessed_at TEXT,
@@ -137,6 +139,7 @@ function ensureBoardsSchema() {
   const hasOwnerPubkey = info.some((column) => column.name === "owner_pubkey");
   const hasOwnerNpub = info.some((column) => column.name === "owner_npub");
   const hasDefaultRole = info.some((column) => column.name === "default_role");
+  const hasDescription = info.some((column) => column.name === "description");
 
   if (!hasUpdatedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
@@ -166,6 +169,10 @@ function ensureBoardsSchema() {
   if (!hasDefaultRole) {
     db.run(`ALTER TABLE boards ADD COLUMN default_role TEXT NOT NULL DEFAULT 'editor'`);
     db.run(`UPDATE boards SET default_role = 'editor' WHERE default_role IS NULL OR default_role = ''`);
+  }
+
+  if (!hasDescription) {
+    db.run(`ALTER TABLE boards ADD COLUMN description TEXT NULL`);
   }
 }
 
@@ -332,8 +339,8 @@ const insertAttachmentStmt = db.query<Attachment>(
    RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at, owner_pubkey, owner_npub, default_role)
-   VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role)
+   VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
@@ -357,6 +364,7 @@ const updateBoardDefaultRoleStmt = db.query<Board>(
    WHERE id = ?
    RETURNING *`
 );
+const deleteBoardStmt = db.query<Board>(`DELETE FROM boards WHERE id = ? RETURNING *`);
 const archiveBoardStmt = db.query<Board>(
   `UPDATE boards
    SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -370,13 +378,19 @@ const unarchiveBoardStmt = db.query<Board>(
    RETURNING *`
 );
 const insertBoardCopyStmt = db.query<Board>(
-  `INSERT INTO boards (title, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role)
-   VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role)
+   VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?)
    RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board>(
   `UPDATE boards
    SET title = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
+const updateBoardDescriptionStmt = db.query<Board>(
+  `UPDATE boards
+   SET description = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
@@ -539,11 +553,18 @@ export function getLatestSummaries(owner: string, today: string, weekStart: stri
 
 export function createBoard(
   title: string,
+  description: string | null,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor"
 ) {
   return (
-    insertBoardStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null, defaultRole) ?? null
+    insertBoardStmt.get(
+      title,
+      description ?? null,
+      owner?.pubkey ?? null,
+      owner?.npub ?? null,
+      defaultRole
+    ) ?? null
   );
 }
 
@@ -559,12 +580,20 @@ export function updateBoardTitle(id: number, title: string) {
   return updateBoardTitleStmt.get(title, id) ?? null;
 }
 
+export function updateBoardDescription(id: number, description: string | null) {
+  return updateBoardDescriptionStmt.get(description, id) ?? null;
+}
+
 export function updateBoardStarred(id: number, starred: number) {
   return updateBoardStarredStmt.get(starred, id) ?? null;
 }
 
 export function updateBoardDefaultRole(id: number, defaultRole: string) {
   return updateBoardDefaultRoleStmt.get(defaultRole, id) ?? null;
+}
+
+export function deleteBoard(id: number) {
+  return deleteBoardStmt.get(id) ?? null;
 }
 
 export function archiveBoard(id: number) {
@@ -577,11 +606,18 @@ export function unarchiveBoard(id: number) {
 
 export function createBoardCopy(
   title: string,
+  description: string | null,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor"
 ) {
   return (
-    insertBoardCopyStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null, defaultRole) ?? null
+    insertBoardCopyStmt.get(
+      title,
+      description ?? null,
+      owner?.pubkey ?? null,
+      owner?.npub ?? null,
+      defaultRole
+    ) ?? null
   );
 }
 

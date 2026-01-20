@@ -16,6 +16,8 @@ import {
   updateBoardTitleRecord,
   updateBoardStarredRecord,
   updateBoardDefaultRoleRecord,
+  updateBoardDescriptionRecord,
+  deleteBoardRecord,
   unarchiveBoardRecord,
   updateBoardElementRecord,
 } from "../services/boards";
@@ -29,9 +31,9 @@ type OnlineUser = {
 };
 
 export async function handleBoardCreate(req: Request, session: Session | null) {
-  const body = (await safeJson(req)) as { title?: string } | null;
+  const body = (await safeJson(req)) as { title?: string; description?: string } | null;
   const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
-  const board = createBoardRecord(body?.title ?? null, owner);
+  const board = createBoardRecord(body?.title ?? null, body?.description ?? null, owner);
   if (!board) {
     return jsonResponse({ message: "Unable to create board." }, 500);
   }
@@ -50,6 +52,7 @@ export function handleBoardShow(boardId: number) {
   return jsonResponse({
     id: touched.id,
     title: touched.title,
+    description: touched.description,
     createdAt: touched.created_at,
     updatedAt: touched.updated_at,
     lastAccessedAt: touched.last_accessed_at,
@@ -66,6 +69,8 @@ export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, O
   const summaries = boards.map((board) => ({
     id: board.id,
     title: board.title,
+    description: board.description,
+    createdAt: board.created_at,
     updatedAt: board.updated_at,
     lastAccessedAt: board.last_accessed_at,
     starred: board.starred,
@@ -93,10 +98,15 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
   if (!canEditBoard(role)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
-  const body = (await safeJson(req)) as { title?: string; defaultRole?: string } | null;
+  const body = (await safeJson(req)) as {
+    title?: string;
+    description?: string | null;
+    defaultRole?: string;
+  } | null;
   const hasTitle = typeof body?.title !== "undefined";
   const hasDefaultRole = typeof body?.defaultRole !== "undefined";
-  if (!hasTitle && !hasDefaultRole) {
+  const hasDescription = typeof body?.description !== "undefined";
+  if (!hasTitle && !hasDefaultRole && !hasDescription) {
     return jsonResponse({ message: "No updates provided." }, 400);
   }
   let updated = board;
@@ -108,6 +118,17 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
     const next = updateBoardTitleRecord(boardId, nextTitle);
     if (!next) {
       return jsonResponse({ message: "Unable to update board." }, 500);
+    }
+    updated = next;
+  }
+  if (hasDescription) {
+    const normalizedDescription =
+      typeof body?.description === "string" && body.description.trim().length > 0
+        ? body.description.trim()
+        : null;
+    const next = updateBoardDescriptionRecord(boardId, normalizedDescription);
+    if (!next) {
+      return jsonResponse({ message: "Unable to update board description." }, 500);
     }
     updated = next;
   }
@@ -128,6 +149,7 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
   return jsonResponse({
     id: updated.id,
     title: updated.title,
+    description: updated.description,
     createdAt: updated.created_at,
     updatedAt: updated.updated_at,
     lastAccessedAt: updated.last_accessed_at,
@@ -165,6 +187,7 @@ export async function handleBoardStar(req: Request, boardId: number, session: Se
     starred: updated.starred,
     ownerPubkey: updated.owner_pubkey,
     ownerNpub: updated.owner_npub,
+    description: updated.description,
     defaultRole: updated.default_role,
   });
 }
@@ -204,6 +227,22 @@ export function handleBoardUnarchive(boardId: number, session: Session | null) {
   return jsonResponse({ ok: true });
 }
 
+export function handleBoardDelete(boardId: number, session: Session | null) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const deleted = deleteBoardRecord(boardId);
+  if (!deleted) {
+    return jsonResponse({ message: "Unable to delete board." }, 500);
+  }
+  return jsonResponse({ ok: true });
+}
+
 export function handleBoardDuplicate(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
@@ -217,7 +256,12 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
   const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
-  const newBoard = createBoardCopyRecord(`Copy of ${board.title}`, owner, board.default_role);
+  const newBoard = createBoardCopyRecord(
+    `Copy of ${board.title}`,
+    board.description ?? null,
+    owner,
+    board.default_role
+  );
   if (!newBoard) {
     return jsonResponse({ message: "Unable to duplicate board." }, 500);
   }

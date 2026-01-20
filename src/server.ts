@@ -28,6 +28,7 @@ import {
   handleBoardArchive,
   handleBoardUnarchive,
   handleBoardDuplicate,
+  handleBoardDelete,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
@@ -413,6 +414,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardElementsDeleteMatch) {
       return handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session);
     }
+    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+    if (boardMatch) return handleBoardDelete(Number(boardMatch[1]), session);
 
     const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
     if (todoDeleteMatch) return handleTodoDelete(session, Number(todoDeleteMatch[1]));
