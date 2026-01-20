@@ -49,6 +49,7 @@ type BoardSummary = {
   ownerPubkey?: string | null
   ownerNpub?: string | null
   onlineUsers?: Array<{ pubkey: string; npub: string }>
+  defaultRole?: 'viewer' | 'commenter' | 'editor'
 }
 
 const boardIcons = [
@@ -134,6 +135,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
   const [shareBoard, setShareBoard] = useState<BoardSummary | null>(null)
+  const [shareRole, setShareRole] = useState<'viewer' | 'commenter' | 'editor'>('editor')
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
 
@@ -415,7 +417,30 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
               Default access
             </label>
-            <Select defaultValue="viewer">
+            <Select
+              value={shareRole}
+              onValueChange={(value) => {
+                const nextRole = value as 'viewer' | 'commenter' | 'editor'
+                setShareRole(nextRole)
+                void fetch(`${apiBaseUrl}/boards/${shareBoard.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ defaultRole: nextRole }),
+                })
+                  .then((response) => (response.ok ? response.json() : null))
+                  .then((data) => {
+                    if (!data) return
+                    setBoards((prev) =>
+                      prev.map((board) =>
+                        String(board.id) === String(shareBoard.id)
+                          ? { ...board, defaultRole: data.defaultRole ?? nextRole }
+                          : board
+                      )
+                    )
+                  })
+                  .catch(() => {})
+              }}
+            >
               <SelectTrigger className="mt-2 w-full">
                 <SelectValue placeholder="Viewer" />
               </SelectTrigger>
@@ -426,7 +451,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               </SelectContent>
             </Select>
             <p className="mt-2 text-xs text-slate-400">
-              Permissions are UI-only for now; server enforcement comes next.
+              Anonymous access is always viewer-only. Signed-in users use this default role.
             </p>
           </div>
         </div>
@@ -622,7 +647,14 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               className="w-56"
               onClick={(event) => event.stopPropagation()}
             >
-              <DropdownMenuItem onSelect={() => setShareBoard(board)}>Share</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setShareBoard(board)
+                  setShareRole(board.defaultRole ?? 'editor')
+                }}
+              >
+                Share
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void copyBoardLink(board)}>
                 Copy board link
               </DropdownMenuItem>
