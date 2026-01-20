@@ -406,8 +406,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
-  const ShareModal = () => {
-    if (!shareBoard) return null
+  const shareModal = shareBoard ? (() => {
     const shareUrl = `${window.location.origin}/b/${shareBoard.id}`
     const close = () => setShareBoard(null)
     const handleCopy = async () => {
@@ -496,10 +495,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         </div>
       </div>
     )
-  }
+  })() : null
 
-  const DetailsModal = () => {
-    if (!detailsBoard) return null
+  const detailsModal = detailsBoard ? (() => {
     const ownerLabel = formatNpub(detailsBoard.ownerNpub)
     const ownerAvatarUrl = detailsBoard.ownerPubkey
       ? avatarUrls[detailsBoard.ownerPubkey] ?? getAvatarFallback(detailsBoard.ownerPubkey)
@@ -634,7 +632,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         </div>
       </div>
     )
-  }
+  })() : null
 
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -895,8 +893,8 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   return (
     <div className="mx-auto max-w-[90%] py-10 text-slate-900">
-      <ShareModal />
-      <DetailsModal />
+      {shareModal}
+      {detailsModal}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
         <div className="flex items-center gap-3">
