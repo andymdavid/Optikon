@@ -544,6 +544,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           )
         )
         setDetailsBoard((prev) => (prev ? { ...prev, ...data } : prev))
+        setDetailsBoard(null)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unable to update board.'
         setError(message)
