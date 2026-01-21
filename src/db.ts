@@ -39,6 +39,7 @@ export type Board = {
   owner_pubkey: string | null;
   owner_npub: string | null;
   default_role: string;
+  is_private: number;
 };
 
 export type BoardElement = {
@@ -126,7 +127,8 @@ db.run(`
     archived_at TEXT,
     owner_pubkey TEXT NULL,
     owner_npub TEXT NULL,
-    default_role TEXT NOT NULL DEFAULT 'editor'
+    default_role TEXT NOT NULL DEFAULT 'editor',
+    is_private INTEGER NOT NULL DEFAULT 0
   )
 `);
 
@@ -140,6 +142,7 @@ function ensureBoardsSchema() {
   const hasOwnerNpub = info.some((column) => column.name === "owner_npub");
   const hasDefaultRole = info.some((column) => column.name === "default_role");
   const hasDescription = info.some((column) => column.name === "description");
+  const hasIsPrivate = info.some((column) => column.name === "is_private");
 
   if (!hasUpdatedAt) {
     db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
@@ -173,6 +176,11 @@ function ensureBoardsSchema() {
 
   if (!hasDescription) {
     db.run(`ALTER TABLE boards ADD COLUMN description TEXT NULL`);
+  }
+
+  if (!hasIsPrivate) {
+    db.run(`ALTER TABLE boards ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`);
+    db.run(`UPDATE boards SET is_private = 0 WHERE is_private IS NULL`);
   }
 }
 
@@ -339,8 +347,8 @@ const insertAttachmentStmt = db.query<Attachment>(
    RETURNING *`
 );
 const insertBoardStmt = db.query<Board>(
-  `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role)
-   VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role, is_private)
+   VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
@@ -364,6 +372,12 @@ const updateBoardDefaultRoleStmt = db.query<Board>(
    WHERE id = ?
    RETURNING *`
 );
+const updateBoardPrivacyStmt = db.query<Board>(
+  `UPDATE boards
+   SET is_private = ?, updated_at = CURRENT_TIMESTAMP
+   WHERE id = ?
+   RETURNING *`
+);
 const deleteBoardStmt = db.query<Board>(`DELETE FROM boards WHERE id = ? RETURNING *`);
 const archiveBoardStmt = db.query<Board>(
   `UPDATE boards
@@ -378,8 +392,8 @@ const unarchiveBoardStmt = db.query<Board>(
    RETURNING *`
 );
 const insertBoardCopyStmt = db.query<Board>(
-  `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role)
-   VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role, is_private)
+   VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?, ?)
    RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board>(
@@ -555,7 +569,8 @@ export function createBoard(
   title: string,
   description: string | null,
   owner: { pubkey: string; npub: string } | null,
-  defaultRole: string = "editor"
+  defaultRole: string = "editor",
+  isPrivate: number = 0
 ) {
   return (
     insertBoardStmt.get(
@@ -563,7 +578,8 @@ export function createBoard(
       description ?? null,
       owner?.pubkey ?? null,
       owner?.npub ?? null,
-      defaultRole
+      defaultRole,
+      isPrivate
     ) ?? null
   );
 }
@@ -592,6 +608,10 @@ export function updateBoardDefaultRole(id: number, defaultRole: string) {
   return updateBoardDefaultRoleStmt.get(defaultRole, id) ?? null;
 }
 
+export function updateBoardPrivacy(id: number, isPrivate: number) {
+  return updateBoardPrivacyStmt.get(isPrivate, id) ?? null;
+}
+
 export function deleteBoard(id: number) {
   return deleteBoardStmt.get(id) ?? null;
 }
@@ -608,7 +628,8 @@ export function createBoardCopy(
   title: string,
   description: string | null,
   owner: { pubkey: string; npub: string } | null,
-  defaultRole: string = "editor"
+  defaultRole: string = "editor",
+  isPrivate: number = 0
 ) {
   return (
     insertBoardCopyStmt.get(
@@ -616,7 +637,8 @@ export function createBoardCopy(
       description ?? null,
       owner?.pubkey ?? null,
       owner?.npub ?? null,
-      defaultRole
+      defaultRole,
+      isPrivate
     ) ?? null
   );
 }

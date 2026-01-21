@@ -1,5 +1,12 @@
 import { jsonResponse, safeJson } from "../http";
-import { canComment, canEditBoard, normalizeBoardRole, resolveBoardRole } from "../services/boardAccess";
+import {
+  canComment,
+  canEditBoard,
+  canViewBoard,
+  isBoardOwner,
+  normalizeBoardRole,
+  resolveBoardRole,
+} from "../services/boardAccess";
 import {
   archiveBoardRecord,
   createBoardElementRecord,
@@ -17,6 +24,7 @@ import {
   updateBoardStarredRecord,
   updateBoardDefaultRoleRecord,
   updateBoardDescriptionRecord,
+  updateBoardPrivacyRecord,
   deleteBoardRecord,
   unarchiveBoardRecord,
   updateBoardElementRecord,
@@ -31,9 +39,14 @@ type OnlineUser = {
 };
 
 export async function handleBoardCreate(req: Request, session: Session | null) {
-  const body = (await safeJson(req)) as { title?: string; description?: string } | null;
+  const body = (await safeJson(req)) as {
+    title?: string;
+    description?: string;
+    isPrivate?: boolean;
+  } | null;
   const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
-  const board = createBoardRecord(body?.title ?? null, body?.description ?? null, owner);
+  const isPrivate = body?.isPrivate === true ? 1 : 0;
+  const board = createBoardRecord(body?.title ?? null, body?.description ?? null, owner, "editor", isPrivate);
   if (!board) {
     return jsonResponse({ message: "Unable to create board." }, 500);
   }
@@ -48,6 +61,32 @@ export function handleBoardShow(boardId: number) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  return jsonResponse({
+    id: board.id,
+    title: board.title,
+    description: board.description,
+    createdAt: board.created_at,
+    updatedAt: board.updated_at,
+    lastAccessedAt: board.last_accessed_at,
+    starred: board.starred,
+    ownerPubkey: board.owner_pubkey,
+    ownerNpub: board.owner_npub,
+    defaultRole: board.default_role,
+    isPrivate: board.is_private,
+  });
+}
+
+export function handleBoardShowWithSession(boardId: number, session: Session | null) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const touched = touchBoardLastAccessedAtRecord(boardId) ?? board;
   return jsonResponse({
     id: touched.id,
@@ -60,13 +99,20 @@ export function handleBoardShow(boardId: number) {
     ownerPubkey: touched.owner_pubkey,
     ownerNpub: touched.owner_npub,
     defaultRole: touched.default_role,
+    isPrivate: touched.is_private,
   });
 }
 
-export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, OnlineUser[]>) {
+export function handleBoardsList(
+  url: URL,
+  onlineUsersByBoard?: Record<string, OnlineUser[]>,
+  session?: Session | null
+) {
   const includeArchived = url.searchParams.get("archived") === "1";
   const boards = fetchBoards(includeArchived);
-  const summaries = boards.map((board) => ({
+  const summaries = boards
+    .filter((board) => canViewBoard(board, session ?? null))
+    .map((board) => ({
     id: board.id,
     title: board.title,
     description: board.description,
@@ -77,13 +123,27 @@ export function handleBoardsList(url: URL, onlineUsersByBoard?: Record<string, O
     ownerPubkey: board.owner_pubkey,
     ownerNpub: board.owner_npub,
     defaultRole: board.default_role,
+    isPrivate: board.is_private,
     onlineUsers: onlineUsersByBoard?.[String(board.id)] ?? [],
   }));
   return jsonResponse({ boards: summaries });
 }
 
-export function handleBoardsPresence(onlineUsersByBoard?: Record<string, OnlineUser[]>) {
-  return jsonResponse({ onlineUsersByBoard: onlineUsersByBoard ?? {} });
+export function handleBoardsPresence(
+  onlineUsersByBoard?: Record<string, OnlineUser[]>,
+  session?: Session | null
+) {
+  if (!onlineUsersByBoard) return jsonResponse({ onlineUsersByBoard: {} });
+  const boards = fetchBoards(true);
+  const visible = new Set(
+    boards.filter((board) => canViewBoard(board, session ?? null)).map((board) => String(board.id))
+  );
+  const filtered: Record<string, OnlineUser[]> = {};
+  Object.entries(onlineUsersByBoard).forEach(([boardId, users]) => {
+    if (!visible.has(boardId)) return;
+    filtered[boardId] = users;
+  });
+  return jsonResponse({ onlineUsersByBoard: filtered });
 }
 
 export async function handleBoardUpdate(req: Request, boardId: number, session: Session | null) {
@@ -94,6 +154,9 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -102,11 +165,13 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
     title?: string;
     description?: string | null;
     defaultRole?: string;
+    isPrivate?: boolean;
   } | null;
   const hasTitle = typeof body?.title !== "undefined";
   const hasDefaultRole = typeof body?.defaultRole !== "undefined";
   const hasDescription = typeof body?.description !== "undefined";
-  if (!hasTitle && !hasDefaultRole && !hasDescription) {
+  const hasPrivate = typeof body?.isPrivate !== "undefined";
+  if (!hasTitle && !hasDefaultRole && !hasDescription && !hasPrivate) {
     return jsonResponse({ message: "No updates provided." }, 400);
   }
   let updated = board;
@@ -146,6 +211,16 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
     }
     updated = next;
   }
+  if (hasPrivate) {
+    if (!isBoardOwner(board, session)) {
+      return jsonResponse({ message: "Forbidden." }, 403);
+    }
+    const next = updateBoardPrivacyRecord(boardId, body?.isPrivate === true ? 1 : 0);
+    if (!next) {
+      return jsonResponse({ message: "Unable to update board privacy." }, 500);
+    }
+    updated = next;
+  }
   return jsonResponse({
     id: updated.id,
     title: updated.title,
@@ -157,6 +232,7 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
     ownerPubkey: updated.owner_pubkey,
     ownerNpub: updated.owner_npub,
     defaultRole: updated.default_role,
+    isPrivate: updated.is_private,
   });
 }
 
@@ -167,6 +243,9 @@ export async function handleBoardStar(req: Request, boardId: number, session: Se
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
@@ -189,6 +268,7 @@ export async function handleBoardStar(req: Request, boardId: number, session: Se
     ownerNpub: updated.owner_npub,
     description: updated.description,
     defaultRole: updated.default_role,
+    isPrivate: updated.is_private,
   });
 }
 
@@ -199,6 +279,9 @@ export function handleBoardArchive(boardId: number, session: Session | null) {
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
@@ -216,6 +299,9 @@ export function handleBoardUnarchive(boardId: number, session: Session | null) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -231,6 +317,9 @@ export function handleBoardDelete(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
@@ -251,6 +340,9 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const role = resolveBoardRole(board, session);
   if (!canEditBoard(role)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -260,7 +352,8 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
     `Copy of ${board.title}`,
     board.description ?? null,
     owner,
-    board.default_role
+    board.default_role,
+    board.is_private
   );
   if (!newBoard) {
     return jsonResponse({ message: "Unable to duplicate board." }, 500);
@@ -290,13 +383,16 @@ function parseStoredElement(propsJson: string): SharedBoardElement | null {
   }
 }
 
-export function handleBoardElements(boardId: number) {
+export function handleBoardElements(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const rows = fetchBoardElements(boardId);
   const elements = rows.map((row) => ({
@@ -317,6 +413,9 @@ export async function handleBoardElementCreate(req: Request, boardId: number, se
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const role = resolveBoardRole(board, session);
   const canEdit = canEditBoard(role);
@@ -390,6 +489,9 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const role = resolveBoardRole(board, session);
   const canEdit = canEditBoard(role);
   const canCommentOnly = !canEdit && canComment(role);
@@ -434,6 +536,9 @@ export async function handleBoardElementsDelete(req: Request, boardId: number, s
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   const role = resolveBoardRole(board, session);
   const canEdit = canEditBoard(role);
   const canCommentOnly = !canEdit && canComment(role);
@@ -465,6 +570,9 @@ export async function handleBoardElementsBatchUpdate(req: Request, boardId: numb
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   const role = resolveBoardRole(board, session);
   const canEdit = canEditBoard(role);

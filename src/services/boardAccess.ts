@@ -8,9 +8,20 @@ export function normalizeBoardRole(value: unknown): BoardRole {
   return "viewer";
 }
 
+export function isBoardOwner(board: Board, session: Session | null) {
+  return !!session?.pubkey && !!board.owner_pubkey && session.pubkey === board.owner_pubkey;
+}
+
+export function canViewBoard(board: Board, session: Session | null) {
+  if (board.is_private === 1) {
+    return isBoardOwner(board, session);
+  }
+  return true;
+}
+
 export function resolveBoardRole(board: Board, session: Session | null): BoardRole {
   if (!session) return "viewer";
-  if (board.owner_pubkey && session.pubkey === board.owner_pubkey) return "editor";
+  if (isBoardOwner(board, session)) return "editor";
   return normalizeBoardRole(board.default_role);
 }
 

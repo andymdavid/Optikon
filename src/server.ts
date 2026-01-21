@@ -20,7 +20,7 @@ import {
   handleBoardElementCreate,
   handleBoardElementUpdate,
   handleBoardElements,
-  handleBoardShow,
+  handleBoardShowWithSession,
   handleBoardsPresence,
   handleBoardsList,
   handleBoardUpdate,
@@ -355,11 +355,12 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/auth/session") return sessionHandler(req);
     if (pathname === "/auth/me") return me(req);
     const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]));
+    if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]), session);
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-    if (boardMatch) return handleBoardShow(Number(boardMatch[1]));
-    if (pathname === "/boards/presence") return handleBoardsPresence(collectOnlineUsersByBoard());
-    if (pathname === "/boards") return handleBoardsList(url, collectOnlineUsersByBoard());
+    if (boardMatch) return handleBoardShowWithSession(Number(boardMatch[1]), session);
+    if (pathname === "/boards/presence")
+      return handleBoardsPresence(collectOnlineUsersByBoard(), session);
+    if (pathname === "/boards") return handleBoardsList(url, collectOnlineUsersByBoard(), session);
     if (pathname === "/") return handleHome(url, session);
   }
 
