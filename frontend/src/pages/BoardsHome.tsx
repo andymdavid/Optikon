@@ -167,6 +167,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
+  const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const filteredBoards = useMemo(() => {
     if (!searchQuery.trim()) return boards
@@ -302,6 +303,36 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
+  const openImportPicker = () => {
+    importInputRef.current?.click()
+  }
+
+  const handleImportBoard = async (file: File) => {
+    try {
+      const content = await file.text()
+      const payload = JSON.parse(content) as Record<string, unknown>
+      const response = await fetch(`${apiBaseUrl}/boards/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) throw new Error('Failed to import board')
+      const data = (await response.json()) as { id?: number | string }
+      if (!data?.id) throw new Error('Invalid import response')
+      navigate(`/b/${data.id}`)
+    } catch (_err) {
+      setError('Unable to import board.')
+    }
+  }
+
+  const handleImportChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    void handleImportBoard(file)
+  }
+
   const beginRename = (board: BoardSummary) => {
     setEditingId(String(board.id))
     setTitleDraft(board.title)
@@ -388,6 +419,34 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       navigate(`/b/${data.id}`)
     } catch (_err) {
       setError('Unable to duplicate board.')
+    }
+  }
+
+  const downloadBoardBackup = async (board: BoardSummary) => {
+    const resolveFilename = (headerValue: string | null) => {
+      if (!headerValue) return null
+      const match = /filename="?([^"]+)"?/i.exec(headerValue)
+      return match?.[1] ?? null
+    }
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}/export`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Failed to export board')
+      const blob = await response.blob()
+      const filename =
+        resolveFilename(response.headers.get('Content-Disposition')) ??
+        `optikon-board-${board.id}.json`
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (_err) {
+      setError('Unable to download backup.')
     }
   }
 
@@ -941,7 +1000,14 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <DropdownMenuItem onSelect={() => void togglePrivacy(board)}>
                 {board.isPrivate ? 'Make public' : 'Make private'}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => {}}>Download backup</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault()
+                  void downloadBoardBackup(board)
+                }}
+              >
+                Download backup
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => {}}>Leave</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void archiveBoard(board)}>Archive</DropdownMenuItem>
@@ -971,6 +1037,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     </div>
   )
 
+  const CreateBoardMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button onClick={(event) => event.stopPropagation()}>
+          <Plus size={16} />
+          Create new
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            void handleCreateBoard()
+          }}
+        >
+          New board
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            openImportPicker()
+          }}
+        >
+          Import
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   const BoardsEmpty = () => (
     <div className="mt-12 flex flex-col items-center justify-center py-12 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100">
@@ -980,15 +1075,19 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       <p className="mb-6 max-w-sm text-sm text-slate-500">
         Kick off a new canvas and start mapping ideas.
       </p>
-      <Button onClick={() => void handleCreateBoard()}>
-        <Plus size={16} />
-        Create new
-      </Button>
+      <CreateBoardMenu />
     </div>
   )
 
   return (
     <div className="mx-auto max-w-[90%] py-10 text-slate-900">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={handleImportChange}
+      />
       {shareModal}
       {detailsModal}
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -1006,10 +1105,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               className="w-64 pl-9"
             />
           </div>
-          <Button onClick={() => void handleCreateBoard()}>
-            <Plus size={16} />
-            Create new
-          </Button>
+          <CreateBoardMenu />
         </div>
       </header>
       <BoardsFilters />
