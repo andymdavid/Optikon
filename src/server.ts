@@ -15,11 +15,13 @@ import { handleAttachmentUpload } from "./routes/attachments";
 import { createAuthHandlers } from "./routes/auth";
 import {
   handleBoardCreate,
+  handleBoardExport,
   handleBoardElementsBatchUpdate,
   handleBoardElementsDelete,
   handleBoardElementCreate,
   handleBoardElementUpdate,
   handleBoardElements,
+  handleBoardImport,
   handleBoardShowWithSession,
   handleBoardsPresence,
   handleBoardsList,
@@ -356,6 +358,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/auth/me") return me(req);
     const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]), session);
+    const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);
+    if (boardExportMatch) return handleBoardExport(Number(boardExportMatch[1]), session);
     const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
     if (boardMatch) return handleBoardShowWithSession(Number(boardMatch[1]), session);
     if (pathname === "/boards/presence")
@@ -366,6 +370,7 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
 
   if (req.method === "POST") {
     if (pathname === "/boards") return handleBoardCreate(req, session);
+    if (pathname === "/boards/import") return handleBoardImport(req, session);
     if (pathname === "/auth/login") return login(req);
     if (pathname === "/auth/logout") return logout(req);
     if (pathname === "/ai/summary") return handleSummaryPost(req);

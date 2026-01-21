@@ -346,6 +346,9 @@ const insertAttachmentStmt = db.query<Attachment>(
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
    RETURNING *`
 );
+const listBoardAttachmentsStmt = db.query<Attachment>(
+  `SELECT * FROM attachments WHERE board_id = ? ORDER BY created_at ASC`
+);
 const insertBoardStmt = db.query<Board>(
   `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role, is_private)
    VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
@@ -701,6 +704,10 @@ export function createAttachment(record: {
       record.publicUrl
     ) ?? null
   );
+}
+
+export function listBoardAttachments(boardId: number) {
+  return listBoardAttachmentsStmt.all(boardId);
 }
 
 export function resetDatabase() {

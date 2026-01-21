@@ -18,6 +18,7 @@ import {
   updateBoardPrivacy,
   deleteBoard,
   updateBoardElement,
+  listBoardAttachments,
 } from "../db";
 
 import type { Board, BoardElement } from "../db";
@@ -96,6 +97,10 @@ export function touchBoardLastAccessedAtRecord(boardId: number) {
 
 export function fetchBoardElements(boardId: number) {
   return listBoardElements(boardId);
+}
+
+export function fetchBoardAttachments(boardId: number) {
+  return listBoardAttachments(boardId);
 }
 
 export function createBoardElementRecord(boardId: number, element: SharedBoardElement) {

@@ -1,4 +1,10 @@
+import { existsSync } from "fs";
+import { copyFile } from "fs/promises";
+import { isAbsolute, join, normalize, relative, sep } from "path";
+
+import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
 import { jsonResponse, safeJson } from "../http";
+import { buildUploadFilename, storeAttachment } from "../services/attachments";
 import {
   canComment,
   canEditBoard,
@@ -18,6 +24,7 @@ import {
   fetchBoardById,
   fetchBoardElement,
   fetchBoardElements,
+  fetchBoardAttachments,
   touchBoardLastAccessedAtRecord,
   touchBoardUpdatedAtRecord,
   updateBoardTitleRecord,
@@ -404,6 +411,246 @@ export function handleBoardElements(boardId: number, session: Session | null) {
     element: parseStoredElement(row.props_json),
   }));
   return jsonResponse({ elements });
+}
+
+export function handleBoardExport(boardId: number, session: Session | null) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (board.archived_at) {
+    return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const role = resolveBoardRole(board, session);
+  if (!canEditBoard(role)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const rows = fetchBoardElements(boardId);
+  const elements = rows
+    .map((row) => parseStoredElement(row.props_json))
+    .filter((element): element is SharedBoardElement => !!element);
+  const attachments = fetchBoardAttachments(boardId).map((attachment) => {
+    let relativePath: string | null = null;
+    if (attachment.public_url?.startsWith(`${UPLOADS_PUBLIC_PATH}/`)) {
+      relativePath = attachment.public_url.slice(UPLOADS_PUBLIC_PATH.length + 1);
+    } else if (attachment.storage_path) {
+      const candidate = normalize(relative(UPLOADS_DIR, attachment.storage_path));
+      if (candidate && !candidate.split(sep).includes("..")) {
+        relativePath = candidate;
+      }
+    }
+    return {
+      id: attachment.id,
+      originalFilename: attachment.original_filename,
+      mimeType: attachment.mime_type,
+      size: attachment.size,
+      publicUrl: attachment.public_url,
+      relativePath,
+      createdAt: attachment.created_at,
+    };
+  });
+
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    board: {
+      id: board.id,
+      title: board.title,
+      description: board.description,
+      createdAt: board.created_at,
+      updatedAt: board.updated_at,
+      lastAccessedAt: board.last_accessed_at,
+      starred: board.starred,
+      ownerPubkey: board.owner_pubkey,
+      ownerNpub: board.owner_npub,
+      defaultRole: board.default_role,
+      isPrivate: board.is_private,
+    },
+    elements,
+    attachments,
+  };
+
+  return new Response(JSON.stringify(payload, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="optikon-board-${board.id}.json"`,
+    },
+  });
+}
+
+function resolveUploadSource(relativePath: string) {
+  if (!relativePath || typeof relativePath !== "string") return null;
+  if (isAbsolute(relativePath)) return null;
+  const normalized = normalize(relativePath);
+  if (!normalized || normalized.split(sep).includes("..")) return null;
+  return join(UPLOADS_DIR, normalized);
+}
+
+export async function handleBoardImport(req: Request, session: Session | null) {
+  const body = (await safeJson(req)) as {
+    board?: {
+      title?: string;
+      description?: string | null;
+      defaultRole?: string;
+      isPrivate?: boolean;
+    };
+    elements?: SharedBoardElement[];
+    attachments?: Array<{
+      id?: string;
+      originalFilename?: string;
+      mimeType?: string;
+      size?: number;
+      publicUrl?: string;
+      relativePath?: string | null;
+    }>;
+  } | null;
+
+  if (!body || typeof body !== "object") {
+    return jsonResponse({ message: "Invalid import payload." }, 400);
+  }
+
+  const baseTitle =
+    typeof body.board?.title === "string" && body.board.title.trim()
+      ? body.board.title.trim()
+      : "Untitled Board";
+  const title = `Imported - ${baseTitle}`;
+  const description =
+    typeof body.board?.description === "string" && body.board.description.trim()
+      ? body.board.description.trim()
+      : null;
+  let defaultRole = "editor";
+  if (typeof body.board?.defaultRole === "string") {
+    const normalized = normalizeBoardRole(body.board.defaultRole);
+    defaultRole = normalized === body.board.defaultRole ? normalized : "editor";
+  }
+  const isPrivate = session && body.board?.isPrivate === true ? 1 : 0;
+  const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
+
+  const board = createBoardRecord(title, description, owner, defaultRole, isPrivate);
+  if (!board) {
+    return jsonResponse({ message: "Unable to import board." }, 500);
+  }
+
+  const attachmentIdMap = new Map<string, { id: string; url: string }>();
+  const attachmentUrlMap = new Map<string, { id: string; url: string }>();
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+  for (const attachment of attachments) {
+    if (!attachment) continue;
+    const originalFilename = attachment.originalFilename ?? "attachment";
+    const mimeType = attachment.mimeType ?? "application/octet-stream";
+    const relativePath = attachment.relativePath ?? null;
+    if (!relativePath) continue;
+    const sourcePath = resolveUploadSource(relativePath);
+    if (!sourcePath || !existsSync(sourcePath)) continue;
+    const id = crypto.randomUUID();
+    const filename = buildUploadFilename(id, originalFilename, mimeType);
+    const stored = storeAttachment({
+      id,
+      boardId: board.id,
+      ownerPubkey: session?.pubkey ?? null,
+      originalFilename,
+      mimeType,
+      size: attachment.size ?? 0,
+      relativePath: filename,
+    });
+    if (!stored) continue;
+    try {
+      await copyFile(sourcePath, stored.storage_path);
+    } catch (error) {
+      console.error("Failed to copy attachment file", error);
+      continue;
+    }
+    if (attachment.id) {
+      attachmentIdMap.set(attachment.id, { id: stored.id, url: stored.public_url });
+    }
+    if (attachment.publicUrl) {
+      attachmentUrlMap.set(attachment.publicUrl, { id: stored.id, url: stored.public_url });
+    }
+  }
+
+  const allowedElementTypes: Array<SharedBoardElement["type"]> = [
+    "sticky",
+    "text",
+    "rect",
+    "frame",
+    "comment",
+    "ellipse",
+    "roundRect",
+    "diamond",
+    "triangle",
+    "speechBubble",
+    "image",
+    "line",
+  ];
+  const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
+    typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"]);
+
+  const elements = Array.isArray(body.elements) ? body.elements : [];
+  const idMap = new Map<string, string>();
+  const stagedElements: SharedBoardElement[] = [];
+  for (const element of elements) {
+    if (!element || typeof element !== "object") continue;
+    if (typeof element.id !== "string" || !element.id.trim()) continue;
+    if (!isAllowedType(element.type)) continue;
+    const newId = crypto.randomUUID();
+    idMap.set(element.id, newId);
+    stagedElements.push(element);
+  }
+
+  const normalizedElements: SharedBoardElement[] = stagedElements.map((element) => {
+    const next = { ...element, id: idMap.get(element.id) ?? element.id } as SharedBoardElement;
+    if (next.type === "comment") {
+      const comment = next as SharedBoardElement & { elementId?: string };
+      if (comment.elementId && idMap.has(comment.elementId)) {
+        comment.elementId = idMap.get(comment.elementId);
+      }
+    }
+    if (next.type === "line") {
+      const line = next as SharedBoardElement & {
+        startBinding?: { elementId: string; anchor: string };
+        endBinding?: { elementId: string; anchor: string };
+      };
+      if (line.startBinding?.elementId && idMap.has(line.startBinding.elementId)) {
+        line.startBinding = {
+          ...line.startBinding,
+          elementId: idMap.get(line.startBinding.elementId) ?? line.startBinding.elementId,
+        };
+      }
+      if (line.endBinding?.elementId && idMap.has(line.endBinding.elementId)) {
+        line.endBinding = {
+          ...line.endBinding,
+          elementId: idMap.get(line.endBinding.elementId) ?? line.endBinding.elementId,
+        };
+      }
+    }
+    if (next.type === "image") {
+      const image = next as SharedBoardElement & { attachmentId?: string; url?: string };
+      if (image.attachmentId && attachmentIdMap.has(image.attachmentId)) {
+        const mapped = attachmentIdMap.get(image.attachmentId);
+        if (mapped) {
+          image.attachmentId = mapped.id;
+          image.url = mapped.url;
+        }
+      } else if (image.url && attachmentUrlMap.has(image.url)) {
+        const mapped = attachmentUrlMap.get(image.url);
+        if (mapped) {
+          image.attachmentId = mapped.id;
+          image.url = mapped.url;
+        }
+      }
+    }
+    return next;
+  });
+
+  if (normalizedElements.length > 0) {
+    createBoardElementsBatchRecord(board.id, normalizedElements);
+  }
+
+  return jsonResponse({ id: board.id, title: board.title }, 201);
 }
 
 export async function handleBoardElementCreate(req: Request, boardId: number, session: Session | null) {
