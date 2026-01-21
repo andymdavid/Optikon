@@ -527,7 +527,14 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             description: detailsDescription.trim() ? detailsDescription.trim() : null,
           }),
         })
-        if (!response.ok) throw new Error('Failed to update board')
+        if (!response.ok) {
+          let message = 'Unable to update board.'
+          try {
+            const data = (await response.json()) as { message?: string }
+            if (data?.message) message = data.message
+          } catch (_err) {}
+          throw new Error(message)
+        }
         const data = (await response.json()) as BoardSummary
         setBoards((prev) =>
           prev.map((board) =>
@@ -537,8 +544,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           )
         )
         setDetailsBoard((prev) => (prev ? { ...prev, ...data } : prev))
-      } catch (_err) {
-        setError('Unable to update board.')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unable to update board.'
+        setError(message)
       } finally {
         setDetailsSaving(false)
       }
@@ -929,7 +937,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       </header>
       <BoardsFilters />
       {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
-      {loading ? <BoardsSkeleton /> : error ? null : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
+      {loading ? <BoardsSkeleton /> : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
     </div>
   )
 }
