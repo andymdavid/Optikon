@@ -14,7 +14,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { fetchProfilePicture, getAvatarFallback } from '../components/canvas/nostrProfiles'
+import {
+  fetchProfile,
+  formatProfileName,
+  getAvatarFallback,
+} from '../components/canvas/nostrProfiles'
 import { Button } from '../components/ui/button'
 import {
   DropdownMenu,
@@ -153,6 +157,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({})
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({})
   const [shareBoard, setShareBoard] = useState<BoardSummary | null>(null)
   const [shareRole, setShareRole] = useState<'viewer' | 'commenter' | 'editor'>('editor')
   const [detailsBoard, setDetailsBoard] = useState<BoardSummary | null>(null)
@@ -257,10 +262,19 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     pubkeys.forEach((pubkey) => {
       if (avatarFetchInFlightRef.current.has(pubkey)) return
       avatarFetchInFlightRef.current.add(pubkey)
-      void fetchProfilePicture(pubkey)
-        .then((url) => {
-          if (cancelled || !url) return
-          setAvatarUrls((prev) => (prev[pubkey] === url ? prev : { ...prev, [pubkey]: url }))
+      void fetchProfile(pubkey)
+        .then((profile) => {
+          if (cancelled || !profile) return
+          const picture = profile.picture
+          if (picture) {
+            setAvatarUrls((prev) =>
+              prev[pubkey] === picture ? prev : { ...prev, [pubkey]: picture }
+            )
+          }
+          const name = formatProfileName(profile)
+          if (name) {
+            setProfileNames((prev) => (prev[pubkey] === name ? prev : { ...prev, [pubkey]: name }))
+          }
         })
         .finally(() => {
           avatarFetchInFlightRef.current.delete(pubkey)
@@ -765,7 +779,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const BoardRow = ({ board, index }: { board: BoardSummary; index: number }) => {
     const isEditing = editingId === String(board.id)
     const isMenuOpen = openMenuId === String(board.id)
-    const ownerLabel = formatNpub(board.ownerNpub)
+    const ownerLabel =
+      (board.ownerPubkey ? profileNames[board.ownerPubkey] : null) ??
+      formatNpub(board.ownerNpub)
     const ownerAvatarUrl = board.ownerPubkey
       ? avatarUrls[board.ownerPubkey] ?? getAvatarFallback(board.ownerPubkey)
       : null
@@ -824,14 +840,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         <TableCell>
           <div className="flex items-center -space-x-2">
             {visibleUsers.length > 0 ? (
-              visibleUsers.map((user) => (
-                <Avatar
-                  key={user.pubkey}
-                  name={formatNpub(user.npub)}
-                  imageUrl={avatarUrls[user.pubkey] ?? getAvatarFallback(user.pubkey)}
-                  size="sm"
-                />
-              ))
+              visibleUsers.map((user) => {
+                const displayName = profileNames[user.pubkey] ?? formatNpub(user.npub)
+                return (
+                  <Avatar
+                    key={user.pubkey}
+                    name={displayName}
+                    imageUrl={avatarUrls[user.pubkey] ?? getAvatarFallback(user.pubkey)}
+                    size="sm"
+                  />
+                )
+              })
             ) : (
               <span className="text-xs text-slate-400">No one online</span>
             )}

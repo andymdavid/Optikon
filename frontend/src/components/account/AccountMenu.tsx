@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
 
-import { fetchProfilePicture, getAvatarFallback } from '../canvas/nostrProfiles'
+import { fetchProfile, formatProfileName, getAvatarFallback } from '../canvas/nostrProfiles'
 
 import { NostrLoginModal } from './NostrLoginModal'
 
@@ -28,12 +28,13 @@ export function AccountMenu({
   const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [profileName, setProfileName] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   const displayName = useMemo(() => {
     if (!session) return 'Sign in'
-    return formatNpub(session.npub)
-  }, [session])
+    return profileName ?? formatNpub(session.npub)
+  }, [profileName, session])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -51,15 +52,19 @@ export function AccountMenu({
     let cancelled = false
     if (!session?.pubkey) {
       setAvatarUrl(null)
+      setProfileName(null)
       return () => {
         cancelled = true
       }
     }
     const fallback = getAvatarFallback(session.pubkey)
     setAvatarUrl(fallback)
-    void fetchProfilePicture(session.pubkey).then((url) => {
-      if (cancelled || !url) return
-      setAvatarUrl(url)
+    setProfileName(null)
+    void fetchProfile(session.pubkey).then((profile) => {
+      if (cancelled || !profile) return
+      if (profile.picture) setAvatarUrl(profile.picture)
+      const name = formatProfileName(profile)
+      if (name) setProfileName(name)
     })
     return () => {
       cancelled = true

@@ -16,8 +16,8 @@ type ApplesauceLibs = {
 
 let applesauceLibs: ApplesauceLibs | null = null
 let profilePool: any = null
-const profileCache = new Map<string, { url: string | null; ts: number }>()
-const profileInFlight = new Map<string, Promise<string | null>>()
+const profileCache = new Map<string, { profile: NostrProfile | null; ts: number }>()
+const profileInFlight = new Map<string, Promise<NostrProfile | null>>()
 
 type NostrWindow = Window & {
   nostr?: {
@@ -71,13 +71,42 @@ export function getAvatarFallback(pubkey?: string | null) {
   return `https://robohash.org/${encodeURIComponent(key)}.png?set=set3`
 }
 
-export async function fetchProfilePicture(pubkey: string): Promise<string | null> {
+export type NostrProfile = {
+  name: string | null
+  displayName: string | null
+  nip05: string | null
+  picture: string | null
+}
+
+function parseProfileEvent(event: { content?: string } | null): NostrProfile | null {
+  if (!event?.content || typeof event.content !== 'string') return null
+  try {
+    const parsed = JSON.parse(event.content) as Record<string, unknown>
+    const normalize = (value: unknown) =>
+      typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+    return {
+      name: normalize(parsed.name),
+      displayName: normalize(parsed.display_name ?? parsed.displayName),
+      nip05: normalize(parsed.nip05),
+      picture: normalize(parsed.picture),
+    }
+  } catch (_err) {
+    return null
+  }
+}
+
+export function formatProfileName(profile: NostrProfile | null): string | null {
+  if (!profile) return null
+  return profile.displayName ?? profile.name ?? profile.nip05 ?? null
+}
+
+export async function fetchProfile(pubkey: string): Promise<NostrProfile | null> {
   if (!pubkey) return null
   const cached = profileCache.get(pubkey)
   if (cached) {
     const ageMs = Date.now() - cached.ts
-    if (cached.url || ageMs < 60_000) {
-      return cached.url ?? null
+    if (cached.profile || ageMs < 60_000) {
+      return cached.profile ?? null
     }
     profileCache.delete(pubkey)
   }
@@ -87,7 +116,6 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
     try {
       const libs = await loadApplesauceLibs()
       const { RelayPool, onlyEvents } = libs.relay
-      const { getProfilePicture } = libs.helpers
       const { firstValueFrom, take, takeUntil, timer } = libs.rxjs
       profilePool = profilePool || new RelayPool()
       const relays = await resolveRelayList()
@@ -104,11 +132,11 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
         }
         return null
       }
-      const picture = getProfilePicture(event, null)
+      const profile = parseProfileEvent(event)
       if (isDebugEnabled()) {
-        console.log('[nostrProfile] picture', picture ?? null)
+        console.log('[nostrProfile] picture', profile?.picture ?? null)
       }
-      return picture
+      return profile
     } catch (_error) {
       return null
     }
@@ -116,7 +144,12 @@ export async function fetchProfilePicture(pubkey: string): Promise<string | null
 
   profileInFlight.set(pubkey, task)
   const result = await task
-  profileCache.set(pubkey, { url: result, ts: Date.now() })
+  profileCache.set(pubkey, { profile: result, ts: Date.now() })
   profileInFlight.delete(pubkey)
   return result
+}
+
+export async function fetchProfilePicture(pubkey: string): Promise<string | null> {
+  const profile = await fetchProfile(pubkey)
+  return profile?.picture ?? null
 }
