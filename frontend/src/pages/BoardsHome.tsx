@@ -3,6 +3,7 @@ import {
   FileText,
   LayoutGrid,
   List,
+  Lock,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -54,6 +55,11 @@ type BoardSummary = {
   defaultRole?: 'viewer' | 'commenter' | 'editor'
   isPrivate?: boolean
 }
+
+const normalizeBoard = (board: BoardSummary): BoardSummary => ({
+  ...board,
+  isPrivate: Boolean(board.isPrivate),
+})
 
 const boardIcons = [
   { icon: Cloud, bg: 'bg-cyan-50', color: 'text-cyan-400' },
@@ -180,7 +186,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (!response.ok) throw new Error('Failed to load boards')
         const data = (await response.json()) as { boards?: BoardSummary[] }
         if (!cancelled) {
-          setBoards(data.boards ?? [])
+          setBoards((data.boards ?? []).map(normalizeBoard))
           setError(null)
         }
       } catch (_err) {
@@ -381,16 +387,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       })
       if (!response.ok) throw new Error('Failed to update privacy')
       const data = (await response.json()) as BoardSummary
+      const nextIsPrivate = Boolean(data.isPrivate ?? !board.isPrivate)
       setBoards((prev) =>
         prev.map((item) =>
           String(item.id) === String(board.id)
-            ? { ...item, isPrivate: data.isPrivate ?? !board.isPrivate }
+            ? { ...item, isPrivate: nextIsPrivate }
             : item
         )
       )
       setDetailsBoard((prev) =>
         prev && String(prev.id) === String(board.id)
-          ? { ...prev, isPrivate: data.isPrivate ?? !board.isPrivate }
+          ? { ...prev, isPrivate: nextIsPrivate }
           : prev
       )
     } catch (_err) {
@@ -842,21 +849,32 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           </div>
         </TableCell>
         <TableCell>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={(event) => {
-              event.stopPropagation()
-              void toggleStar(board)
-            }}
-            aria-label={board.starred ? 'Unstar board' : 'Star board'}
-          >
-            <Star
-              size={16}
-              strokeWidth={board.starred ? 2 : 1.5}
-              className={board.starred ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}
-            />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(event) => {
+                event.stopPropagation()
+                void toggleStar(board)
+              }}
+              aria-label={board.starred ? 'Unstar board' : 'Star board'}
+            >
+              <Star
+                size={16}
+                strokeWidth={board.starred ? 2 : 1.5}
+                className={board.starred ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}
+              />
+            </Button>
+            {board.isPrivate && (
+              <span
+                className="inline-flex h-9 w-9 items-center justify-center leading-none text-slate-400"
+                aria-label="Private board"
+                title="Private board"
+              >
+                <Lock size={16} />
+              </span>
+            )}
+          </div>
         </TableCell>
         <TableCell>
           <DropdownMenu

@@ -17,7 +17,7 @@ export function CanvasPage({
 }) {
   const { boardId } = useParams()
   const normalizedBoardId = boardId?.trim() ?? null
-  const [boardTitle, setBoardTitle] = useState<string | null>(null)
+  const [boardInfo, setBoardInfo] = useState<{ title: string; isPrivate: boolean } | null>(null)
 
   useEffect(() => {
     if (!normalizedBoardId) return
@@ -35,13 +35,18 @@ export function CanvasPage({
           credentials: 'include',
         })
         if (!response.ok) {
-          if (!cancelled) setBoardTitle(null)
+          if (!cancelled) setBoardInfo(null)
           return
         }
-        const data = (await response.json()) as { title?: string }
-        if (!cancelled) setBoardTitle(data.title ?? 'Board')
+        const data = (await response.json()) as { title?: string; isPrivate?: boolean }
+        if (!cancelled) {
+          setBoardInfo({
+            title: data.title ?? 'Board',
+            isPrivate: Boolean(data.isPrivate),
+          })
+        }
       } catch (_err) {
-        if (!cancelled) setBoardTitle(null)
+        if (!cancelled) setBoardInfo(null)
       }
     }
     void loadBoard()
@@ -54,7 +59,21 @@ export function CanvasPage({
   return (
     <div className="app-shell">
       <AccountMenu apiBaseUrl={apiBaseUrl} session={session} onSessionChange={onSessionChange} />
-      {boardTitle && <div className="board-title">{boardTitle}</div>}
+      {boardInfo && (
+        <div className="board-title">
+          <span>{boardInfo.title}</span>
+          {boardInfo.isPrivate && (
+            <span className="board-title__lock" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                <path
+                  d="M7 10V8a5 5 0 0 1 10 0v2h1.5A1.5 1.5 0 0 1 20 11.5v7A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-7A1.5 1.5 0 0 1 5.5 10H7Zm2 0h6V8a3 3 0 1 0-6 0v2Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+          )}
+        </div>
+      )}
       <CanvasBoard session={session} boardId={normalizedBoardId} />
     </div>
   )
