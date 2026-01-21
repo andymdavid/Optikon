@@ -171,7 +171,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     const controller = new AbortController()
     const loadBoards = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/boards`, { signal: controller.signal })
+        const response = await fetch(`${apiBaseUrl}/boards`, {
+          signal: controller.signal,
+          credentials: 'include',
+        })
         if (!response.ok) throw new Error('Failed to load boards')
         const data = (await response.json()) as { boards?: BoardSummary[] }
         if (!cancelled) {
@@ -263,6 +266,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       const response = await fetch(`${apiBaseUrl}/boards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({}),
       })
       if (!response.ok) throw new Error('Failed to create board')
@@ -296,6 +300,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       const response = await fetch(`${apiBaseUrl}/boards/${editingId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ title: nextTitle }),
       })
       if (!response.ok) throw new Error('Failed to rename board')
@@ -333,6 +338,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       const response = await fetch(`${apiBaseUrl}/boards/${board.id}/star`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ starred: nextStarred === 1 }),
       })
       if (!response.ok) throw new Error('Failed to star board')
@@ -350,6 +356,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     try {
       const response = await fetch(`${apiBaseUrl}/boards/${board.id}/duplicate`, {
         method: 'POST',
+        credentials: 'include',
       })
       if (!response.ok) throw new Error('Failed to duplicate board')
       const data = (await response.json()) as { id?: number | string }
@@ -366,6 +373,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     try {
       const response = await fetch(`${apiBaseUrl}/boards/${board.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       })
       if (!response.ok) throw new Error('Failed to delete board')
       setBoards((prev) => prev.filter((item) => String(item.id) !== String(board.id)))
@@ -398,6 +406,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     try {
       const response = await fetch(`${apiBaseUrl}/boards/${board.id}/archive`, {
         method: 'POST',
+        credentials: 'include',
       })
       if (!response.ok) throw new Error('Failed to archive board')
       setBoards((prev) => prev.filter((item) => String(item.id) !== String(board.id)))
@@ -463,6 +472,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 void fetch(`${apiBaseUrl}/boards/${shareBoard.id}`, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
                   body: JSON.stringify({ defaultRole: nextRole }),
                 })
                   .then((response) => (response.ok ? response.json() : null))
@@ -511,6 +521,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         const response = await fetch(`${apiBaseUrl}/boards/${detailsBoard.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             title: detailsTitle.trim(),
             description: detailsDescription.trim() ? detailsDescription.trim() : null,
