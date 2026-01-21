@@ -20,6 +20,7 @@ Boards and metadata.
 | `owner_pubkey`  | TEXT    | Pubkey or NULL                         |
 | `owner_npub`    | TEXT    | npub or NULL                           |
 | `default_role`  | TEXT    | `viewer` \| `commenter` \| `editor`     |
+| `is_private`    | INTEGER | 0/1; private boards are owner-only     |
 
 ### `attachments`
 Uploaded assets stored on disk and referenced by boards.
