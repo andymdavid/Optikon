@@ -52,6 +52,7 @@ type BoardSummary = {
   ownerNpub?: string | null
   onlineUsers?: Array<{ pubkey: string; npub: string }>
   defaultRole?: 'viewer' | 'commenter' | 'editor'
+  isPrivate?: boolean
 }
 
 const boardIcons = [
@@ -201,7 +202,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     let cancelled = false
     const pollPresence = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/boards/presence`)
+        const response = await fetch(`${apiBaseUrl}/boards/presence`, {
+          credentials: 'include',
+        })
         if (!response.ok) return
         const data = (await response.json()) as {
           onlineUsersByBoard?: Record<string, Array<{ pubkey: string; npub: string }>>
@@ -365,6 +368,33 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       navigate(`/b/${data.id}`)
     } catch (_err) {
       setError('Unable to duplicate board.')
+    }
+  }
+
+  const togglePrivacy = async (board: BoardSummary) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ isPrivate: !board.isPrivate }),
+      })
+      if (!response.ok) throw new Error('Failed to update privacy')
+      const data = (await response.json()) as BoardSummary
+      setBoards((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(board.id)
+            ? { ...item, isPrivate: data.isPrivate ?? !board.isPrivate }
+            : item
+        )
+      )
+      setDetailsBoard((prev) =>
+        prev && String(prev.id) === String(board.id)
+          ? { ...prev, isPrivate: data.isPrivate ?? !board.isPrivate }
+          : prev
+      )
+    } catch (_err) {
+      setError('Unable to update privacy.')
     }
   }
 
@@ -871,7 +901,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <DropdownMenuItem onSelect={() => beginRename(board)}>Rename</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void duplicateBoard(board)}>Duplicate</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => openDetails(board)}>Board details</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => {}}>Make private</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void togglePrivacy(board)}>
+                {board.isPrivate ? 'Make public' : 'Make private'}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => {}}>Download backup</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => {}}>Leave</DropdownMenuItem>

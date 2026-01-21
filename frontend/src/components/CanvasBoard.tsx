@@ -3586,6 +3586,7 @@ export function CanvasBoard({
         const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ elements: elementsToPersist } satisfies { elements: BoardElement[] }),
         })
         if (!response.ok) throw new Error('Failed to update elements')
@@ -4057,6 +4058,7 @@ export function CanvasBoard({
       const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ element } satisfies { element: BoardElement }),
       })
       if (!response.ok) throw new Error('Failed to persist element')
@@ -4352,6 +4354,7 @@ export function CanvasBoard({
       const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ids }),
       })
       if (!response.ok) throw new Error('Failed to delete elements')
@@ -6212,7 +6215,9 @@ export function CanvasBoard({
 
     const loadPersistedElements = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`)
+        const response = await fetch(`${API_BASE_URL}/boards/${boardId}/elements`, {
+          credentials: 'include',
+        })
         if (!response.ok) {
           const message = response.status === 404 ? 'Board not found.' : 'Unable to load board.'
           if (!cancelled) setBoardError(message)

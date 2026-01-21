@@ -32,6 +32,7 @@ export function CanvasPage({
       try {
         const response = await fetch(`${apiBaseUrl}/boards/${normalizedBoardId}`, {
           signal: controller.signal,
+          credentials: 'include',
         })
         if (!response.ok) {
           if (!cancelled) setBoardTitle(null)
