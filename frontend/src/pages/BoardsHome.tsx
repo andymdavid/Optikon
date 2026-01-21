@@ -152,6 +152,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [detailsTitle, setDetailsTitle] = useState('')
   const [detailsDescription, setDetailsDescription] = useState('')
   const [detailsSaving, setDetailsSaving] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
 
@@ -726,6 +727,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const BoardRow = ({ board, index }: { board: BoardSummary; index: number }) => {
     const isEditing = editingId === String(board.id)
+    const isMenuOpen = openMenuId === String(board.id)
     const ownerLabel = formatNpub(board.ownerNpub)
     const ownerAvatarUrl = board.ownerPubkey
       ? avatarUrls[board.ownerPubkey] ?? getAvatarFallback(board.ownerPubkey)
@@ -827,12 +829,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           </Button>
         </TableCell>
         <TableCell>
-          <DropdownMenu>
+          <DropdownMenu
+            open={isMenuOpen}
+            onOpenChange={(nextOpen) => {
+              setOpenMenuId(nextOpen ? String(board.id) : null)
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-              onClick={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
             >
               <MoreHorizontal size={18} className="text-slate-400" />
             </Button>
