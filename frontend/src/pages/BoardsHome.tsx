@@ -152,6 +152,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [boards, setBoards] = useState<BoardSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState<{ pubkey: string; npub: string } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -183,6 +184,22 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
+    const loadSession = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/auth/me`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          if (!cancelled) setSession(null)
+          return
+        }
+        const data = (await response.json()) as { pubkey: string; npub: string } | null
+        if (!cancelled) setSession(data)
+      } catch (_err) {
+        if (!cancelled) setSession(null)
+      }
+    }
     const loadBoards = async () => {
       try {
         const response = await fetch(`${apiBaseUrl}/boards`, {
@@ -203,6 +220,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (!cancelled) setLoading(false)
       }
     }
+    void loadSession()
     void loadBoards()
     return () => {
       cancelled = true
@@ -527,6 +545,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const leaveBoard = async (board: BoardSummary) => {
+    if (session?.pubkey && board.ownerPubkey && session.pubkey === board.ownerPubkey) {
+      setError('Owners cannot leave their own boards.')
+      return
+    }
     const confirmed = window.confirm('Leave this board? You can be invited back later.')
     if (!confirmed) return
     try {
@@ -546,6 +568,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       if (detailsBoard && String(detailsBoard.id) === String(board.id)) {
         setDetailsBoard(null)
       }
+      setOpenMenuId(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to leave board.'
       setError(message)
@@ -1044,7 +1067,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 Download backup
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void leaveBoard(board)}>Leave</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={
+                  !!session?.pubkey &&
+                  !!board.ownerPubkey &&
+                  session.pubkey === board.ownerPubkey
+                }
+                onSelect={() => void leaveBoard(board)}
+              >
+                Leave
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void archiveBoard(board)}>Archive</DropdownMenuItem>
               <DropdownMenuItem className="text-rose-600 focus:text-rose-600" onSelect={() => {}}>
                 Delete
