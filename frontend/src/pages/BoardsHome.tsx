@@ -11,9 +11,10 @@ import {
   Star,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { AccountMenu } from '../components/account/AccountMenu'
 import {
   fetchProfile,
   formatProfileName,
@@ -153,6 +154,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState<{ pubkey: string; npub: string } | null>(null)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -181,6 +183,28 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     navigate(`/b/${id}`)
   }
 
+  const loadBoards = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true)
+      try {
+        const response = await fetch(`${apiBaseUrl}/boards`, {
+          signal,
+          credentials: 'include',
+        })
+        if (!response.ok) throw new Error('Failed to load boards')
+        const data = (await response.json()) as { boards?: BoardSummary[] }
+        setBoards((data.boards ?? []).map(normalizeBoard))
+        setError(null)
+      } catch (_err) {
+        if (signal?.aborted) return
+        setError('Unable to load boards.')
+      } finally {
+        if (!signal?.aborted) setLoading(false)
+      }
+    },
+    [apiBaseUrl]
+  )
+
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
@@ -200,33 +224,13 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (!cancelled) setSession(null)
       }
     }
-    const loadBoards = async () => {
-      try {
-        const response = await fetch(`${apiBaseUrl}/boards`, {
-          signal: controller.signal,
-          credentials: 'include',
-        })
-        if (!response.ok) throw new Error('Failed to load boards')
-        const data = (await response.json()) as { boards?: BoardSummary[] }
-        if (!cancelled) {
-          setBoards((data.boards ?? []).map(normalizeBoard))
-          setError(null)
-        }
-      } catch (_err) {
-        if (!cancelled) {
-          setError('Unable to load boards.')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
     void loadSession()
-    void loadBoards()
+    void loadBoards(controller.signal)
     return () => {
       cancelled = true
       controller.abort()
     }
-  }, [apiBaseUrl])
+  }, [apiBaseUrl, loadBoards])
 
   useEffect(() => {
     let cancelled = false
@@ -305,6 +309,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }, [boards])
 
   const handleCreateBoard = async () => {
+    if (!session) {
+      setLoginOpen(true)
+      return
+    }
     try {
       const response = await fetch(`${apiBaseUrl}/boards`, {
         method: 'POST',
@@ -322,6 +330,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const openImportPicker = () => {
+    if (!session) {
+      setLoginOpen(true)
+      return
+    }
     importInputRef.current?.click()
   }
 
@@ -578,6 +590,11 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       const message = err instanceof Error ? err.message : 'Unable to leave board.'
       setError(message)
     }
+  }
+
+  const handleSessionChange = (nextSession: { pubkey: string; npub: string } | null) => {
+    setSession(nextSession)
+    void loadBoards()
   }
 
   const shareModal = shareBoard ? (() => {
@@ -1191,6 +1208,13 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             />
           </div>
           <CreateBoardMenu />
+          <AccountMenu
+            apiBaseUrl={apiBaseUrl}
+            session={session}
+            onSessionChange={handleSessionChange}
+            loginOpen={loginOpen}
+            onLoginOpenChange={setLoginOpen}
+          />
         </div>
       </header>
       <BoardsFilters />

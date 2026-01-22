@@ -20,10 +20,14 @@ export function AccountMenu({
   apiBaseUrl,
   session,
   onSessionChange,
+  loginOpen,
+  onLoginOpenChange,
 }: {
   apiBaseUrl: string
   session: SessionInfo | null
   onSessionChange: (session: SessionInfo | null) => void
+  loginOpen?: boolean
+  onLoginOpenChange?: (open: boolean) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -35,6 +39,15 @@ export function AccountMenu({
     if (!session) return 'Sign in'
     return profileName ?? formatNpub(session.npub)
   }, [profileName, session])
+
+  const resolvedLoginOpen = loginOpen ?? modalOpen
+  const setLoginOpen = (open: boolean) => {
+    if (onLoginOpenChange) {
+      onLoginOpenChange(open)
+    } else {
+      setModalOpen(open)
+    }
+  }
 
   useEffect(() => {
     if (!menuOpen) return
@@ -96,7 +109,7 @@ export function AccountMenu({
 
   const handleLoginSuccess = (nextSession: SessionInfo) => {
     onSessionChange({ pubkey: nextSession.pubkey, npub: nextSession.npub })
-    setModalOpen(false)
+    setLoginOpen(false)
   }
 
   if (!session) {
@@ -108,13 +121,13 @@ export function AccountMenu({
         onMouseDown={stopPropagation}
         onClick={stopPropagation}
       >
-        <button className="account-menu__signin" type="button" onClick={() => setModalOpen(true)}>
+        <button className="account-menu__signin" type="button" onClick={() => setLoginOpen(true)}>
           Sign in
         </button>
         <NostrLoginModal
-          open={modalOpen}
+          open={resolvedLoginOpen}
           apiBaseUrl={apiBaseUrl}
-          onClose={() => setModalOpen(false)}
+          onClose={() => setLoginOpen(false)}
           onSuccess={handleLoginSuccess}
         />
       </div>
@@ -163,9 +176,9 @@ export function AccountMenu({
         </div>
       )}
       <NostrLoginModal
-        open={modalOpen}
+        open={resolvedLoginOpen}
         apiBaseUrl={apiBaseUrl}
-        onClose={() => setModalOpen(false)}
+        onClose={() => setLoginOpen(false)}
         onSuccess={handleLoginSuccess}
       />
     </div>

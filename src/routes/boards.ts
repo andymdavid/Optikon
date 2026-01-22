@@ -56,6 +56,9 @@ function isBoardRenouncedForSession(board: Board, session: Session | null) {
 }
 
 export async function handleBoardCreate(req: Request, session: Session | null) {
+  if (!session) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
   const body = (await safeJson(req)) as {
     title?: string;
     description?: string;
@@ -405,6 +408,9 @@ export function handleBoardDelete(boardId: number, session: Session | null) {
 }
 
 export function handleBoardDuplicate(boardId: number, session: Session | null) {
+  if (!session) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -565,6 +571,9 @@ function resolveUploadSource(relativePath: string) {
 }
 
 export async function handleBoardImport(req: Request, session: Session | null) {
+  if (!session) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
   const body = (await safeJson(req)) as {
     board?: {
       title?: string;
