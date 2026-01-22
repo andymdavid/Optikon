@@ -19,6 +19,9 @@ import {
   deleteBoard,
   updateBoardElement,
   listBoardAttachments,
+  addBoardRenouncement,
+  isBoardRenounced,
+  listBoardRenouncements,
 } from "../db";
 
 import type { Board, BoardElement } from "../db";
@@ -43,6 +46,18 @@ export function fetchBoardById(id: number) {
 
 export function fetchBoards(includeArchived: boolean) {
   return listBoards(includeArchived);
+}
+
+export function recordBoardRenouncement(boardId: number, pubkey: string) {
+  addBoardRenouncement(boardId, pubkey);
+}
+
+export function fetchRenouncedBoardIds(pubkey: string) {
+  return listBoardRenouncements(pubkey);
+}
+
+export function isBoardRenouncedRecord(boardId: number, pubkey: string) {
+  return isBoardRenounced(boardId, pubkey);
 }
 
 export function updateBoardTitleRecord(boardId: number, title: string) {

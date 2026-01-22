@@ -22,6 +22,15 @@ Boards and metadata.
 | `default_role`  | TEXT    | `viewer` \| `commenter` \| `editor`     |
 | `is_private`    | INTEGER | 0/1; private boards are owner-only     |
 
+### `board_renouncements`
+Tracks users who have renounced access to a board.
+
+| Column       | Type    | Notes                                  |
+| ------------ | ------- | -------------------------------------- |
+| `board_id`   | INTEGER | FK to `boards`                         |
+| `pubkey`     | TEXT    | Nostr pubkey                           |
+| `created_at` | TEXT    | Default `CURRENT_TIMESTAMP`            |
+
 ### `attachments`
 Uploaded assets stored on disk and referenced by boards.
 

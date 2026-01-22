@@ -132,6 +132,16 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS board_renouncements (
+    board_id INTEGER NOT NULL,
+    pubkey TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (board_id, pubkey),
+    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+  )
+`);
+
 function ensureBoardsSchema() {
   const info = db.query<{ name: string }>(`PRAGMA table_info('boards')`).all();
   const hasUpdatedAt = info.some((column) => column.name === "updated_at");
@@ -363,6 +373,16 @@ const listBoardsStmt = db.query<Board>(
             last_accessed_at DESC,
             updated_at DESC`
 );
+const insertBoardRenouncementStmt = db.query(
+  `INSERT OR IGNORE INTO board_renouncements (board_id, pubkey)
+   VALUES (?, ?)`
+);
+const listBoardRenouncementsStmt = db.query<{ board_id: number }>(
+  `SELECT board_id FROM board_renouncements WHERE pubkey = ?`
+);
+const isBoardRenouncedStmt = db.query<{ board_id: number }>(
+  `SELECT board_id FROM board_renouncements WHERE board_id = ? AND pubkey = ? LIMIT 1`
+);
 const updateBoardStarredStmt = db.query<Board>(
   `UPDATE boards
    SET starred = ?, updated_at = CURRENT_TIMESTAMP
@@ -593,6 +613,18 @@ export function getBoardById(id: number) {
 
 export function listBoards(includeArchived: boolean) {
   return listBoardsStmt.all(includeArchived ? 1 : 0);
+}
+
+export function addBoardRenouncement(boardId: number, pubkey: string) {
+  insertBoardRenouncementStmt.run(boardId, pubkey);
+}
+
+export function listBoardRenouncements(pubkey: string) {
+  return listBoardRenouncementsStmt.all(pubkey).map((row) => row.board_id);
+}
+
+export function isBoardRenounced(boardId: number, pubkey: string) {
+  return !!isBoardRenouncedStmt.get(boardId, pubkey);
 }
 
 export function updateBoardTitle(id: number, title: string) {

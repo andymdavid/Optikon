@@ -30,6 +30,7 @@ import {
   handleBoardArchive,
   handleBoardUnarchive,
   handleBoardDuplicate,
+  handleBoardLeave,
   handleBoardDelete,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
@@ -384,6 +385,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]), session);
     const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
     if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]), session);
+    const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
+    if (boardLeaveMatch) return handleBoardLeave(Number(boardLeaveMatch[1]), session);
     const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
     if (attachmentMatch) return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
 

@@ -25,6 +25,9 @@ import {
   fetchBoardElement,
   fetchBoardElements,
   fetchBoardAttachments,
+  fetchRenouncedBoardIds,
+  isBoardRenouncedRecord,
+  recordBoardRenouncement,
   touchBoardLastAccessedAtRecord,
   touchBoardUpdatedAtRecord,
   updateBoardTitleRecord,
@@ -37,6 +40,7 @@ import {
   updateBoardElementRecord,
 } from "../services/boards";
 
+import type { Board } from "../services/boards";
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
 import type { Session } from "../types";
 
@@ -44,6 +48,12 @@ type OnlineUser = {
   pubkey: string;
   npub: string;
 };
+
+function isBoardRenouncedForSession(board: Board, session: Session | null) {
+  if (!session?.pubkey) return false;
+  if (isBoardOwner(board, session)) return false;
+  return isBoardRenouncedRecord(board.id, session.pubkey);
+}
 
 export async function handleBoardCreate(req: Request, session: Session | null) {
   const body = (await safeJson(req)) as {
@@ -91,6 +101,9 @@ export function handleBoardShowWithSession(boardId: number, session: Session | n
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -110,6 +123,24 @@ export function handleBoardShowWithSession(boardId: number, session: Session | n
   });
 }
 
+export function handleBoardLeave(boardId: number, session: Session | null) {
+  if (!session?.pubkey) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (isBoardOwner(board, session)) {
+    return jsonResponse({ message: "Owners cannot leave their own boards." }, 403);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  recordBoardRenouncement(boardId, session.pubkey);
+  return jsonResponse({ ok: true });
+}
+
 export function handleBoardsList(
   url: URL,
   onlineUsersByBoard?: Record<string, OnlineUser[]>,
@@ -117,8 +148,17 @@ export function handleBoardsList(
 ) {
   const includeArchived = url.searchParams.get("archived") === "1";
   const boards = fetchBoards(includeArchived);
+  const renouncedIds = session?.pubkey
+    ? new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)))
+    : null;
   const summaries = boards
     .filter((board) => canViewBoard(board, session ?? null))
+    .filter(
+      (board) =>
+        !renouncedIds ||
+        isBoardOwner(board, session ?? null) ||
+        !renouncedIds.has(String(board.id))
+    )
     .map((board) => ({
     id: board.id,
     title: board.title,
@@ -142,8 +182,19 @@ export function handleBoardsPresence(
 ) {
   if (!onlineUsersByBoard) return jsonResponse({ onlineUsersByBoard: {} });
   const boards = fetchBoards(true);
+  const renouncedIds = session?.pubkey
+    ? new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)))
+    : null;
   const visible = new Set(
-    boards.filter((board) => canViewBoard(board, session ?? null)).map((board) => String(board.id))
+    boards
+      .filter((board) => canViewBoard(board, session ?? null))
+      .filter(
+        (board) =>
+          !renouncedIds ||
+          isBoardOwner(board, session ?? null) ||
+          !renouncedIds.has(String(board.id))
+      )
+      .map((board) => String(board.id))
   );
   const filtered: Record<string, OnlineUser[]> = {};
   Object.entries(onlineUsersByBoard).forEach(([boardId, users]) => {
@@ -160,6 +211,9 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -251,6 +305,9 @@ export async function handleBoardStar(req: Request, boardId: number, session: Se
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -287,6 +344,9 @@ export function handleBoardArchive(boardId: number, session: Session | null) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -306,6 +366,9 @@ export function handleBoardUnarchive(boardId: number, session: Session | null) {
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -324,6 +387,9 @@ export function handleBoardDelete(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -346,6 +412,9 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -398,6 +467,9 @@ export function handleBoardElements(boardId: number, session: Session | null) {
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -420,6 +492,9 @@ export function handleBoardExport(boardId: number, session: Session | null) {
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
@@ -661,6 +736,9 @@ export async function handleBoardElementCreate(req: Request, boardId: number, se
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -736,6 +814,9 @@ export async function handleBoardElementUpdate(req: Request, boardId: number, el
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -783,6 +864,9 @@ export async function handleBoardElementsDelete(req: Request, boardId: number, s
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
   }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
@@ -817,6 +901,9 @@ export async function handleBoardElementsBatchUpdate(req: Request, boardId: numb
   }
   if (board.archived_at) {
     return jsonResponse({ message: "Board archived." }, 404);
+  }
+  if (isBoardRenouncedForSession(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
   }
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);

@@ -526,6 +526,32 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     }
   }
 
+  const leaveBoard = async (board: BoardSummary) => {
+    const confirmed = window.confirm('Leave this board? You can be invited back later.')
+    if (!confirmed) return
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${board.id}/leave`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!response.ok) {
+        let message = 'Unable to leave board.'
+        try {
+          const data = (await response.json()) as { message?: string }
+          if (data?.message) message = data.message
+        } catch (_err) {}
+        throw new Error(message)
+      }
+      setBoards((prev) => prev.filter((item) => String(item.id) !== String(board.id)))
+      if (detailsBoard && String(detailsBoard.id) === String(board.id)) {
+        setDetailsBoard(null)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to leave board.'
+      setError(message)
+    }
+  }
+
   const shareModal = shareBoard ? (() => {
     const shareUrl = `${window.location.origin}/b/${shareBoard.id}`
     const close = () => setShareBoard(null)
@@ -1018,7 +1044,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 Download backup
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => {}}>Leave</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void leaveBoard(board)}>Leave</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void archiveBoard(board)}>Archive</DropdownMenuItem>
               <DropdownMenuItem className="text-rose-600 focus:text-rose-600" onSelect={() => {}}>
                 Delete
