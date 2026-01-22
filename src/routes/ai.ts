@@ -1,3 +1,4 @@
+import { AI_AGENT_ALLOW_REMOTE, AI_AGENT_TOKEN } from "../config";
 import { jsonResponse, safeJson } from "../http";
 import {
   createTodosFromTasks,
@@ -31,7 +32,9 @@ type SummaryPayload = Partial<{
   suggestions: string | null;
 }>;
 
-export function handleAiTasks(url: URL, match: RegExpMatchArray) {
+export function handleAiTasks(req: Request, url: URL, match: RegExpMatchArray, requestIp: string | null) {
+  const authError = authorizeAgent(req, requestIp);
+  if (authError) return authError;
   const owner = url.searchParams.get("owner");
   if (!owner) return jsonResponse({ message: "Missing owner." }, 400);
 
@@ -53,7 +56,9 @@ export function handleAiTasks(url: URL, match: RegExpMatchArray) {
   });
 }
 
-export async function handleAiTasksPost(req: Request) {
+export async function handleAiTasksPost(req: Request, requestIp: string | null) {
+  const authError = authorizeAgent(req, requestIp);
+  if (authError) return authError;
   const body = (await safeJson(req)) as AiTasksPostBody | null;
 
   if (!body?.owner) {
@@ -78,7 +83,9 @@ export async function handleAiTasksPost(req: Request) {
   });
 }
 
-export async function handleSummaryPost(req: Request) {
+export async function handleSummaryPost(req: Request, requestIp: string | null) {
+  const authError = authorizeAgent(req, requestIp);
+  if (authError) return authError;
   const body = (await safeJson(req)) as SummaryPayload | null;
   if (!body?.owner || !body.summary_date) {
     return jsonResponse({ message: "Missing owner or summary_date." }, 400);
@@ -111,7 +118,9 @@ export async function handleSummaryPost(req: Request) {
   });
 }
 
-export function handleLatestSummary(url: URL) {
+export function handleLatestSummary(req: Request, url: URL, requestIp: string | null) {
+  const authError = authorizeAgent(req, requestIp);
+  if (authError) return authError;
   const owner = url.searchParams.get("owner");
   if (!owner) return jsonResponse({ message: "Missing owner." }, 400);
   const { day, week } = latestSummaries(owner, new Date());
@@ -135,3 +144,25 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function authorizeAgent(req: Request, requestIp: string | null) {
+  if (AI_AGENT_TOKEN) {
+    const authHeader = req.headers.get("authorization") ?? "";
+    if (authHeader !== `Bearer ${AI_AGENT_TOKEN}`) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+  }
+  if (!AI_AGENT_ALLOW_REMOTE) {
+    if (!requestIp || !isLocalhostIp(requestIp)) {
+      return jsonResponse({ message: "Forbidden." }, 403);
+    }
+  }
+  return null;
+}
+
+function isLocalhostIp(value: string) {
+  return (
+    value === "127.0.0.1" ||
+    value === "::1" ||
+    value === "::ffff:127.0.0.1"
+  );
+}

@@ -1,6 +1,11 @@
 # Agent API Specification
 
-Local-only endpoints for AI agents to fetch todos and submit summaries. All endpoints assume the agent runs on localhost; no authentication required. Dates use the server’s local time.
+Local-only endpoints for AI agents to fetch todos and submit summaries. By default, requests must originate from localhost and (optionally) present a bearer token. Dates use the server’s local time.
+
+## Authentication & Access
+- Localhost-only by default: non-local requests are rejected unless `AI_AGENT_ALLOW_REMOTE=true`.
+- If `AI_AGENT_TOKEN` is set, every request must include `Authorization: Bearer <token>`.
+- Missing/invalid token returns `401 Unauthorized`. Disallowed remote access returns `403 Forbidden`.
 
 ## Base URL
 - `http://localhost:3000`
@@ -21,7 +26,8 @@ Behavior:
 
 Example:
 ```bash
-curl -s 'http://localhost:3000/ai/tasks/7/yes?owner=npub1abc...'
+curl -s 'http://localhost:3000/ai/tasks/7/yes?owner=npub1abc...' \
+  -H 'Authorization: Bearer <token>'
 ```
 
 Response:
@@ -102,6 +108,7 @@ Example:
 ```bash
 curl -s -X POST 'http://localhost:3000/ai/tasks' \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <token>' \
   -d '{
     "owner": "npub1abc...",
     "tasks": [
@@ -185,7 +192,8 @@ Returns the latest summaries for today and the current week.
 
 Example:
 ```bash
-curl -s 'http://localhost:3000/ai/summary/latest?owner=npub1abc...'
+curl -s 'http://localhost:3000/ai/summary/latest?owner=npub1abc...' \
+  -H 'Authorization: Bearer <token>'
 ```
 
 Response:

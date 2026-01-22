@@ -11,6 +11,8 @@ export const APP_TAG = "other-stuff-to-do";
 export const PUBLIC_DIR = join(import.meta.dir, "../public");
 export const UPLOADS_DIR = join(import.meta.dir, "../data/uploads");
 export const UPLOADS_PUBLIC_PATH = "/uploads";
+export const AI_AGENT_TOKEN = (Bun.env.AI_AGENT_TOKEN ?? "").trim();
+export const AI_AGENT_ALLOW_REMOTE = Bun.env.AI_AGENT_ALLOW_REMOTE === "true";
 
 export const STATIC_FILES = new Map<string, string>([
   ["/favicon.ico", "favicon.png"],

@@ -350,10 +350,19 @@ function handleWebSocketUpgrade(req: Request, serverInstance: Server<WebSocketDa
   return new Response("WebSocket upgrade failed", { status: 500 });
 }
 
+function resolveRequestIp(req: Request, serverInstance: Server<WebSocketData>) {
+  const resolved = serverInstance.requestIP(req) as { address?: string } | string | null;
+  if (!resolved) return null;
+  if (typeof resolved === "string") return resolved;
+  if (typeof resolved.address === "string") return resolved.address;
+  return null;
+}
+
 async function routeRequest(req: Request, serverInstance: Server<WebSocketData>) {
   const url = new URL(req.url);
   const { pathname } = url;
   const session = sessionFromRequest(req);
+  const requestIp = resolveRequestIp(req, serverInstance);
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204 });
@@ -368,8 +377,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (staticResponse) return staticResponse;
 
     const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
-    if (aiTasksMatch) return handleAiTasks(url, aiTasksMatch);
-    if (pathname === "/ai/summary/latest") return handleLatestSummary(url);
+    if (aiTasksMatch) return handleAiTasks(req, url, aiTasksMatch, requestIp);
+    if (pathname === "/ai/summary/latest") return handleLatestSummary(req, url, requestIp);
     if (pathname === "/auth/session") return sessionHandler(req);
     if (pathname === "/auth/me") return me(req);
     const attachmentDownloadMatch = pathname.match(/^\/boards\/(\d+)\/attachments\/([^/]+)$/);
@@ -393,8 +402,8 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/boards/import") return handleBoardImport(req, session);
     if (pathname === "/auth/login") return login(req);
     if (pathname === "/auth/logout") return logout(req);
-    if (pathname === "/ai/summary") return handleSummaryPost(req);
-    if (pathname === "/ai/tasks") return handleAiTasksPost(req);
+    if (pathname === "/ai/summary") return handleSummaryPost(req, requestIp);
+    if (pathname === "/ai/tasks") return handleAiTasksPost(req, requestIp);
     if (pathname === "/todos") return handleTodoCreate(req, session);
     const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]), session);
