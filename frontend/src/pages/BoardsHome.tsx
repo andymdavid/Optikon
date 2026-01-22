@@ -994,7 +994,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 Open in new tab
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => beginRename(board)}>Rename</DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setOpenMenuId(null)
+                  window.setTimeout(() => beginRename(board), 0)
+                }}
+              >
+                Rename
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void duplicateBoard(board)}>Duplicate</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => openDetails(board)}>Board details</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void togglePrivacy(board)}>
