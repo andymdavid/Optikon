@@ -18,6 +18,13 @@ body,
   color: #0f172a;
 }
 
+.boards-home .account-menu {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 10;
+}
+
 
 .board-title {
   position: fixed;

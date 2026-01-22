@@ -1182,7 +1182,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   )
 
   return (
-    <div className="mx-auto max-w-[90%] py-10 text-slate-900">
+    <div className="boards-home mx-auto max-w-[90%] py-10 text-slate-900">
       <input
         ref={importInputRef}
         type="file"
