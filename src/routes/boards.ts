@@ -394,9 +394,8 @@ export function handleBoardDelete(boardId: number, session: Session | null) {
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
-  const role = resolveBoardRole(board, session);
-  if (!canEditBoard(role)) {
-    return jsonResponse({ message: "Forbidden." }, 403);
+  if (!isBoardOwner(board, session)) {
+    return jsonResponse({ message: "Only the board owner can delete." }, 403);
   }
   const deleted = deleteBoardRecord(boardId);
   if (!deleted) {

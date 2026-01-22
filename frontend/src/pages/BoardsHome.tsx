@@ -497,6 +497,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   const deleteBoard = async (board: BoardSummary) => {
+    if (!session?.pubkey || !board.ownerPubkey || session.pubkey !== board.ownerPubkey) {
+      setError('Only the board owner can delete.')
+      return
+    }
     const confirmed = window.confirm('Delete this board? This cannot be undone.')
     if (!confirmed) return
     try {
@@ -509,6 +513,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       if (detailsBoard && String(detailsBoard.id) === String(board.id)) {
         setDetailsBoard(null)
       }
+      setOpenMenuId(null)
     } catch (_err) {
       setError('Unable to delete board.')
     }
@@ -672,6 +677,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     const ownerAvatarUrl = detailsBoard.ownerPubkey
       ? avatarUrls[detailsBoard.ownerPubkey] ?? getAvatarFallback(detailsBoard.ownerPubkey)
       : null
+    const isOwner =
+      !!session?.pubkey &&
+      !!detailsBoard.ownerPubkey &&
+      session.pubkey === detailsBoard.ownerPubkey
     const createdAt = detailsBoard.createdAt ?? detailsBoard.updatedAt
     const modifiedAt = detailsBoard.updatedAt
     const handleSave = async () => {
@@ -787,6 +796,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             <Button
               variant="ghost"
               className="text-rose-600 hover:text-rose-600"
+              disabled={!isOwner}
               onClick={() => void deleteBoard(detailsBoard)}
             >
               Delete
@@ -1078,7 +1088,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 Leave
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => void archiveBoard(board)}>Archive</DropdownMenuItem>
-              <DropdownMenuItem className="text-rose-600 focus:text-rose-600" onSelect={() => {}}>
+              <DropdownMenuItem
+                className="text-rose-600 focus:text-rose-600"
+                disabled={
+                  !session?.pubkey ||
+                  !board.ownerPubkey ||
+                  session.pubkey !== board.ownerPubkey
+                }
+                onSelect={() => void deleteBoard(board)}
+              >
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
