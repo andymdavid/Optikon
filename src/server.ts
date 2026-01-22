@@ -36,6 +36,8 @@ import {
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import { AuthService } from "./services/auth";
+import { canViewBoard } from "./services/boardAccess";
+import { fetchBoardById } from "./services/boards";
 import { serveStatic, serveUpload } from "./static";
 
 import type { BoardElement } from "./shared/boardElements";
@@ -112,6 +114,21 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
       const boardId = extractBoardId(message.payload);
       if (!boardId) {
         sendJson(ws, { type: "error", payload: { message: "Invalid boardId" } });
+        return;
+      }
+      const boardIdNumber = Number(boardId);
+      if (!Number.isFinite(boardIdNumber)) {
+        sendJson(ws, { type: "error", payload: { message: "Invalid boardId" } });
+        return;
+      }
+      const board = fetchBoardById(boardIdNumber);
+      if (!board) {
+        sendJson(ws, { type: "error", payload: { message: "Board not found" } });
+        return;
+      }
+      if (!canViewBoard(board, ws.data.session)) {
+        sendJson(ws, { type: "error", payload: { message: "Forbidden" } });
+        ws.close();
         return;
       }
       const presenceUser = extractPresenceUser(message.payload);
