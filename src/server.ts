@@ -11,7 +11,7 @@ import {
 import { applyCorsHeaders, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
-import { handleAttachmentUpload } from "./routes/attachments";
+import { handleAttachmentDownload, handleAttachmentUpload } from "./routes/attachments";
 import { createAuthHandlers } from "./routes/auth";
 import {
   handleBoardCreate,
@@ -38,7 +38,7 @@ import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate }
 import { AuthService } from "./services/auth";
 import { canViewBoard } from "./services/boardAccess";
 import { fetchBoardById } from "./services/boards";
-import { serveStatic, serveUpload } from "./static";
+import { serveStatic } from "./static";
 
 import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
@@ -364,8 +364,6 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   }
 
   if (req.method === "GET") {
-    const uploadResponse = await serveUpload(pathname);
-    if (uploadResponse) return uploadResponse;
     const staticResponse = await serveStatic(pathname);
     if (staticResponse) return staticResponse;
 
@@ -374,6 +372,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (pathname === "/ai/summary/latest") return handleLatestSummary(url);
     if (pathname === "/auth/session") return sessionHandler(req);
     if (pathname === "/auth/me") return me(req);
+    const attachmentDownloadMatch = pathname.match(/^\/boards\/(\d+)\/attachments\/([^/]+)$/);
+    if (attachmentDownloadMatch) {
+      return handleAttachmentDownload(Number(attachmentDownloadMatch[1]), attachmentDownloadMatch[2], session);
+    }
     const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]), session);
     const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);

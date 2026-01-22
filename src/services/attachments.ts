@@ -2,7 +2,7 @@ import { mkdirSync } from "fs";
 import { dirname, extname, join } from "path";
 
 import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
-import { createAttachment, type Attachment } from "../db";
+import { createAttachment, getAttachment, type Attachment } from "../db";
 
 export function storeAttachment(params: {
   id: string;
@@ -45,4 +45,8 @@ export function buildUploadFilename(id: string, originalFilename: string, mimeTy
             : "";
   const extension = extFromMime || extFromName || "";
   return `${id}${extension}`;
+}
+
+export function fetchAttachmentById(boardId: number, attachmentId: string) {
+  return getAttachment(boardId, attachmentId);
 }

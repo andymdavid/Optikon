@@ -107,6 +107,12 @@ const initialCameraState: CameraState = {
 
 const API_BASE_URL = 'http://localhost:3025'
 const resolveImageUrl = (url: string) => (url.startsWith('/') ? `${API_BASE_URL}${url}` : url)
+const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => {
+  if (element.attachmentId && boardId) {
+    return `${API_BASE_URL}/boards/${boardId}/attachments/${element.attachmentId}`
+  }
+  return resolveImageUrl(element.url)
+}
 const STICKY_SIZE = 220
 const STICKY_MIN_SIZE = 40
 const BOARD_BACKGROUND = '#f7f7f8'
@@ -3177,9 +3183,9 @@ export function CanvasBoard({
     }
   }, [])
 
-  const ensureBoardImage = useCallback((url: string) => {
+  const ensureBoardImage = useCallback((element: ImageElement) => {
     const cache = imageCacheRef.current
-    const resolvedUrl = resolveImageUrl(url)
+    const resolvedUrl = resolveBoardImageUrl(boardId, element)
     if (cache.has(resolvedUrl)) return
     const image = new Image()
     image.onload = () => {
@@ -3194,7 +3200,7 @@ export function CanvasBoard({
     if (image.complete) {
       setImageCacheVersion((prev) => prev + 1)
     }
-  }, [])
+  }, [boardId])
 
   useEffect(() => {
     const pubkeys = new Set<string>()
@@ -3221,12 +3227,10 @@ export function CanvasBoard({
   }, [elements, ensureAvatarImage])
 
   useEffect(() => {
-    const urls = new Set<string>()
     Object.values(elements).forEach((element) => {
       if (!isImageElement(element)) return
-      if (element.url) urls.add(element.url)
+      ensureBoardImage(element)
     })
-    urls.forEach((url) => ensureBoardImage(url))
   }, [elements, ensureBoardImage])
   const setMarquee = useCallback(
     (next: MarqueeState | null | ((prev: MarqueeState | null) => MarqueeState | null)) => {
@@ -6443,7 +6447,8 @@ export function CanvasBoard({
           editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
         drawRoundedRectElement(ctx, renderShape, cameraState)
       } else if (isImageElement(element)) {
-        const image = imageCacheRef.current.get(resolveImageUrl(element.url)) ?? null
+        const resolvedUrl = resolveBoardImageUrl(boardId, element)
+        const image = imageCacheRef.current.get(resolvedUrl) ?? null
         drawImageElement(ctx, element, cameraState, image)
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })

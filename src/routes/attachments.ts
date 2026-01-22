@@ -1,7 +1,7 @@
 import { writeFile } from "fs/promises";
 
 import { jsonResponse } from "../http";
-import { buildUploadFilename, storeAttachment } from "../services/attachments";
+import { buildUploadFilename, fetchAttachmentById, storeAttachment } from "../services/attachments";
 import { canEditBoard, canViewBoard, resolveBoardRole } from "../services/boardAccess";
 import { fetchBoardById } from "../services/boards";
 
@@ -72,4 +72,33 @@ export async function handleAttachmentUpload(req: Request, boardId: number, sess
       createdAt: attachment.created_at,
     },
   }, 201);
+}
+
+export async function handleAttachmentDownload(
+  boardId: number,
+  attachmentId: string,
+  session: Session | null
+) {
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (!canViewBoard(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const attachment = fetchAttachmentById(boardId, attachmentId);
+  if (!attachment) {
+    return jsonResponse({ message: "Attachment not found." }, 404);
+  }
+  const file = Bun.file(attachment.storage_path);
+  if (!(await file.exists())) {
+    return jsonResponse({ message: "Attachment not found." }, 404);
+  }
+  const filename = attachment.original_filename.replace(/"/g, "");
+  return new Response(file, {
+    headers: {
+      "Content-Type": attachment.mime_type || "application/octet-stream",
+      "Content-Disposition": `inline; filename="${filename}"`,
+    },
+  });
 }

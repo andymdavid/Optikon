@@ -1,6 +1,6 @@
 import { extname, join, normalize } from "path";
 
-import { PUBLIC_DIR, STATIC_FILES, UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "./config";
+import { PUBLIC_DIR, STATIC_FILES } from "./config";
 
 const CONTENT_TYPE_MAP: Record<string, string> = {
   ".png": "image/png",
@@ -25,16 +25,6 @@ export async function serveStatic(pathname: string) {
   if (normalized.includes("..")) return null;
   const directPath = join(PUBLIC_DIR, normalized);
   return buildResponse(directPath);
-}
-
-export async function serveUpload(pathname: string) {
-  if (!pathname.startsWith(UPLOADS_PUBLIC_PATH)) return null;
-  const normalized = normalize(pathname).replace(/^\/+/, "");
-  if (normalized.includes("..")) return null;
-  const relative = normalized.slice(UPLOADS_PUBLIC_PATH.replace(/^\/+/, "").length).replace(/^\/+/, "");
-  if (!relative) return null;
-  const uploadPath = join(UPLOADS_DIR, relative);
-  return buildResponse(uploadPath);
 }
 
 async function buildResponse(path: string) {
