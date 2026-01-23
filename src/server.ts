@@ -1,6 +1,10 @@
 import {
   APP_NAME,
   APP_TAG,
+  RATE_LIMIT_AI_PER_WINDOW,
+  RATE_LIMIT_LOGIN_PER_WINDOW,
+  RATE_LIMIT_UPLOAD_PER_WINDOW,
+  RATE_LIMIT_WINDOW_MS,
   COOKIE_SECURE,
   LOGIN_EVENT_KIND,
   LOGIN_MAX_AGE_SECONDS,
@@ -8,7 +12,7 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SECONDS,
 } from "./config";
-import { applyCorsHeaders, withErrorHandling } from "./http";
+import { applyCorsHeaders, jsonResponse, withErrorHandling } from "./http";
 import { logError } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { handleAttachmentDownload, handleAttachmentUpload } from "./routes/attachments";
@@ -38,6 +42,7 @@ import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate }
 import { AuthService } from "./services/auth";
 import { canViewBoard } from "./services/boardAccess";
 import { fetchBoardById } from "./services/boards";
+import { RateLimiter } from "./services/rateLimit";
 import { serveStatic } from "./static";
 
 import type { BoardElement } from "./shared/boardElements";
@@ -333,6 +338,9 @@ const authService = new AuthService(
 );
 
 const { login, logout, session: sessionHandler, me, sessionFromRequest } = createAuthHandlers(authService, SESSION_COOKIE);
+const loginRateLimiter = new RateLimiter(RATE_LIMIT_WINDOW_MS, RATE_LIMIT_LOGIN_PER_WINDOW);
+const uploadRateLimiter = new RateLimiter(RATE_LIMIT_WINDOW_MS, RATE_LIMIT_UPLOAD_PER_WINDOW);
+const aiRateLimiter = new RateLimiter(RATE_LIMIT_WINDOW_MS, RATE_LIMIT_AI_PER_WINDOW);
 
 function handleWebSocketUpgrade(req: Request, serverInstance: Server<WebSocketData>, session: Session | null) {
   const upgradeHeader = req.headers.get("upgrade");
@@ -358,6 +366,20 @@ function resolveRequestIp(req: Request, serverInstance: Server<WebSocketData>) {
   return null;
 }
 
+function rateLimitKey(prefix: string, ip: string | null) {
+  return `${prefix}:${ip ?? "unknown"}`;
+}
+
+function enforceRateLimit(limiter: RateLimiter, key: string) {
+  const result = limiter.check(key);
+  if (result.allowed) return null;
+  const retryAfterSeconds = Math.ceil(result.retryAfterMs / 1000);
+  return jsonResponse(
+    { message: "Rate limit exceeded. Try again later.", retryAfterSeconds },
+    429
+  );
+}
+
 async function routeRequest(req: Request, serverInstance: Server<WebSocketData>) {
   const url = new URL(req.url);
   const { pathname } = url;
@@ -377,8 +399,16 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     if (staticResponse) return staticResponse;
 
     const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
-    if (aiTasksMatch) return handleAiTasks(req, url, aiTasksMatch, requestIp);
-    if (pathname === "/ai/summary/latest") return handleLatestSummary(req, url, requestIp);
+    if (aiTasksMatch) {
+      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+      if (limited) return limited;
+      return handleAiTasks(req, url, aiTasksMatch, requestIp);
+    }
+    if (pathname === "/ai/summary/latest") {
+      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+      if (limited) return limited;
+      return handleLatestSummary(req, url, requestIp);
+    }
     if (pathname === "/auth/session") return sessionHandler(req);
     if (pathname === "/auth/me") return me(req);
     const attachmentDownloadMatch = pathname.match(/^\/boards\/(\d+)\/attachments\/([^/]+)$/);
@@ -400,10 +430,22 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
   if (req.method === "POST") {
     if (pathname === "/boards") return handleBoardCreate(req, session);
     if (pathname === "/boards/import") return handleBoardImport(req, session);
-    if (pathname === "/auth/login") return login(req);
+    if (pathname === "/auth/login") {
+      const limited = enforceRateLimit(loginRateLimiter, rateLimitKey("auth-login", requestIp));
+      if (limited) return limited;
+      return login(req);
+    }
     if (pathname === "/auth/logout") return logout(req);
-    if (pathname === "/ai/summary") return handleSummaryPost(req, requestIp);
-    if (pathname === "/ai/tasks") return handleAiTasksPost(req, requestIp);
+    if (pathname === "/ai/summary") {
+      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+      if (limited) return limited;
+      return handleSummaryPost(req, requestIp);
+    }
+    if (pathname === "/ai/tasks") {
+      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+      if (limited) return limited;
+      return handleAiTasksPost(req, requestIp);
+    }
     if (pathname === "/todos") return handleTodoCreate(req, session);
     const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
     if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]), session);
@@ -416,7 +458,11 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
     const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
     if (boardLeaveMatch) return handleBoardLeave(Number(boardLeaveMatch[1]), session);
     const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
-    if (attachmentMatch) return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
+    if (attachmentMatch) {
+      const limited = enforceRateLimit(uploadRateLimiter, rateLimitKey("upload", requestIp));
+      if (limited) return limited;
+      return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
+    }
 
     const updateMatch = pathname.match(/^\/todos\/(\d+)\/update$/);
     if (updateMatch) return handleTodoUpdate(req, session, Number(updateMatch[1]));

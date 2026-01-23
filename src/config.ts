@@ -13,6 +13,10 @@ export const UPLOADS_DIR = join(import.meta.dir, "../data/uploads");
 export const UPLOADS_PUBLIC_PATH = "/uploads";
 export const AI_AGENT_TOKEN = (Bun.env.AI_AGENT_TOKEN ?? "").trim();
 export const AI_AGENT_ALLOW_REMOTE = Bun.env.AI_AGENT_ALLOW_REMOTE === "true";
+export const RATE_LIMIT_WINDOW_MS = Number(Bun.env.RATE_LIMIT_WINDOW_MS ?? 60_000);
+export const RATE_LIMIT_LOGIN_PER_WINDOW = Number(Bun.env.RATE_LIMIT_LOGIN_PER_WINDOW ?? 10);
+export const RATE_LIMIT_UPLOAD_PER_WINDOW = Number(Bun.env.RATE_LIMIT_UPLOAD_PER_WINDOW ?? 30);
+export const RATE_LIMIT_AI_PER_WINDOW = Number(Bun.env.RATE_LIMIT_AI_PER_WINDOW ?? 60);
 
 export const STATIC_FILES = new Map<string, string>([
   ["/favicon.ico", "favicon.png"],
