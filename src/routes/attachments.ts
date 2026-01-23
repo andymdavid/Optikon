@@ -1,10 +1,13 @@
 import { writeFile } from "fs/promises";
+import { basename } from "path";
 
+import { UPLOADS_DIR } from "../config";
 import { jsonResponse } from "../http";
 import { buildUploadFilename, fetchAttachmentById, storeAttachment } from "../services/attachments";
 import { canEditBoard, canViewBoard, resolveBoardRole } from "../services/boardAccess";
-import { fetchBoardById } from "../services/boards";
+import { fetchBoardById, fetchBoardElements } from "../services/boards";
 
+import type { BoardElement } from "../shared/boardElements";
 import type { Session } from "../types";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -86,7 +89,13 @@ export async function handleAttachmentDownload(
   if (!canViewBoard(board, session)) {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
-  const attachment = fetchAttachmentById(boardId, attachmentId);
+  let attachment = fetchAttachmentById(boardId, attachmentId);
+  if (!attachment) {
+    const legacy = await recoverLegacyAttachment(boardId, attachmentId, session);
+    if (legacy) {
+      attachment = legacy;
+    }
+  }
   if (!attachment) {
     return jsonResponse({ message: "Attachment not found." }, 404);
   }
@@ -101,4 +110,56 @@ export async function handleAttachmentDownload(
       "Content-Disposition": `inline; filename="${filename}"`,
     },
   });
+}
+
+async function recoverLegacyAttachment(
+  boardId: number,
+  attachmentId: string,
+  session: Session | null
+) {
+  const board = fetchBoardById(boardId);
+  if (!board) return null;
+  if (!canViewBoard(board, session)) return null;
+  const rows = fetchBoardElements(boardId);
+  const match = rows.find((row) => {
+    try {
+      const parsed = JSON.parse(row.props_json) as BoardElement;
+      return parsed?.type === "image" && parsed.attachmentId === attachmentId;
+    } catch (_error) {
+      return false;
+    }
+  });
+  if (!match) return null;
+  let element: BoardElement | null = null;
+  try {
+    element = JSON.parse(match.props_json) as BoardElement;
+  } catch (_error) {
+    return null;
+  }
+  if (!element || element.type !== "image") return null;
+  const image = element as BoardElement & { url?: string; mimeType?: string };
+  const url = typeof image.url === "string" ? image.url : "";
+  const marker = "/uploads/";
+  const index = url.indexOf(marker);
+  if (index === -1) return null;
+  const relativePath = url.slice(index + marker.length);
+  if (!relativePath || relativePath.includes("..")) return null;
+  const storagePath = `${UPLOADS_DIR}/${relativePath}`;
+  const file = Bun.file(storagePath);
+  if (!(await file.exists())) return null;
+  const originalFilename = basename(relativePath);
+  const mimeType =
+    typeof image.mimeType === "string" && image.mimeType.trim()
+      ? image.mimeType.trim()
+      : "application/octet-stream";
+  const created = storeAttachment({
+    id: attachmentId,
+    boardId,
+    ownerPubkey: session?.pubkey ?? null,
+    originalFilename,
+    mimeType,
+    size: file.size,
+    relativePath,
+  });
+  return created;
 }

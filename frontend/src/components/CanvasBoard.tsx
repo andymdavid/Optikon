@@ -107,9 +107,26 @@ const initialCameraState: CameraState = {
 
 const API_BASE_URL = 'http://localhost:3025'
 const resolveImageUrl = (url: string) => (url.startsWith('/') ? `${API_BASE_URL}${url}` : url)
+const extractAttachmentId = (url: string) => {
+  const marker = '/uploads/'
+  const index = url.indexOf(marker)
+  if (index === -1) return null
+  const remainder = url.slice(index + marker.length)
+  if (!remainder) return null
+  const base = remainder.split('/')[0]
+  if (!base) return null
+  const dot = base.lastIndexOf('.')
+  return dot > 0 ? base.slice(0, dot) : base
+}
 const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => {
   if (element.attachmentId && boardId) {
     return `${API_BASE_URL}/boards/${boardId}/attachments/${element.attachmentId}`
+  }
+  if (boardId && element.url && element.url.includes('/uploads/')) {
+    const inferredId = extractAttachmentId(element.url)
+    if (inferredId) {
+      return `${API_BASE_URL}/boards/${boardId}/attachments/${inferredId}`
+    }
   }
   return resolveImageUrl(element.url)
 }
@@ -1892,7 +1909,14 @@ function drawImageElement(
   ctx.scale(scaleFactor, scaleFactor)
   const width = bounds.width
   const height = bounds.height
-  if (image && image.complete) {
+  const canDraw =
+    !!image &&
+    image.complete &&
+    typeof image.naturalWidth === 'number' &&
+    typeof image.naturalHeight === 'number' &&
+    image.naturalWidth > 0 &&
+    image.naturalHeight > 0
+  if (canDraw) {
     ctx.drawImage(image, -width / 2, -height / 2, width, height)
   } else {
     ctx.fillStyle = '#e2e8f0'
@@ -3188,6 +3212,7 @@ export function CanvasBoard({
     const resolvedUrl = resolveBoardImageUrl(boardId, element)
     if (cache.has(resolvedUrl)) return
     const image = new Image()
+    image.crossOrigin = 'use-credentials'
     image.onload = () => {
       setImageCacheVersion((prev) => prev + 1)
     }
