@@ -13,7 +13,7 @@ import {
   SESSION_MAX_AGE_SECONDS,
 } from "./config";
 import { applyCorsHeaders, jsonResponse, withErrorHandling } from "./http";
-import { logError } from "./logger";
+import { error as logError, info as logInfo } from "./logger";
 import { handleAiTasks, handleAiTasksPost, handleLatestSummary, handleSummaryPost } from "./routes/ai";
 import { handleAttachmentDownload, handleAttachmentUpload } from "./routes/attachments";
 import { createAuthHandlers } from "./routes/auth";
@@ -366,6 +366,14 @@ function resolveRequestIp(req: Request, serverInstance: Server<WebSocketData>) {
   return null;
 }
 
+function ensureRequestId(req: Request) {
+  const request = req as Request & { requestId?: string };
+  if (!request.requestId) {
+    request.requestId = crypto.randomUUID();
+  }
+  return request.requestId;
+}
+
 function rateLimitKey(prefix: string, ip: string | null) {
   return `${prefix}:${ip ?? "unknown"}`;
 }
@@ -380,131 +388,167 @@ function enforceRateLimit(limiter: RateLimiter, key: string) {
   );
 }
 
+function formatErrorPayload(error: unknown) {
+  if (error instanceof Error) {
+    return { message: error.message, stack: error.stack, name: error.name };
+  }
+  return { message: String(error) };
+}
+
 async function routeRequest(req: Request, serverInstance: Server<WebSocketData>) {
   const url = new URL(req.url);
   const { pathname } = url;
   const session = sessionFromRequest(req);
   const requestIp = resolveRequestIp(req, serverInstance);
+  const requestId = ensureRequestId(req);
+  const startedAt = Date.now();
+  logInfo("request.start", {
+    requestId,
+    method: req.method,
+    path: pathname,
+    ip: requestIp,
+  });
+  let response: Response | null = null;
+  const respond = (next: Response) => {
+    response = next;
+    return next;
+  };
 
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204 });
+  try {
+    if (req.method === "OPTIONS") {
+      return respond(new Response(null, { status: 204 }));
+    }
+
+    if (pathname === "/ws") {
+      return respond(handleWebSocketUpgrade(req, serverInstance, session));
+    }
+
+    if (req.method === "GET") {
+      const staticResponse = await serveStatic(pathname);
+      if (staticResponse) return respond(staticResponse);
+
+      const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
+      if (aiTasksMatch) {
+        const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+        if (limited) return respond(limited);
+        return respond(handleAiTasks(req, url, aiTasksMatch, requestIp));
+      }
+      if (pathname === "/ai/summary/latest") {
+        const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+        if (limited) return respond(limited);
+        return respond(handleLatestSummary(req, url, requestIp));
+      }
+      if (pathname === "/auth/session") return respond(sessionHandler(req));
+      if (pathname === "/auth/me") return respond(me(req));
+      const attachmentDownloadMatch = pathname.match(/^\/boards\/(\d+)\/attachments\/([^/]+)$/);
+      if (attachmentDownloadMatch) {
+        return respond(
+          await handleAttachmentDownload(Number(attachmentDownloadMatch[1]), attachmentDownloadMatch[2], session)
+        );
+      }
+      const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+      if (boardElementsMatch) return respond(handleBoardElements(Number(boardElementsMatch[1]), session));
+      const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);
+      if (boardExportMatch) return respond(handleBoardExport(Number(boardExportMatch[1]), session));
+      const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+      if (boardMatch) return respond(handleBoardShowWithSession(Number(boardMatch[1]), session));
+      if (pathname === "/boards/presence")
+        return respond(handleBoardsPresence(collectOnlineUsersByBoard(), session));
+      if (pathname === "/boards") return respond(handleBoardsList(url, collectOnlineUsersByBoard(), session));
+      if (pathname === "/") return respond(handleHome(url, session));
+    }
+
+    if (req.method === "POST") {
+      if (pathname === "/boards") return respond(await handleBoardCreate(req, session));
+      if (pathname === "/boards/import") return respond(await handleBoardImport(req, session));
+      if (pathname === "/auth/login") {
+        const limited = enforceRateLimit(loginRateLimiter, rateLimitKey("auth-login", requestIp));
+        if (limited) return respond(limited);
+        return respond(await login(req));
+      }
+      if (pathname === "/auth/logout") return respond(logout(req));
+      if (pathname === "/ai/summary") {
+        const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+        if (limited) return respond(limited);
+        return respond(await handleSummaryPost(req, requestIp));
+      }
+      if (pathname === "/ai/tasks") {
+        const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
+        if (limited) return respond(limited);
+        return respond(await handleAiTasksPost(req, requestIp));
+      }
+      if (pathname === "/todos") return respond(await handleTodoCreate(req, session));
+      const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+      if (boardElementMatch)
+        return respond(await handleBoardElementCreate(req, Number(boardElementMatch[1]), session));
+      const boardArchiveMatch = pathname.match(/^\/boards\/(\d+)\/archive$/);
+      if (boardArchiveMatch) return respond(handleBoardArchive(Number(boardArchiveMatch[1]), session));
+      const boardUnarchiveMatch = pathname.match(/^\/boards\/(\d+)\/unarchive$/);
+      if (boardUnarchiveMatch) return respond(handleBoardUnarchive(Number(boardUnarchiveMatch[1]), session));
+      const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
+      if (boardDuplicateMatch) return respond(handleBoardDuplicate(Number(boardDuplicateMatch[1]), session));
+      const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
+      if (boardLeaveMatch) return respond(handleBoardLeave(Number(boardLeaveMatch[1]), session));
+      const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
+      if (attachmentMatch) {
+        const limited = enforceRateLimit(uploadRateLimiter, rateLimitKey("upload", requestIp));
+        if (limited) return respond(limited);
+        return respond(await handleAttachmentUpload(req, Number(attachmentMatch[1]), session));
+      }
+
+      const updateMatch = pathname.match(/^\/todos\/(\d+)\/update$/);
+      if (updateMatch) return respond(await handleTodoUpdate(req, session, Number(updateMatch[1])));
+
+      const stateMatch = pathname.match(/^\/todos\/(\d+)\/state$/);
+      if (stateMatch) return respond(await handleTodoState(req, session, Number(stateMatch[1])));
+
+      const deleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
+      if (deleteMatch) return respond(await handleTodoDelete(session, Number(deleteMatch[1])));
+    }
+
+    if (req.method === "PATCH") {
+      const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+      if (boardMatch) return respond(await handleBoardUpdate(req, Number(boardMatch[1]), session));
+      const starMatch = pathname.match(/^\/boards\/(\d+)\/star$/);
+      if (starMatch) return respond(await handleBoardStar(req, Number(starMatch[1]), session));
+    }
+
+    if (req.method === "PUT") {
+      const boardElementsBatchMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+      if (boardElementsBatchMatch) {
+        return respond(await handleBoardElementsBatchUpdate(req, Number(boardElementsBatchMatch[1]), session));
+      }
+      const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/([^/]+)$/);
+      if (boardElementUpdateMatch) {
+        return respond(
+          await handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2], session)
+        );
+      }
+    }
+
+    if (req.method === "DELETE") {
+      const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+      if (boardElementsDeleteMatch) {
+        return respond(await handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session));
+      }
+      const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+      if (boardMatch) return respond(await handleBoardDelete(Number(boardMatch[1]), session));
+
+      const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
+      if (todoDeleteMatch) return respond(await handleTodoDelete(session, Number(todoDeleteMatch[1])));
+    }
+
+    return respond(new Response("Not found", { status: 404 }));
+  } finally {
+    const status = (response as Response | null)?.status ?? 500;
+    logInfo("request.end", {
+      requestId,
+      method: req.method,
+      path: pathname,
+      status,
+      durationMs: Date.now() - startedAt,
+    });
   }
-
-  if (pathname === "/ws") {
-    return handleWebSocketUpgrade(req, serverInstance, session);
-  }
-
-  if (req.method === "GET") {
-    const staticResponse = await serveStatic(pathname);
-    if (staticResponse) return staticResponse;
-
-    const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
-    if (aiTasksMatch) {
-      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
-      if (limited) return limited;
-      return handleAiTasks(req, url, aiTasksMatch, requestIp);
-    }
-    if (pathname === "/ai/summary/latest") {
-      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
-      if (limited) return limited;
-      return handleLatestSummary(req, url, requestIp);
-    }
-    if (pathname === "/auth/session") return sessionHandler(req);
-    if (pathname === "/auth/me") return me(req);
-    const attachmentDownloadMatch = pathname.match(/^\/boards\/(\d+)\/attachments\/([^/]+)$/);
-    if (attachmentDownloadMatch) {
-      return handleAttachmentDownload(Number(attachmentDownloadMatch[1]), attachmentDownloadMatch[2], session);
-    }
-    const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementsMatch) return handleBoardElements(Number(boardElementsMatch[1]), session);
-    const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);
-    if (boardExportMatch) return handleBoardExport(Number(boardExportMatch[1]), session);
-    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-    if (boardMatch) return handleBoardShowWithSession(Number(boardMatch[1]), session);
-    if (pathname === "/boards/presence")
-      return handleBoardsPresence(collectOnlineUsersByBoard(), session);
-    if (pathname === "/boards") return handleBoardsList(url, collectOnlineUsersByBoard(), session);
-    if (pathname === "/") return handleHome(url, session);
-  }
-
-  if (req.method === "POST") {
-    if (pathname === "/boards") return handleBoardCreate(req, session);
-    if (pathname === "/boards/import") return handleBoardImport(req, session);
-    if (pathname === "/auth/login") {
-      const limited = enforceRateLimit(loginRateLimiter, rateLimitKey("auth-login", requestIp));
-      if (limited) return limited;
-      return login(req);
-    }
-    if (pathname === "/auth/logout") return logout(req);
-    if (pathname === "/ai/summary") {
-      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
-      if (limited) return limited;
-      return handleSummaryPost(req, requestIp);
-    }
-    if (pathname === "/ai/tasks") {
-      const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
-      if (limited) return limited;
-      return handleAiTasksPost(req, requestIp);
-    }
-    if (pathname === "/todos") return handleTodoCreate(req, session);
-    const boardElementMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementMatch) return handleBoardElementCreate(req, Number(boardElementMatch[1]), session);
-    const boardArchiveMatch = pathname.match(/^\/boards\/(\d+)\/archive$/);
-    if (boardArchiveMatch) return handleBoardArchive(Number(boardArchiveMatch[1]), session);
-    const boardUnarchiveMatch = pathname.match(/^\/boards\/(\d+)\/unarchive$/);
-    if (boardUnarchiveMatch) return handleBoardUnarchive(Number(boardUnarchiveMatch[1]), session);
-    const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
-    if (boardDuplicateMatch) return handleBoardDuplicate(Number(boardDuplicateMatch[1]), session);
-    const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
-    if (boardLeaveMatch) return handleBoardLeave(Number(boardLeaveMatch[1]), session);
-    const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
-    if (attachmentMatch) {
-      const limited = enforceRateLimit(uploadRateLimiter, rateLimitKey("upload", requestIp));
-      if (limited) return limited;
-      return handleAttachmentUpload(req, Number(attachmentMatch[1]), session);
-    }
-
-    const updateMatch = pathname.match(/^\/todos\/(\d+)\/update$/);
-    if (updateMatch) return handleTodoUpdate(req, session, Number(updateMatch[1]));
-
-    const stateMatch = pathname.match(/^\/todos\/(\d+)\/state$/);
-    if (stateMatch) return handleTodoState(req, session, Number(stateMatch[1]));
-
-    const deleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
-    if (deleteMatch) return handleTodoDelete(session, Number(deleteMatch[1]));
-  }
-
-  if (req.method === "PATCH") {
-    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-    if (boardMatch) return handleBoardUpdate(req, Number(boardMatch[1]), session);
-    const starMatch = pathname.match(/^\/boards\/(\d+)\/star$/);
-    if (starMatch) return handleBoardStar(req, Number(starMatch[1]), session);
-  }
-
-  if (req.method === "PUT") {
-    const boardElementsBatchMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementsBatchMatch) {
-      return handleBoardElementsBatchUpdate(req, Number(boardElementsBatchMatch[1]), session);
-    }
-    const boardElementUpdateMatch = pathname.match(/^\/boards\/(\d+)\/elements\/([^/]+)$/);
-    if (boardElementUpdateMatch) {
-      return handleBoardElementUpdate(req, Number(boardElementUpdateMatch[1]), boardElementUpdateMatch[2], session);
-    }
-  }
-
-  if (req.method === "DELETE") {
-    const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-    if (boardElementsDeleteMatch) {
-      return handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session);
-    }
-    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-    if (boardMatch) return handleBoardDelete(Number(boardMatch[1]), session);
-
-    const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
-    if (todoDeleteMatch) return handleTodoDelete(session, Number(todoDeleteMatch[1]));
-  }
-
-  return new Response("Not found", { status: 404 });
 }
 
 const server = Bun.serve<WebSocketData>({
@@ -512,7 +556,16 @@ const server = Bun.serve<WebSocketData>({
   websocket: websocketHandler,
   fetch: withErrorHandling(
     (req: Request, serverInstance: Server<WebSocketData>) => routeRequest(req, serverInstance),
-    (error) => logError("Request failed", error),
+    (error, req) => {
+      const requestId = ensureRequestId(req);
+      const url = new URL(req.url);
+      logError("request.error", {
+        requestId,
+        method: req.method,
+        path: url.pathname,
+        error: formatErrorPayload(error),
+      });
+    },
     (response) => {
       if (response.status === 101) return response;
       return applyCorsHeaders(response);

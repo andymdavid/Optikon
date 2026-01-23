@@ -61,7 +61,7 @@ export function applyCorsHeaders(response: Response) {
 
 export function withErrorHandling<TArgs extends unknown[]>(
   handler: (...args: TArgs) => Promise<Response> | Response,
-  onError?: (error: unknown) => void,
+  onError?: (error: unknown, ...args: TArgs) => void,
   decorateResponse?: (response: Response) => Response
 ) {
   return async (...args: TArgs) => {
@@ -69,7 +69,7 @@ export function withErrorHandling<TArgs extends unknown[]>(
       const response = await handler(...args);
       return decorateResponse ? decorateResponse(response) : response;
     } catch (error) {
-      onError?.(error);
+      onError?.(error, ...args);
       const response = new Response("Internal Server Error", { status: 500 });
       return decorateResponse ? decorateResponse(response) : response;
     }
