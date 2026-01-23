@@ -83,18 +83,14 @@ export type SessionRecord = {
 const db = new Database(Bun.env.DB_PATH || "do-the-other-stuff.sqlite");
 db.run("PRAGMA foreign_keys = ON");
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS todos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+type Migration = {
+  version: number;
+  up: (database: Database) => void;
+};
 
-const addColumn = (sql: string) => {
+const addColumn = (database: Database, sql: string) => {
   try {
-    db.run(sql);
+    database.run(sql);
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("duplicate column")) {
       throw error;
@@ -102,57 +98,8 @@ const addColumn = (sql: string) => {
   }
 };
 
-addColumn("ALTER TABLE todos ADD COLUMN description TEXT DEFAULT ''");
-addColumn("ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'sand'");
-addColumn("ALTER TABLE todos ADD COLUMN state TEXT NOT NULL DEFAULT 'new'");
-addColumn("ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
-addColumn("ALTER TABLE todos ADD COLUMN owner TEXT NOT NULL DEFAULT ''");
-addColumn("ALTER TABLE todos ADD COLUMN scheduled_for TEXT DEFAULT NULL");
-addColumn("ALTER TABLE todos ADD COLUMN tags TEXT DEFAULT ''");
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS ai_summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner TEXT NOT NULL,
-    summary_date TEXT NOT NULL,
-    day_ahead TEXT NULL,
-    week_ahead TEXT NULL,
-    suggestions TEXT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(owner, summary_date)
-  )
-`);
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS boards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_accessed_at TEXT,
-    starred INTEGER NOT NULL DEFAULT 0,
-    archived_at TEXT,
-    owner_pubkey TEXT NULL,
-    owner_npub TEXT NULL,
-    default_role TEXT NOT NULL DEFAULT 'editor',
-    is_private INTEGER NOT NULL DEFAULT 0
-  )
-`);
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS board_renouncements (
-    board_id INTEGER NOT NULL,
-    pubkey TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (board_id, pubkey),
-    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
-  )
-`);
-
-function ensureBoardsSchema() {
-  const info = db.query<{ name: string }, SQLQueryBindings[]>(`PRAGMA table_info('boards')`).all();
+function ensureBoardsSchema(database: Database) {
+  const info = database.query<{ name: string }, SQLQueryBindings[]>(`PRAGMA table_info('boards')`).all();
   const hasUpdatedAt = info.some((column) => column.name === "updated_at");
   const hasLastAccessedAt = info.some((column) => column.name === "last_accessed_at");
   const hasStarred = info.some((column) => column.name === "starred");
@@ -164,61 +111,59 @@ function ensureBoardsSchema() {
   const hasIsPrivate = info.some((column) => column.name === "is_private");
 
   if (!hasUpdatedAt) {
-    db.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
-    db.run(`UPDATE boards SET updated_at = created_at WHERE updated_at IS NULL`);
+    database.run(`ALTER TABLE boards ADD COLUMN updated_at TEXT`);
+    database.run(`UPDATE boards SET updated_at = created_at WHERE updated_at IS NULL`);
   }
 
   if (!hasLastAccessedAt) {
-    db.run(`ALTER TABLE boards ADD COLUMN last_accessed_at TEXT`);
+    database.run(`ALTER TABLE boards ADD COLUMN last_accessed_at TEXT`);
   }
 
   if (!hasStarred) {
-    db.run(`ALTER TABLE boards ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`);
+    database.run(`ALTER TABLE boards ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`);
   }
 
   if (!hasArchivedAt) {
-    db.run(`ALTER TABLE boards ADD COLUMN archived_at TEXT`);
+    database.run(`ALTER TABLE boards ADD COLUMN archived_at TEXT`);
   }
 
   if (!hasOwnerPubkey) {
-    db.run(`ALTER TABLE boards ADD COLUMN owner_pubkey TEXT NULL`);
+    database.run(`ALTER TABLE boards ADD COLUMN owner_pubkey TEXT NULL`);
   }
 
   if (!hasOwnerNpub) {
-    db.run(`ALTER TABLE boards ADD COLUMN owner_npub TEXT NULL`);
+    database.run(`ALTER TABLE boards ADD COLUMN owner_npub TEXT NULL`);
   }
 
   if (!hasDefaultRole) {
-    db.run(`ALTER TABLE boards ADD COLUMN default_role TEXT NOT NULL DEFAULT 'editor'`);
-    db.run(`UPDATE boards SET default_role = 'editor' WHERE default_role IS NULL OR default_role = ''`);
+    database.run(`ALTER TABLE boards ADD COLUMN default_role TEXT NOT NULL DEFAULT 'editor'`);
+    database.run(`UPDATE boards SET default_role = 'editor' WHERE default_role IS NULL OR default_role = ''`);
   }
 
   if (!hasDescription) {
-    db.run(`ALTER TABLE boards ADD COLUMN description TEXT NULL`);
+    database.run(`ALTER TABLE boards ADD COLUMN description TEXT NULL`);
   }
 
   if (!hasIsPrivate) {
-    db.run(`ALTER TABLE boards ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`);
-    db.run(`UPDATE boards SET is_private = 0 WHERE is_private IS NULL`);
+    database.run(`ALTER TABLE boards ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`);
+    database.run(`UPDATE boards SET is_private = 0 WHERE is_private IS NULL`);
   }
 }
 
-ensureBoardsSchema();
-
-function ensureBoardElementsSchema() {
-  const info = db.query<{ name: string; type: string }, SQLQueryBindings[]>(
+function ensureBoardElementsSchema(database: Database) {
+  const info = database.query<{ name: string; type: string }, SQLQueryBindings[]>(
     `PRAGMA table_info('board_elements')`
   ).all();
   const idColumn = info.find((column) => column.name === "id");
   if (!idColumn) {
-    createBoardElementsTable();
+    createBoardElementsTable(database);
     return;
   }
   if (idColumn.type?.toUpperCase() === "TEXT") return;
 
-  db.run(`ALTER TABLE board_elements RENAME TO board_elements_legacy`);
-  createBoardElementsTable();
-  const legacyRows = db
+  database.run(`ALTER TABLE board_elements RENAME TO board_elements_legacy`);
+  createBoardElementsTable(database);
+  const legacyRows = database
     .query<{
       id: number;
       board_id: number;
@@ -228,7 +173,7 @@ function ensureBoardElementsSchema() {
       updated_at: string;
     }, SQLQueryBindings[]>(`SELECT id, board_id, type, props_json, created_at, updated_at FROM board_elements_legacy`)
     .all();
-  const insertStmt = db.query<unknown, SQLQueryBindings[]>(
+  const insertStmt = database.query<unknown, SQLQueryBindings[]>(
     `INSERT OR REPLACE INTO board_elements (id, board_id, type, props_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`
   );
@@ -245,11 +190,11 @@ function ensureBoardElementsSchema() {
     if (!elementId) elementId = String(row.id);
     insertStmt.run(elementId, row.board_id, row.type, row.props_json, row.created_at, row.updated_at);
   }
-  db.run(`DROP TABLE board_elements_legacy`);
+  database.run(`DROP TABLE board_elements_legacy`);
 }
 
-function createBoardElementsTable() {
-  db.run(`
+function createBoardElementsTable(database: Database) {
+  database.run(`
     CREATE TABLE IF NOT EXISTS board_elements (
       id TEXT PRIMARY KEY,
       board_id INTEGER NOT NULL,
@@ -262,44 +207,175 @@ function createBoardElementsTable() {
   `);
 }
 
-ensureBoardElementsSchema();
+const MIGRATIONS: Migration[] = [
+  {
+    version: 1,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS todos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          done INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    },
+  },
+  {
+    version: 2,
+    up: (database) => {
+      addColumn(database, "ALTER TABLE todos ADD COLUMN description TEXT DEFAULT ''");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'sand'");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN state TEXT NOT NULL DEFAULT 'new'");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN owner TEXT NOT NULL DEFAULT ''");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN scheduled_for TEXT DEFAULT NULL");
+      addColumn(database, "ALTER TABLE todos ADD COLUMN tags TEXT DEFAULT ''");
+    },
+  },
+  {
+    version: 3,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS ai_summaries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner TEXT NOT NULL,
+          summary_date TEXT NOT NULL,
+          day_ahead TEXT NULL,
+          week_ahead TEXT NULL,
+          suggestions TEXT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(owner, summary_date)
+        )
+      `);
+    },
+  },
+  {
+    version: 4,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS boards (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          description TEXT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          last_accessed_at TEXT,
+          starred INTEGER NOT NULL DEFAULT 0,
+          archived_at TEXT,
+          owner_pubkey TEXT NULL,
+          owner_npub TEXT NULL,
+          default_role TEXT NOT NULL DEFAULT 'editor',
+          is_private INTEGER NOT NULL DEFAULT 0
+        )
+      `);
+    },
+  },
+  {
+    version: 5,
+    up: (database) => {
+      ensureBoardsSchema(database);
+    },
+  },
+  {
+    version: 6,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS board_renouncements (
+          board_id INTEGER NOT NULL,
+          pubkey TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (board_id, pubkey),
+          FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+        )
+      `);
+    },
+  },
+  {
+    version: 7,
+    up: (database) => {
+      ensureBoardElementsSchema(database);
+    },
+  },
+  {
+    version: 8,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS board_comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          element_id INTEGER NOT NULL,
+          author TEXT NOT NULL,
+          text TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(element_id) REFERENCES board_elements(id) ON DELETE CASCADE
+        )
+      `);
+    },
+  },
+  {
+    version: 9,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS attachments (
+          id TEXT PRIMARY KEY,
+          board_id INTEGER NOT NULL,
+          owner_pubkey TEXT NULL,
+          original_filename TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          storage_path TEXT NOT NULL,
+          public_url TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+        )
+      `);
+    },
+  },
+  {
+    version: 10,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          token TEXT PRIMARY KEY,
+          pubkey TEXT NOT NULL,
+          npub TEXT NOT NULL,
+          method TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        )
+      `);
+    },
+  },
+];
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS board_comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    element_id INTEGER NOT NULL,
-    author TEXT NOT NULL,
-    text TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(element_id) REFERENCES board_elements(id) ON DELETE CASCADE
-  )
-`);
+function getSchemaVersion(database: Database) {
+  try {
+    const row = database
+      .query<{ version: number }, SQLQueryBindings[]>(`SELECT version FROM schema_version LIMIT 1`)
+      .get();
+    return row?.version ?? 0;
+  } catch (_error) {
+    return 0;
+  }
+}
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS attachments (
-    id TEXT PRIMARY KEY,
-    board_id INTEGER NOT NULL,
-    owner_pubkey TEXT NULL,
-    original_filename TEXT NOT NULL,
-    mime_type TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    storage_path TEXT NOT NULL,
-    public_url TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
-  )
-`);
+function setSchemaVersion(database: Database, version: number) {
+  database.run(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`);
+  database.run(`DELETE FROM schema_version`);
+  database.run(`INSERT INTO schema_version (version) VALUES (?)`, [version]);
+}
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT PRIMARY KEY,
-    pubkey TEXT NOT NULL,
-    npub TEXT NOT NULL,
-    method TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
-  )
-`);
+function runMigrations(database: Database) {
+  const currentVersion = getSchemaVersion(database);
+  for (const migration of MIGRATIONS) {
+    if (migration.version <= currentVersion) continue;
+    migration.up(database);
+    setSchemaVersion(database, migration.version);
+  }
+}
+
+runMigrations(db);
 
 const listByOwnerStmt = db.query<Todo, SQLQueryBindings[]>(
   "SELECT * FROM todos WHERE deleted = 0 AND owner = ? ORDER BY created_at DESC"
