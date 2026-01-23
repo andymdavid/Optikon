@@ -31,6 +31,16 @@ Tracks users who have renounced access to a board.
 | `pubkey`     | TEXT    | Nostr pubkey                           |
 | `created_at` | TEXT    | Default `CURRENT_TIMESTAMP`            |
 
+### `board_members`
+Explicit per-board membership with roles.
+
+| Column       | Type    | Notes                                  |
+| ------------ | ------- | -------------------------------------- |
+| `board_id`   | INTEGER | FK to `boards`                         |
+| `pubkey`     | TEXT    | Nostr pubkey                           |
+| `role`       | TEXT    | `viewer` \| `commenter` \| `editor`     |
+| `created_at` | TEXT    | Default `CURRENT_TIMESTAMP`            |
+
 ### `attachments`
 Uploaded assets stored on disk and referenced by boards.
 

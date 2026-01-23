@@ -36,6 +36,9 @@ import {
   handleBoardDuplicate,
   handleBoardLeave,
   handleBoardDelete,
+  handleBoardMembersCreate,
+  handleBoardMembersDelete,
+  handleBoardMembersList,
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
@@ -446,10 +449,12 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
           await handleAttachmentDownload(Number(attachmentDownloadMatch[1]), attachmentDownloadMatch[2], session)
         );
       }
-      const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-      if (boardElementsMatch) return respond(handleBoardElements(Number(boardElementsMatch[1]), session));
-      const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);
-      if (boardExportMatch) return respond(handleBoardExport(Number(boardExportMatch[1]), session));
+    const boardElementsMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementsMatch) return respond(handleBoardElements(Number(boardElementsMatch[1]), session));
+    const boardMembersMatch = pathname.match(/^\/boards\/(\d+)\/members$/);
+    if (boardMembersMatch) return respond(handleBoardMembersList(Number(boardMembersMatch[1]), session));
+    const boardExportMatch = pathname.match(/^\/boards\/(\d+)\/export$/);
+    if (boardExportMatch) return respond(handleBoardExport(Number(boardExportMatch[1]), session));
       const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
       if (boardMatch) return respond(handleBoardShowWithSession(Number(boardMatch[1]), session));
       if (pathname === "/boards/presence")
@@ -487,8 +492,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
       if (boardUnarchiveMatch) return respond(handleBoardUnarchive(Number(boardUnarchiveMatch[1]), session));
       const boardDuplicateMatch = pathname.match(/^\/boards\/(\d+)\/duplicate$/);
       if (boardDuplicateMatch) return respond(handleBoardDuplicate(Number(boardDuplicateMatch[1]), session));
-      const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
-      if (boardLeaveMatch) return respond(handleBoardLeave(Number(boardLeaveMatch[1]), session));
+    const boardLeaveMatch = pathname.match(/^\/boards\/(\d+)\/leave$/);
+    if (boardLeaveMatch) return respond(handleBoardLeave(Number(boardLeaveMatch[1]), session));
+    const boardMembersMatch = pathname.match(/^\/boards\/(\d+)\/members$/);
+    if (boardMembersMatch) return respond(await handleBoardMembersCreate(req, Number(boardMembersMatch[1]), session));
       const attachmentMatch = pathname.match(/^\/boards\/(\d+)\/attachments$/);
       if (attachmentMatch) {
         const limited = enforceRateLimit(uploadRateLimiter, rateLimitKey("upload", requestIp));
@@ -526,13 +533,17 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
       }
     }
 
-    if (req.method === "DELETE") {
-      const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
-      if (boardElementsDeleteMatch) {
-        return respond(await handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session));
-      }
-      const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
-      if (boardMatch) return respond(await handleBoardDelete(Number(boardMatch[1]), session));
+  if (req.method === "DELETE") {
+    const boardElementsDeleteMatch = pathname.match(/^\/boards\/(\d+)\/elements$/);
+    if (boardElementsDeleteMatch) {
+      return respond(await handleBoardElementsDelete(req, Number(boardElementsDeleteMatch[1]), session));
+    }
+    const boardMemberDeleteMatch = pathname.match(/^\/boards\/(\d+)\/members\/([^/]+)$/);
+    if (boardMemberDeleteMatch) {
+      return respond(handleBoardMembersDelete(Number(boardMemberDeleteMatch[1]), boardMemberDeleteMatch[2], session));
+    }
+    const boardMatch = pathname.match(/^\/boards\/(\d+)$/);
+    if (boardMatch) return respond(await handleBoardDelete(Number(boardMatch[1]), session));
 
       const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
       if (todoDeleteMatch) return respond(await handleTodoDelete(session, Number(todoDeleteMatch[1])));

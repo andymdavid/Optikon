@@ -22,9 +22,13 @@ import {
   addBoardRenouncement,
   isBoardRenounced,
   listBoardRenouncements,
+  listBoardMembers,
+  getBoardMember,
+  upsertBoardMember,
+  deleteBoardMember,
 } from "../db";
 
-import type { Board, BoardElement } from "../db";
+import type { Board, BoardElement, BoardMember } from "../db";
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
 
 export function createBoardRecord(
@@ -118,6 +122,22 @@ export function fetchBoardAttachments(boardId: number) {
   return listBoardAttachments(boardId);
 }
 
+export function fetchBoardMembers(boardId: number) {
+  return listBoardMembers(boardId);
+}
+
+export function fetchBoardMember(boardId: number, pubkey: string) {
+  return getBoardMember(boardId, pubkey);
+}
+
+export function upsertBoardMemberRecord(boardId: number, pubkey: string, role: string) {
+  return upsertBoardMember(boardId, pubkey, role);
+}
+
+export function deleteBoardMemberRecord(boardId: number, pubkey: string) {
+  return deleteBoardMember(boardId, pubkey);
+}
+
 export function createBoardElementRecord(boardId: number, element: SharedBoardElement) {
   const propsJson = JSON.stringify(element ?? {});
   const record = insertOrUpdateBoardElement(boardId, element.id, element.type, propsJson);
@@ -154,4 +174,4 @@ export function createBoardElementsBatchRecord(boardId: number, elements: Shared
   return count;
 }
 
-export type { Board, BoardElement };
+export type { Board, BoardElement, BoardMember };

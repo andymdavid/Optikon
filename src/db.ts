@@ -71,6 +71,13 @@ export type Attachment = {
   created_at: string;
 };
 
+export type BoardMember = {
+  board_id: number;
+  pubkey: string;
+  role: string;
+  created_at: string;
+};
+
 export type SessionRecord = {
   token: string;
   pubkey: string;
@@ -347,6 +354,21 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS board_members (
+          board_id INTEGER NOT NULL,
+          pubkey TEXT NOT NULL,
+          role TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (board_id, pubkey),
+          FOREIGN KEY(board_id) REFERENCES boards(id) ON DELETE CASCADE
+        )
+      `);
+    },
+  },
 ];
 
 function getSchemaVersion(database: Database) {
@@ -589,6 +611,22 @@ const deleteExpiredSessionsStmt = db.query<unknown, SQLQueryBindings[]>(
 );
 const deleteBoardAttachmentsStmt = db.query<unknown, SQLQueryBindings[]>(
   `DELETE FROM attachments WHERE board_id = ?`
+);
+const upsertBoardMemberStmt = db.query<BoardMember, SQLQueryBindings[]>(
+  `INSERT INTO board_members (board_id, pubkey, role)
+   VALUES (?, ?, ?)
+   ON CONFLICT(board_id, pubkey) DO UPDATE SET
+     role = excluded.role
+   RETURNING *`
+);
+const listBoardMembersStmt = db.query<BoardMember, SQLQueryBindings[]>(
+  `SELECT * FROM board_members WHERE board_id = ? ORDER BY created_at ASC`
+);
+const getBoardMemberStmt = db.query<BoardMember, SQLQueryBindings[]>(
+  `SELECT * FROM board_members WHERE board_id = ? AND pubkey = ? LIMIT 1`
+);
+const deleteBoardMemberStmt = db.query<unknown, SQLQueryBindings[]>(
+  `DELETE FROM board_members WHERE board_id = ? AND pubkey = ?`
 );
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
@@ -871,7 +909,14 @@ export function getAttachment(boardId: number, attachmentId: string) {
 export function resetDatabase() {
   db.run("DELETE FROM todos");
   db.run("DELETE FROM ai_summaries");
-  db.run("DELETE FROM sqlite_sequence WHERE name IN ('todos', 'ai_summaries')");
+  db.run("DELETE FROM board_members");
+  db.run("DELETE FROM board_comments");
+  db.run("DELETE FROM board_elements");
+  db.run("DELETE FROM attachments");
+  db.run("DELETE FROM board_renouncements");
+  db.run("DELETE FROM boards");
+  db.run("DELETE FROM sessions");
+  db.run("DELETE FROM sqlite_sequence WHERE name IN ('todos', 'ai_summaries', 'board_comments', 'boards')");
 }
 
 export function createSessionRecord(record: {
@@ -908,4 +953,20 @@ export function deleteExpiredSessions(now: number) {
 
 export function deleteAttachmentsByBoard(boardId: number) {
   deleteBoardAttachmentsStmt.run(boardId);
+}
+
+export function upsertBoardMember(boardId: number, pubkey: string, role: string) {
+  return upsertBoardMemberStmt.get(boardId, pubkey, role) ?? null;
+}
+
+export function listBoardMembers(boardId: number) {
+  return listBoardMembersStmt.all(boardId);
+}
+
+export function getBoardMember(boardId: number, pubkey: string) {
+  return getBoardMemberStmt.get(boardId, pubkey) ?? null;
+}
+
+export function deleteBoardMember(boardId: number, pubkey: string) {
+  deleteBoardMemberStmt.run(boardId, pubkey);
 }

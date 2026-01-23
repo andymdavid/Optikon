@@ -2,6 +2,8 @@ import { existsSync } from "fs";
 import { copyFile } from "fs/promises";
 import { isAbsolute, join, normalize, relative, sep } from "path";
 
+import { nip19 } from "nostr-tools";
+
 import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
 import { jsonResponse, safeJson } from "../http";
 import { buildUploadFilename, deleteBoardAttachments, storeAttachment } from "../services/attachments";
@@ -25,8 +27,12 @@ import {
   fetchBoardElement,
   fetchBoardElements,
   fetchBoardAttachments,
+  fetchBoardMember,
+  fetchBoardMembers,
   fetchRenouncedBoardIds,
   isBoardRenouncedRecord,
+  deleteBoardMemberRecord,
+  upsertBoardMemberRecord,
   recordBoardRenouncement,
   touchBoardLastAccessedAtRecord,
   touchBoardUpdatedAtRecord,
@@ -205,6 +211,98 @@ export function handleBoardsPresence(
     filtered[boardId] = users;
   });
   return jsonResponse({ onlineUsersByBoard: filtered });
+}
+
+function normalizeMemberPubkey(payload: { pubkey?: unknown; npub?: unknown }) {
+  if (typeof payload.pubkey === "string" && payload.pubkey.trim()) {
+    return payload.pubkey.trim();
+  }
+  if (typeof payload.npub === "string" && payload.npub.trim()) {
+    try {
+      const decoded = nip19.decode(payload.npub.trim());
+      if (decoded.type === "npub") return decoded.data as string;
+    } catch (_error) {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function handleBoardMembersList(boardId: number, session: Session | null) {
+  if (!session?.pubkey) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (!isBoardOwner(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const members = fetchBoardMembers(boardId).map((member) => ({
+    pubkey: member.pubkey,
+    npub: nip19.npubEncode(member.pubkey),
+    role: normalizeBoardRole(member.role),
+    createdAt: member.created_at,
+  }));
+  return jsonResponse({ members });
+}
+
+export async function handleBoardMembersCreate(req: Request, boardId: number, session: Session | null) {
+  if (!session?.pubkey) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (!isBoardOwner(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const body = (await safeJson(req)) as { pubkey?: string; npub?: string; role?: string } | null;
+  if (!body) {
+    return jsonResponse({ message: "Invalid payload." }, 400);
+  }
+  const pubkey = normalizeMemberPubkey(body);
+  if (!pubkey) {
+    return jsonResponse({ message: "Invalid pubkey." }, 400);
+  }
+  const role = normalizeBoardRole(body.role ?? "viewer");
+  const member = upsertBoardMemberRecord(boardId, pubkey, role);
+  if (!member) {
+    return jsonResponse({ message: "Unable to add member." }, 500);
+  }
+  return jsonResponse({
+    member: {
+      pubkey: member.pubkey,
+      npub: nip19.npubEncode(member.pubkey),
+      role: normalizeBoardRole(member.role),
+      createdAt: member.created_at,
+    },
+  }, 201);
+}
+
+export function handleBoardMembersDelete(boardId: number, pubkeyParam: string, session: Session | null) {
+  if (!session?.pubkey) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
+  const board = fetchBoardById(boardId);
+  if (!board) {
+    return jsonResponse({ message: "Board not found." }, 404);
+  }
+  if (!isBoardOwner(board, session)) {
+    return jsonResponse({ message: "Forbidden." }, 403);
+  }
+  const pubkey = normalizeMemberPubkey({ pubkey: pubkeyParam, npub: pubkeyParam });
+  if (!pubkey) {
+    return jsonResponse({ message: "Invalid pubkey." }, 400);
+  }
+  const existing = fetchBoardMember(boardId, pubkey);
+  if (!existing) {
+    return jsonResponse({ ok: true });
+  }
+  deleteBoardMemberRecord(boardId, pubkey);
+  return jsonResponse({ ok: true });
 }
 
 export async function handleBoardUpdate(req: Request, boardId: number, session: Session | null) {
