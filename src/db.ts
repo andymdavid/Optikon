@@ -511,6 +511,9 @@ const deleteSessionStmt = db.query<unknown, SQLQueryBindings[]>(
 const deleteExpiredSessionsStmt = db.query<unknown, SQLQueryBindings[]>(
   `DELETE FROM sessions WHERE expires_at <= ?`
 );
+const deleteBoardAttachmentsStmt = db.query<unknown, SQLQueryBindings[]>(
+  `DELETE FROM attachments WHERE board_id = ?`
+);
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
   if (!owner) return [];
@@ -825,4 +828,8 @@ export function deleteSessionByToken(token: string) {
 
 export function deleteExpiredSessions(now: number) {
   deleteExpiredSessionsStmt.run(now);
+}
+
+export function deleteAttachmentsByBoard(boardId: number) {
+  deleteBoardAttachmentsStmt.run(boardId);
 }

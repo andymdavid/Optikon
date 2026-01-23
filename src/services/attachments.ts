@@ -1,8 +1,9 @@
 import { mkdirSync } from "fs";
+import { unlink } from "fs/promises";
 import { dirname, extname, join } from "path";
 
 import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
-import { createAttachment, getAttachment, type Attachment } from "../db";
+import { createAttachment, deleteAttachmentsByBoard, getAttachment, listBoardAttachments, type Attachment } from "../db";
 
 export function storeAttachment(params: {
   id: string;
@@ -49,4 +50,22 @@ export function buildUploadFilename(id: string, originalFilename: string, mimeTy
 
 export function fetchAttachmentById(boardId: number, attachmentId: string) {
   return getAttachment(boardId, attachmentId);
+}
+
+export async function deleteBoardAttachments(boardId: number) {
+  const attachments = listBoardAttachments(boardId);
+  for (const attachment of attachments) {
+    if (!attachment.storage_path) continue;
+    try {
+      await unlink(attachment.storage_path);
+    } catch (error) {
+      console.warn("Failed to delete attachment file", {
+        boardId,
+        attachmentId: attachment.id,
+        path: attachment.storage_path,
+        error,
+      });
+    }
+  }
+  deleteAttachmentsByBoard(boardId);
 }

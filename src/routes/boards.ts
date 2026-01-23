@@ -4,7 +4,7 @@ import { isAbsolute, join, normalize, relative, sep } from "path";
 
 import { UPLOADS_DIR, UPLOADS_PUBLIC_PATH } from "../config";
 import { jsonResponse, safeJson } from "../http";
-import { buildUploadFilename, storeAttachment } from "../services/attachments";
+import { buildUploadFilename, deleteBoardAttachments, storeAttachment } from "../services/attachments";
 import {
   canComment,
   canEditBoard,
@@ -386,7 +386,7 @@ export function handleBoardUnarchive(boardId: number, session: Session | null) {
   return jsonResponse({ ok: true });
 }
 
-export function handleBoardDelete(boardId: number, session: Session | null) {
+export async function handleBoardDelete(boardId: number, session: Session | null) {
   const board = fetchBoardById(boardId);
   if (!board) {
     return jsonResponse({ message: "Board not found." }, 404);
@@ -400,6 +400,7 @@ export function handleBoardDelete(boardId: number, session: Session | null) {
   if (!isBoardOwner(board, session)) {
     return jsonResponse({ message: "Only the board owner can delete." }, 403);
   }
+  await deleteBoardAttachments(boardId);
   const deleted = deleteBoardRecord(boardId);
   if (!deleted) {
     return jsonResponse({ message: "Unable to delete board." }, 500);
