@@ -1,6 +1,12 @@
 import { nip19 } from "nostr-tools";
 import { verifyEvent } from "nostr-tools/pure";
 
+import {
+  createSessionRecord,
+  deleteExpiredSessions,
+  deleteSessionByToken,
+  getSessionByToken,
+} from "../db";
 import { jsonResponse, serializeSessionCookie } from "../http";
 
 import type { LoginMethod, Session } from "../types";
@@ -18,8 +24,6 @@ type LoginEvent = {
 type ValidateResult = { ok: true } | { ok: false; message: string };
 
 export class AuthService {
-  private readonly sessions = new Map<string, Session>();
-
   constructor(
     private readonly sessionCookieName: string,
     private readonly appTag: string,
@@ -31,12 +35,26 @@ export class AuthService {
 
   getSession(token: string | null) {
     if (!token) return null;
-    return this.sessions.get(token) ?? null;
+    const now = Date.now();
+    deleteExpiredSessions(now);
+    const record = getSessionByToken(token);
+    if (!record) return null;
+    if (record.expires_at <= now) {
+      deleteSessionByToken(token);
+      return null;
+    }
+    return {
+      token: record.token,
+      pubkey: record.pubkey,
+      npub: record.npub,
+      method: record.method as LoginMethod,
+      createdAt: record.created_at,
+    };
   }
 
   destroySession(token: string | null) {
     if (!token) return;
-    this.sessions.delete(token);
+    deleteSessionByToken(token);
   }
 
   validateLoginEvent(method: LoginMethod, event: LoginEvent): ValidateResult {
@@ -56,14 +74,24 @@ export class AuthService {
 
   createSession(method: LoginMethod, event: LoginEvent) {
     const token = crypto.randomUUID();
+    const now = Date.now();
+    const expiresAt = now + this.sessionMaxAgeSeconds * 1000;
     const session: Session = {
       token,
       pubkey: event.pubkey,
       npub: nip19.npubEncode(event.pubkey),
       method,
-      createdAt: Date.now(),
+      createdAt: now,
     };
-    this.sessions.set(token, session);
+    deleteExpiredSessions(now);
+    createSessionRecord({
+      token,
+      pubkey: session.pubkey,
+      npub: session.npub,
+      method: session.method,
+      createdAt: session.createdAt,
+      expiresAt,
+    });
     return {
       session,
       cookie: serializeSessionCookie(token, this.sessionCookieName, this.sessionMaxAgeSeconds, this.cookieSecure),
@@ -79,7 +107,7 @@ export class AuthService {
 
   logout(token: string | null) {
     if (token) {
-      this.sessions.delete(token);
+      deleteSessionByToken(token);
     }
     const cleared = serializeSessionCookie(null, this.sessionCookieName, this.sessionMaxAgeSeconds, this.cookieSecure);
     return jsonResponse({ ok: true }, 200, cleared);

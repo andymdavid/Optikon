@@ -90,9 +90,21 @@ Selection rules:
 - Latest day summary: row where `summary_date` == today, ordered by `updated_at` desc.
 - Latest week summary: most recent row whose `summary_date` falls in the current week (Mon–Sun), preferring newest `updated_at`.
 
+### `sessions`
+Persisted auth sessions.
+
+| Column       | Type    | Notes                                  |
+| ------------ | ------- | -------------------------------------- |
+| `token`      | TEXT    | PK, session token                      |
+| `pubkey`     | TEXT    | Nostr pubkey                           |
+| `npub`       | TEXT    | Nostr npub                             |
+| `method`     | TEXT    | `ephemeral` \| `extension` \| `bunker` \| `secret` |
+| `created_at` | INTEGER | Epoch ms                               |
+| `expires_at` | INTEGER | Epoch ms; used for expiry checks       |
+
 ## Ownership & Auth
-- All DB rows include `owner` (npub). The web app uses nostr-auth sessions in memory (`src/server.ts`), not persisted.
-- AI endpoints are localhost-only and require `owner` as a query/body field; no auth token.
+- All DB rows include `owner` (npub). The web app uses persisted nostr-auth sessions in SQLite (`sessions` table).
+- AI endpoints are localhost-only by default and require an auth token when configured.
 
 ## Derived Lists
 - Active todos: `deleted = 0` and `state != 'done'`.

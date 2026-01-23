@@ -71,6 +71,15 @@ export type Attachment = {
   created_at: string;
 };
 
+export type SessionRecord = {
+  token: string;
+  pubkey: string;
+  npub: string;
+  method: string;
+  created_at: number;
+  expires_at: number;
+};
+
 const db = new Database(Bun.env.DB_PATH || "do-the-other-stuff.sqlite");
 db.run("PRAGMA foreign_keys = ON");
 
@@ -281,6 +290,17 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    pubkey TEXT NOT NULL,
+    npub TEXT NOT NULL,
+    method TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )
+`);
+
 const listByOwnerStmt = db.query<Todo, SQLQueryBindings[]>(
   "SELECT * FROM todos WHERE deleted = 0 AND owner = ? ORDER BY created_at DESC"
 );
@@ -476,6 +496,20 @@ const updateBoardElementStmt = db.query<BoardElement, SQLQueryBindings[]>(
 );
 const deleteBoardElementStmt = db.query<unknown, SQLQueryBindings[]>(
   `DELETE FROM board_elements WHERE id = ? AND board_id = ?`
+);
+const insertSessionStmt = db.query<SessionRecord, SQLQueryBindings[]>(
+  `INSERT INTO sessions (token, pubkey, npub, method, created_at, expires_at)
+   VALUES (?, ?, ?, ?, ?, ?)
+   RETURNING *`
+);
+const getSessionStmt = db.query<SessionRecord, SQLQueryBindings[]>(
+  `SELECT * FROM sessions WHERE token = ? LIMIT 1`
+);
+const deleteSessionStmt = db.query<unknown, SQLQueryBindings[]>(
+  `DELETE FROM sessions WHERE token = ?`
+);
+const deleteExpiredSessionsStmt = db.query<unknown, SQLQueryBindings[]>(
+  `DELETE FROM sessions WHERE expires_at <= ?`
 );
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
@@ -759,4 +793,36 @@ export function resetDatabase() {
   db.run("DELETE FROM todos");
   db.run("DELETE FROM ai_summaries");
   db.run("DELETE FROM sqlite_sequence WHERE name IN ('todos', 'ai_summaries')");
+}
+
+export function createSessionRecord(record: {
+  token: string;
+  pubkey: string;
+  npub: string;
+  method: string;
+  createdAt: number;
+  expiresAt: number;
+}) {
+  return (
+    insertSessionStmt.get(
+      record.token,
+      record.pubkey,
+      record.npub,
+      record.method,
+      record.createdAt,
+      record.expiresAt
+    ) ?? null
+  );
+}
+
+export function getSessionByToken(token: string) {
+  return getSessionStmt.get(token) ?? null;
+}
+
+export function deleteSessionByToken(token: string) {
+  deleteSessionStmt.run(token);
+}
+
+export function deleteExpiredSessions(now: number) {
+  deleteExpiredSessionsStmt.run(now);
 }
