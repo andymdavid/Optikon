@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 
 import type { TodoPriority, TodoState } from "./types";
 
@@ -143,7 +143,7 @@ db.run(`
 `);
 
 function ensureBoardsSchema() {
-  const info = db.query<{ name: string }>(`PRAGMA table_info('boards')`).all();
+  const info = db.query<{ name: string }, SQLQueryBindings[]>(`PRAGMA table_info('boards')`).all();
   const hasUpdatedAt = info.some((column) => column.name === "updated_at");
   const hasLastAccessedAt = info.some((column) => column.name === "last_accessed_at");
   const hasStarred = info.some((column) => column.name === "starred");
@@ -197,7 +197,9 @@ function ensureBoardsSchema() {
 ensureBoardsSchema();
 
 function ensureBoardElementsSchema() {
-  const info = db.query<{ name: string; type: string }>(`PRAGMA table_info('board_elements')`).all();
+  const info = db.query<{ name: string; type: string }, SQLQueryBindings[]>(
+    `PRAGMA table_info('board_elements')`
+  ).all();
   const idColumn = info.find((column) => column.name === "id");
   if (!idColumn) {
     createBoardElementsTable();
@@ -215,9 +217,9 @@ function ensureBoardElementsSchema() {
       props_json: string;
       created_at: string;
       updated_at: string;
-    }>(`SELECT id, board_id, type, props_json, created_at, updated_at FROM board_elements_legacy`)
+    }, SQLQueryBindings[]>(`SELECT id, board_id, type, props_json, created_at, updated_at FROM board_elements_legacy`)
     .all();
-  const insertStmt = db.query(
+  const insertStmt = db.query<unknown, SQLQueryBindings[]>(
     `INSERT OR REPLACE INTO board_elements (id, board_id, type, props_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`
   );
@@ -279,10 +281,10 @@ db.run(`
   )
 `);
 
-const listByOwnerStmt = db.query<Todo>(
+const listByOwnerStmt = db.query<Todo, SQLQueryBindings[]>(
   "SELECT * FROM todos WHERE deleted = 0 AND owner = ? ORDER BY created_at DESC"
 );
-const listScheduledStmt = db.query<Todo>(
+const listScheduledStmt = db.query<Todo, SQLQueryBindings[]>(
   `SELECT * FROM todos
    WHERE deleted = 0
      AND owner = ?
@@ -291,23 +293,25 @@ const listScheduledStmt = db.query<Todo>(
      AND date(scheduled_for) <= date(?)
    ORDER BY scheduled_for ASC, created_at DESC`
 );
-const listUnscheduledStmt = db.query<Todo>(
+const listUnscheduledStmt = db.query<Todo, SQLQueryBindings[]>(
   `SELECT * FROM todos
    WHERE deleted = 0
      AND owner = ?
      AND (scheduled_for IS NULL OR scheduled_for = '')
    ORDER BY created_at DESC`
 );
-const insertStmt = db.query(
+const insertStmt = db.query<Todo, SQLQueryBindings[]>(
   "INSERT INTO todos (title, description, priority, state, done, owner, tags) VALUES (?, '', 'sand', 'new', 0, ?, ?) RETURNING *"
 );
-const insertFullStmt = db.query<Todo>(
+const insertFullStmt = db.query<Todo, SQLQueryBindings[]>(
   `INSERT INTO todos (title, description, priority, state, done, owner, scheduled_for, tags)
    VALUES (?, ?, ?, ?, CASE WHEN ? = 'done' THEN 1 ELSE 0 END, ?, ?, ?)
    RETURNING *`
 );
-const deleteStmt = db.query("UPDATE todos SET deleted = 1 WHERE id = ? AND owner = ?");
-const updateStmt = db.query<Todo>(
+const deleteStmt = db.query<unknown, SQLQueryBindings[]>(
+  "UPDATE todos SET deleted = 1 WHERE id = ? AND owner = ?"
+);
+const updateStmt = db.query<Todo, SQLQueryBindings[]>(
   `UPDATE todos
    SET
     title = ?,
@@ -320,7 +324,7 @@ const updateStmt = db.query<Todo>(
    WHERE id = ? AND owner = ?
    RETURNING *`
 );
-const transitionStmt = db.query<Todo>(
+const transitionStmt = db.query<Todo, SQLQueryBindings[]>(
   `UPDATE todos
    SET
     state = ?,
@@ -328,7 +332,7 @@ const transitionStmt = db.query<Todo>(
    WHERE id = ? AND owner = ?
    RETURNING *`
 );
-const upsertSummaryStmt = db.query<Summary>(
+const upsertSummaryStmt = db.query<Summary, SQLQueryBindings[]>(
   `INSERT INTO ai_summaries (owner, summary_date, day_ahead, week_ahead, suggestions)
    VALUES (?, ?, ?, ?, ?)
    ON CONFLICT(owner, summary_date) DO UPDATE SET
@@ -338,37 +342,37 @@ const upsertSummaryStmt = db.query<Summary>(
      updated_at = CURRENT_TIMESTAMP
    RETURNING *`
 );
-const latestDaySummaryStmt = db.query<Summary>(
+const latestDaySummaryStmt = db.query<Summary, SQLQueryBindings[]>(
   `SELECT * FROM ai_summaries
    WHERE owner = ? AND summary_date = ?
    ORDER BY updated_at DESC
    LIMIT 1`
 );
-const latestWeekSummaryStmt = db.query<Summary>(
+const latestWeekSummaryStmt = db.query<Summary, SQLQueryBindings[]>(
   `SELECT * FROM ai_summaries
    WHERE owner = ? AND summary_date BETWEEN ? AND ?
    ORDER BY updated_at DESC
    LIMIT 1`
 );
-const insertAttachmentStmt = db.query<Attachment>(
+const insertAttachmentStmt = db.query<Attachment, SQLQueryBindings[]>(
   `INSERT INTO attachments
    (id, board_id, owner_pubkey, original_filename, mime_type, size, storage_path, public_url)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
    RETURNING *`
 );
-const listBoardAttachmentsStmt = db.query<Attachment>(
+const listBoardAttachmentsStmt = db.query<Attachment, SQLQueryBindings[]>(
   `SELECT * FROM attachments WHERE board_id = ? ORDER BY created_at ASC`
 );
-const getAttachmentStmt = db.query<Attachment>(
+const getAttachmentStmt = db.query<Attachment, SQLQueryBindings[]>(
   `SELECT * FROM attachments WHERE id = ? AND board_id = ? LIMIT 1`
 );
-const insertBoardStmt = db.query<Board>(
+const insertBoardStmt = db.query<Board, SQLQueryBindings[]>(
   `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role, is_private)
    VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
    RETURNING *`
 );
-const getBoardStmt = db.query<Board>(`SELECT * FROM boards WHERE id = ?`);
-const listBoardsStmt = db.query<Board>(
+const getBoardStmt = db.query<Board, SQLQueryBindings[]>(`SELECT * FROM boards WHERE id = ?`);
+const listBoardsStmt = db.query<Board, SQLQueryBindings[]>(
   `SELECT * FROM boards
    WHERE (? = 1 OR archived_at IS NULL)
    ORDER BY starred DESC,
@@ -376,82 +380,82 @@ const listBoardsStmt = db.query<Board>(
             last_accessed_at DESC,
             updated_at DESC`
 );
-const insertBoardRenouncementStmt = db.query(
+const insertBoardRenouncementStmt = db.query<unknown, SQLQueryBindings[]>(
   `INSERT OR IGNORE INTO board_renouncements (board_id, pubkey)
    VALUES (?, ?)`
 );
-const listBoardRenouncementsStmt = db.query<{ board_id: number }>(
+const listBoardRenouncementsStmt = db.query<{ board_id: number }, SQLQueryBindings[]>(
   `SELECT board_id FROM board_renouncements WHERE pubkey = ?`
 );
-const isBoardRenouncedStmt = db.query<{ board_id: number }>(
+const isBoardRenouncedStmt = db.query<{ board_id: number }, SQLQueryBindings[]>(
   `SELECT board_id FROM board_renouncements WHERE board_id = ? AND pubkey = ? LIMIT 1`
 );
-const updateBoardStarredStmt = db.query<Board>(
+const updateBoardStarredStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET starred = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const updateBoardDefaultRoleStmt = db.query<Board>(
+const updateBoardDefaultRoleStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET default_role = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const updateBoardPrivacyStmt = db.query<Board>(
+const updateBoardPrivacyStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET is_private = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const deleteBoardStmt = db.query<Board>(`DELETE FROM boards WHERE id = ? RETURNING *`);
-const archiveBoardStmt = db.query<Board>(
+const deleteBoardStmt = db.query<Board, SQLQueryBindings[]>(`DELETE FROM boards WHERE id = ? RETURNING *`);
+const archiveBoardStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const unarchiveBoardStmt = db.query<Board>(
+const unarchiveBoardStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const insertBoardCopyStmt = db.query<Board>(
+const insertBoardCopyStmt = db.query<Board, SQLQueryBindings[]>(
   `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role, is_private)
    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?, ?)
    RETURNING *`
 );
-const updateBoardTitleStmt = db.query<Board>(
+const updateBoardTitleStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET title = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const updateBoardDescriptionStmt = db.query<Board>(
+const updateBoardDescriptionStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET description = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const touchBoardUpdatedAtStmt = db.query<Board>(
+const touchBoardUpdatedAtStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET updated_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const touchBoardLastAccessedAtStmt = db.query<Board>(
+const touchBoardLastAccessedAtStmt = db.query<Board, SQLQueryBindings[]>(
   `UPDATE boards
    SET last_accessed_at = CURRENT_TIMESTAMP
    WHERE id = ?
    RETURNING *`
 );
-const listBoardElementsStmt = db.query<BoardElement>(
+const listBoardElementsStmt = db.query<BoardElement, SQLQueryBindings[]>(
   `SELECT * FROM board_elements
    WHERE board_id = ?
    ORDER BY created_at ASC`
 );
-const upsertBoardElementStmt = db.query<BoardElement>(
+const upsertBoardElementStmt = db.query<BoardElement, SQLQueryBindings[]>(
   `INSERT INTO board_elements (id, board_id, type, props_json)
    VALUES (?, ?, ?, ?)
    ON CONFLICT(id) DO UPDATE SET
@@ -461,16 +465,18 @@ const upsertBoardElementStmt = db.query<BoardElement>(
      updated_at = CURRENT_TIMESTAMP
    RETURNING *`
 );
-const getBoardElementStmt = db.query<BoardElement>(
+const getBoardElementStmt = db.query<BoardElement, SQLQueryBindings[]>(
   `SELECT * FROM board_elements WHERE id = ? AND board_id = ?`
 );
-const updateBoardElementStmt = db.query<BoardElement>(
+const updateBoardElementStmt = db.query<BoardElement, SQLQueryBindings[]>(
   `UPDATE board_elements
    SET props_json = ?, updated_at = CURRENT_TIMESTAMP
    WHERE id = ? AND board_id = ?
    RETURNING *`
 );
-const deleteBoardElementStmt = db.query(`DELETE FROM board_elements WHERE id = ? AND board_id = ?`);
+const deleteBoardElementStmt = db.query<unknown, SQLQueryBindings[]>(
+  `DELETE FROM board_elements WHERE id = ? AND board_id = ?`
+);
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
   if (!owner) return [];
@@ -565,7 +571,7 @@ export function transitionTodo(id: number, owner: string, state: TodoState) {
 
 export function assignAllTodosToOwner(npub: string) {
   if (!npub) return;
-  db.run("UPDATE todos SET owner = ? WHERE owner = '' OR owner IS NULL", npub);
+  db.run("UPDATE todos SET owner = ? WHERE owner = '' OR owner IS NULL", [npub]);
 }
 
 export function upsertSummary({

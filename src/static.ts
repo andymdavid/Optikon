@@ -31,8 +31,10 @@ async function buildResponse(path: string) {
   const file = Bun.file(path);
   if (!(await file.exists())) return null;
   const contentType = contentTypeFor(path);
-  const headers = contentType ? { "Content-Type": contentType } : {};
-  return new Response(file, { headers });
+  if (!contentType) {
+    return new Response(file);
+  }
+  return new Response(file, { headers: { "Content-Type": contentType } });
 }
 
 function contentTypeFor(filePath: string) {
