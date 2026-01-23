@@ -595,6 +595,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       setDetailsMembersError('Enter a npub or pubkey to invite.')
       return
     }
+    if (!target.startsWith('npub') && !/^([0-9a-f]{64})$/i.test(target)) {
+      setDetailsMembersError('Enter a valid npub or 64-char hex pubkey.')
+      return
+    }
     setInviteSaving(true)
     setDetailsMembersError(null)
     try {
@@ -964,7 +968,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
                 {detailsMembersLoading ? (
                   <div className="text-xs text-slate-400">Loading members...</div>
                 ) : detailsMembers.length === 0 ? (
-                  <div className="text-xs text-slate-400">No members yet.</div>
+                  <div className="text-xs text-slate-400">No members yet. Owner has full access.</div>
                 ) : (
                   detailsMembers.map((member) => (
                     <div

@@ -268,6 +268,9 @@ export async function handleBoardMembersCreate(req: Request, boardId: number, se
     return jsonResponse({ message: "Invalid pubkey." }, 400);
   }
   const role = normalizeBoardRole(body.role ?? "viewer");
+  if (board.owner_pubkey && pubkey === board.owner_pubkey) {
+    return jsonResponse({ message: "Owner already has full access." }, 400);
+  }
   const member = upsertBoardMemberRecord(boardId, pubkey, role);
   if (!member) {
     return jsonResponse({ message: "Unable to add member." }, 500);
