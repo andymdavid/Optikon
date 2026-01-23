@@ -114,6 +114,26 @@ describe("board access", () => {
     expect(boardAccess.canViewBoard(board!, otherSession)).toBe(false);
   });
 
+  test("members can access private boards with assigned role", () => {
+    const board = boards.createBoardRecord(
+      "Private Members",
+      null,
+      { pubkey: OWNER_PUBKEY, npub: OWNER_NPUB },
+      "viewer",
+      1
+    );
+    boards.upsertBoardMemberRecord(board!.id, OTHER_PUBKEY, "commenter");
+    const memberSession = {
+      token: "t-member",
+      pubkey: OTHER_PUBKEY,
+      npub: OTHER_NPUB,
+      method: "ephemeral" as const,
+      createdAt: Date.now(),
+    };
+    expect(boardAccess.canViewBoard(board!, memberSession)).toBe(true);
+    expect(boardAccess.resolveBoardRole(board!, memberSession)).toBe("commenter");
+  });
+
   test("export requires editor or owner", () => {
     const ownerBoard = boards.createBoardRecord(
       "Owner Export",

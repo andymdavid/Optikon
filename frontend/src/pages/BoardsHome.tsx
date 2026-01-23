@@ -61,6 +61,13 @@ type BoardSummary = {
   isPrivate?: boolean
 }
 
+type BoardMember = {
+  pubkey: string
+  npub: string
+  role: 'viewer' | 'commenter' | 'editor'
+  createdAt: string
+}
+
 const normalizeBoard = (board: BoardSummary): BoardSummary => ({
   ...board,
   isPrivate: Boolean(board.isPrivate),
@@ -167,6 +174,13 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [detailsTitle, setDetailsTitle] = useState('')
   const [detailsDescription, setDetailsDescription] = useState('')
   const [detailsSaving, setDetailsSaving] = useState(false)
+  const [detailsMembers, setDetailsMembers] = useState<BoardMember[]>([])
+  const [detailsMembersLoading, setDetailsMembersLoading] = useState(false)
+  const [detailsMembersError, setDetailsMembersError] = useState<string | null>(null)
+  const [inviteNpub, setInviteNpub] = useState('')
+  const [inviteRole, setInviteRole] = useState<'viewer' | 'commenter' | 'editor'>('viewer')
+  const [inviteSaving, setInviteSaving] = useState(false)
+  const [removingMember, setRemovingMember] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
@@ -535,6 +549,110 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     setDetailsBoard(board)
     setDetailsTitle(board.title)
     setDetailsDescription(board.description ?? '')
+    setInviteNpub('')
+    setInviteRole('viewer')
+    setDetailsMembersError(null)
+  }
+
+  const reloadMembers = useCallback(async () => {
+    if (!detailsBoard || !session?.pubkey || !detailsBoard.ownerPubkey) {
+      setDetailsMembers([])
+      setDetailsMembersLoading(false)
+      return
+    }
+    if (session.pubkey !== detailsBoard.ownerPubkey) {
+      setDetailsMembers([])
+      setDetailsMembersLoading(false)
+      return
+    }
+    setDetailsMembersLoading(true)
+    setDetailsMembersError(null)
+    try {
+      const response = await fetch(`${apiBaseUrl}/boards/${detailsBoard.id}/members`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Unable to load members')
+      const data = (await response.json()) as { members?: BoardMember[] }
+      setDetailsMembers(data.members ?? [])
+    } catch (_err) {
+      setDetailsMembersError('Unable to load members.')
+      setDetailsMembers([])
+    } finally {
+      setDetailsMembersLoading(false)
+    }
+  }, [apiBaseUrl, detailsBoard, session])
+
+  useEffect(() => {
+    void reloadMembers()
+  }, [reloadMembers])
+
+  const handleInviteMember = async () => {
+    if (!detailsBoard || !session?.pubkey || !detailsBoard.ownerPubkey) return
+    if (session.pubkey !== detailsBoard.ownerPubkey) return
+    if (inviteSaving) return
+    const target = inviteNpub.trim()
+    if (!target) {
+      setDetailsMembersError('Enter a npub or pubkey to invite.')
+      return
+    }
+    setInviteSaving(true)
+    setDetailsMembersError(null)
+    try {
+      const payload =
+        target.startsWith('npub') ? { npub: target, role: inviteRole } : { pubkey: target, role: inviteRole }
+      const response = await fetch(`${apiBaseUrl}/boards/${detailsBoard.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        let message = 'Unable to add member.'
+        try {
+          const data = (await response.json()) as { message?: string }
+          if (data?.message) message = data.message
+        } catch (_err) {}
+        throw new Error(message)
+      }
+      setInviteNpub('')
+      void reloadMembers()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to add member.'
+      setDetailsMembersError(message)
+    } finally {
+      setInviteSaving(false)
+    }
+  }
+
+  const handleRemoveMember = async (pubkey: string) => {
+    if (!detailsBoard || !session?.pubkey || !detailsBoard.ownerPubkey) return
+    if (session.pubkey !== detailsBoard.ownerPubkey) return
+    if (removingMember) return
+    setRemovingMember(pubkey)
+    setDetailsMembersError(null)
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/boards/${detailsBoard.id}/members/${encodeURIComponent(pubkey)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) {
+        let message = 'Unable to remove member.'
+        try {
+          const data = (await response.json()) as { message?: string }
+          if (data?.message) message = data.message
+        } catch (_err) {}
+        throw new Error(message)
+      }
+      void reloadMembers()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to remove member.'
+      setDetailsMembersError(message)
+    } finally {
+      setRemovingMember(null)
+    }
   }
 
   const copyBoardLink = async (board: BoardSummary) => {
@@ -808,6 +926,69 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               </div>
             </div>
           </div>
+
+          {isOwner ? (
+            <div className="mt-6 rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Members</h3>
+                  <p className="mt-1 text-xs text-slate-400">Invite people by npub or pubkey.</p>
+                </div>
+                <span className="text-xs text-slate-400">{detailsMembers.length} members</span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_160px_auto]">
+                <Input
+                  placeholder="npub1... or pubkey"
+                  value={inviteNpub}
+                  onChange={(event) => setInviteNpub(event.target.value)}
+                  disabled={inviteSaving}
+                />
+                <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as BoardMember['role'])}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="commenter">Commenter</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={() => void handleInviteMember()} disabled={inviteSaving}>
+                  Invite
+                </Button>
+              </div>
+              {detailsMembersError && (
+                <p className="mt-2 text-xs text-rose-500">{detailsMembersError}</p>
+              )}
+              <div className="mt-4 space-y-2">
+                {detailsMembersLoading ? (
+                  <div className="text-xs text-slate-400">Loading members...</div>
+                ) : detailsMembers.length === 0 ? (
+                  <div className="text-xs text-slate-400">No members yet.</div>
+                ) : (
+                  detailsMembers.map((member) => (
+                    <div
+                      key={member.pubkey}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm text-slate-700">{formatNpub(member.npub)}</span>
+                        <span className="text-xs uppercase text-slate-400">{member.role}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleRemoveMember(member.pubkey)}
+                        disabled={removingMember === member.pubkey}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <Button
