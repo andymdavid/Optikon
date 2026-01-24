@@ -503,22 +503,6 @@ const isElbowVariant = (value: unknown): value is ElbowVariant => value === 'HVH
 const getDefaultElbowVariant = (start: { x: number; y: number }, end: { x: number; y: number }): ElbowVariant =>
   Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ? 'VHV' : 'HVH'
 
-const clampElbowOffset = (
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  variant: ElbowVariant,
-  offset: number
-) => {
-  if (variant === 'HVH') {
-    const min = Math.min(start.x, end.x)
-    const max = Math.max(start.x, end.x)
-    return clamp(offset, min, max)
-  }
-  const min = Math.min(start.y, end.y)
-  const max = Math.max(start.y, end.y)
-  return clamp(offset, min, max)
-}
-
 const getOrthogonalPoints = (
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -570,7 +554,7 @@ const resolveOrthogonalState = (
       ? element.elbowOffset
       : inferred?.offset ??
         (variant === 'HVH' ? start.x + (end.x - start.x) / 2 : start.y + (end.y - start.y) / 2)
-  const offset = clampElbowOffset(start, end, variant, rawOffset)
+  const offset = rawOffset
   return {
     variant,
     offset,
@@ -5652,20 +5636,11 @@ export function CanvasBoard({
           const variant = segmentState.variant
           const nextOffset =
             segmentState.orientation === 'horizontal' ? boardPoint.y : boardPoint.x
-          const start = resolveLineEndpointPosition(target, 'start', {
-            resolveElement: (elementId) => prev[elementId],
-            measureCtx: getSharedMeasureContext(),
-          })
-          const end = resolveLineEndpointPosition(target, 'end', {
-            resolveElement: (elementId) => prev[elementId],
-            measureCtx: getSharedMeasureContext(),
-          })
-          const clampedOffset = clampElbowOffset(start, end, variant, nextOffset)
           updatedElement = {
             ...target,
             orthogonal: true,
             elbowVariant: variant,
-            elbowOffset: clampedOffset,
+            elbowOffset: nextOffset,
             points: undefined,
           }
           return { ...prev, [target.id]: updatedElement }
@@ -5915,8 +5890,10 @@ export function CanvasBoard({
           if (creation.kind === 'elbow') {
             const startPoint = creation.start
             const variant = getDefaultElbowVariant(startPoint, targetPoint)
-            const rawOffset = variant === 'HVH' ? startPoint.x + (targetPoint.x - startPoint.x) / 2 : startPoint.y + (targetPoint.y - startPoint.y) / 2
-            const offset = clampElbowOffset(startPoint, targetPoint, variant, rawOffset)
+            const offset =
+              variant === 'HVH'
+                ? startPoint.x + (targetPoint.x - startPoint.x) / 2
+                : startPoint.y + (targetPoint.y - startPoint.y) / 2
             updated = {
               ...updated,
               orthogonal: true,
