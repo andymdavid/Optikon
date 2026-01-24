@@ -203,6 +203,7 @@ export interface LineElement extends CanvasElement {
   orthogonal?: boolean
   elbowVariant?: 'HVH' | 'VHV'
   elbowOffset?: number
+  elbowAuto?: boolean
   stroke?: string
   strokeWidth?: number
   startArrow?: boolean

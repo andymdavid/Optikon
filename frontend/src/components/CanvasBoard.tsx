@@ -524,6 +524,12 @@ type ElbowVariant = 'HVH' | 'VHV'
 
 const isElbowVariant = (value: unknown): value is ElbowVariant => value === 'HVH' || value === 'VHV'
 
+const getAnchorPreferredVariant = (anchor: ConnectorAnchor | null): ElbowVariant | null => {
+  if (anchor === 'top' || anchor === 'bottom') return 'HVH'
+  if (anchor === 'left' || anchor === 'right') return 'VHV'
+  return null
+}
+
 const getDefaultElbowVariant = (start: { x: number; y: number }, end: { x: number; y: number }): ElbowVariant =>
   Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ? 'VHV' : 'HVH'
 
@@ -570,9 +576,14 @@ const resolveOrthogonalState = (
   const collapsed = start.x === end.x || start.y === end.y
   const pointsSource = Array.isArray(element.points) ? element.points : []
   const inferred = inferElbowFromPoints(start, end, pointsSource)
-  const variant = isElbowVariant(element.elbowVariant)
+  let variant = isElbowVariant(element.elbowVariant)
     ? element.elbowVariant
     : inferred?.variant ?? getDefaultElbowVariant(start, end)
+  if (element.elbowAuto !== false) {
+    const endPreferred = getAnchorPreferredVariant(element.endBinding?.anchor ?? null)
+    const startPreferred = getAnchorPreferredVariant(element.startBinding?.anchor ?? null)
+    variant = endPreferred ?? startPreferred ?? variant
+  }
   const rawOffset =
     typeof element.elbowOffset === 'number' && Number.isFinite(element.elbowOffset)
       ? element.elbowOffset
@@ -1255,6 +1266,7 @@ function cloneElementForPaste(
         y2: element.y2 + dy,
         points,
         elbowOffset,
+        elbowAuto: element.elbowAuto,
         startBinding,
         endBinding,
       }
@@ -1625,6 +1637,7 @@ function parseLineElement(raw: unknown): LineElement | null {
     typeof element.elbowOffset === 'number' && Number.isFinite(element.elbowOffset)
       ? element.elbowOffset
       : undefined
+  const elbowAuto = element.elbowAuto !== false
   const points = Array.isArray(element.points)
     ? element.points
         .map((point) =>
@@ -1649,6 +1662,7 @@ function parseLineElement(raw: unknown): LineElement | null {
     orthogonal: element.orthogonal === true,
     elbowVariant,
     elbowOffset,
+    elbowAuto,
     startBinding: parseLineEndpointBindingField(element.startBinding) ?? undefined,
     endBinding: parseLineEndpointBindingField(element.endBinding) ?? undefined,
   }
@@ -5442,6 +5456,7 @@ export function CanvasBoard({
             points: undefined,
             elbowVariant: isElbowTool ? defaultVariant : undefined,
             elbowOffset: isElbowTool ? defaultOffset : undefined,
+            elbowAuto: isElbowTool ? true : undefined,
           }
           if (initialBinding) {
             newElement = { ...newElement, startBinding: initialBinding }
@@ -5673,10 +5688,21 @@ export function CanvasBoard({
               measureCtx,
             })
             const orthogonalState = resolveOrthogonalState(start, end, next)
+            const autoVariant =
+              next.elbowAuto !== false
+                ? getAnchorPreferredVariant(next.endBinding?.anchor ?? null) ??
+                  getAnchorPreferredVariant(next.startBinding?.anchor ?? null) ??
+                  orthogonalState.variant
+                : orthogonalState.variant
             updatedLine = {
               ...next,
-              elbowVariant: orthogonalState.variant,
-              elbowOffset: orthogonalState.offset,
+              elbowVariant: autoVariant,
+              elbowOffset:
+                next.elbowAuto !== false
+                  ? autoVariant === 'HVH'
+                    ? start.x + (end.x - start.x) / 2
+                    : start.y + (end.y - start.y) / 2
+                  : orthogonalState.offset,
               points: undefined,
             }
           } else {
@@ -5746,15 +5772,16 @@ export function CanvasBoard({
           const variant = segmentState.variant
           const nextOffset =
             segmentState.orientation === 'horizontal' ? boardPoint.y : boardPoint.x
-          updatedElement = {
-            ...target,
-            orthogonal: true,
-            elbowVariant: variant,
-            elbowOffset: nextOffset,
-            points: undefined,
-          }
-          return { ...prev, [target.id]: updatedElement }
-        })
+            updatedElement = {
+              ...target,
+              orthogonal: true,
+              elbowVariant: variant,
+              elbowOffset: nextOffset,
+              elbowAuto: false,
+              points: undefined,
+            }
+            return { ...prev, [target.id]: updatedElement }
+          })
         if (updatedElement) {
           const now = Date.now()
           if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
@@ -6016,6 +6043,7 @@ export function CanvasBoard({
               orthogonal: true,
               elbowVariant: variant,
               elbowOffset: offset,
+              elbowAuto: true,
               points: undefined,
             }
           }
