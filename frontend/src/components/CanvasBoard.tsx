@@ -464,6 +464,30 @@ function findNearestAnchorBinding(
   return { binding, position }
 }
 
+function getClosestAnchorBinding(
+  point: { x: number; y: number },
+  element: BoardElement,
+  measureCtx: CanvasRenderingContext2D | null
+): { binding: LineEndpointBinding; position: { x: number; y: number } } | null {
+  if (!isStickyElement(element) && !isTextElement(element) && !isFrameLikeElement(element) && !isImageElement(element)) {
+    return null
+  }
+  const ctx = measureCtx ?? null
+  let best: { binding: LineEndpointBinding; position: { x: number; y: number }; distance: number } | null = null
+  VISIBLE_CONNECTOR_ANCHORS.forEach((anchor) => {
+    const details = getElementAnchorDetails(element, anchor, { ctx })
+    if (!details) return
+    const position = details.point
+    const distance = Math.hypot(point.x - position.x, point.y - position.y)
+    if (!best || distance < best.distance) {
+      best = { binding: { elementId: element.id, anchor }, position, distance }
+    }
+  })
+  if (!best) return null
+  const { binding, position } = best
+  return { binding, position }
+}
+
 function getLinePathPoints(
   element: LineElement,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
@@ -5543,7 +5567,14 @@ export function CanvasBoard({
         if (!lineHandleState || lineHandleState.pointerId !== event.pointerId) return
         const boardPoint = screenToBoard(canvasPoint)
         const measureCtx = getSharedMeasureContext()
-        const snap = findNearestAnchorBinding(boardPoint, elements, lineHandleState.id, cameraState, measureCtx)
+        let snap = findNearestAnchorBinding(boardPoint, elements, lineHandleState.id, cameraState, measureCtx)
+        if (!snap) {
+          const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+          const hitElement = hitId ? elements[hitId] : null
+          if (hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)) {
+            snap = getClosestAnchorBinding(boardPoint, hitElement, measureCtx)
+          }
+        }
         const targetPoint = snap?.position ?? boardPoint
         let updatedLine: LineElement | null = null
         setElements((prev) => {
@@ -5880,7 +5911,14 @@ export function CanvasBoard({
         if (!creation || creation.pointerId !== event.pointerId) return
         const boardPoint = screenToBoard(canvasPoint)
         const measureCtx = getSharedMeasureContext()
-        const snap = findNearestAnchorBinding(boardPoint, elements, creation.id, cameraState, measureCtx)
+        let snap = findNearestAnchorBinding(boardPoint, elements, creation.id, cameraState, measureCtx)
+        if (!snap) {
+          const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+          const hitElement = hitId ? elements[hitId] : null
+          if (hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)) {
+            snap = getClosestAnchorBinding(boardPoint, hitElement, measureCtx)
+          }
+        }
         const targetPoint = snap?.position ?? boardPoint
         let nextLine: LineElement | null = null
         setElements((prev) => {
