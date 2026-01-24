@@ -2505,14 +2505,6 @@ function drawLineElement(
   let endTrim = 0
   let startArrowLength = 0
   let endArrowLength = 0
-  const hasStartBinding =
-    !!element.startBinding &&
-    !!options?.resolveElement &&
-    !!options.resolveElement(element.startBinding.elementId)
-  const hasEndBinding =
-    !!element.endBinding &&
-    !!options?.resolveElement &&
-    !!options.resolveElement(element.endBinding.elementId)
   if (lineLength > 0) {
     if (element.startArrow) {
       startArrowLength = computeArrowLength(screenStrokeWidth, lineLength)
@@ -2520,8 +2512,8 @@ function drawLineElement(
     if (element.endArrow) {
       endArrowLength = computeArrowLength(screenStrokeWidth, lineLength)
     }
-    startTrim = hasStartBinding ? 0 : startArrowLength
-    endTrim = hasEndBinding ? 0 : endArrowLength
+    startTrim = startArrowLength
+    endTrim = endArrowLength
     if (startTrim + endTrim > lineLength) {
       const scale = lineLength / (startTrim + endTrim)
       startTrim *= scale
@@ -5550,8 +5542,13 @@ export function CanvasBoard({
 
       if (editingStateRef.current || isCommentEditing) return
       if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
-        const anchorHit = hitTestConnectorAnchor(canvasPoint)
-        const nextHovered = anchorHit ? anchorHit.element.id : null
+        const boardPoint = screenToBoard(canvasPoint)
+        const hitId = hitTestElement(boardPoint.x, boardPoint.y)
+        const hitElement = hitId ? elements[hitId] : null
+        const nextHovered =
+          hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)
+            ? hitElement.id
+            : null
         setHoveredConnectorElementId((prev) => (prev === nextHovered ? prev : nextHovered))
       } else if (hoveredConnectorElementId !== null) {
         setHoveredConnectorElementId(null)
