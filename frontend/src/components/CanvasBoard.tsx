@@ -2495,7 +2495,6 @@ function drawLineElement(
   })
   const strokeColor = getLineStrokeColor(element)
   const screenPoints = pathPoints.map(toScreen)
-  const directionPoints = trimmedScreenPoints.length >= 2 ? trimmedScreenPoints : screenPoints
   const getSegmentLength = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(b.x - a.x, b.y - a.y)
   const lineLength = screenPoints.reduce((sum, point, index) => {
     if (index === 0) return sum
@@ -2578,6 +2577,7 @@ function drawLineElement(
     return result
   }
   const trimmedScreenPoints = adjustPolyline(screenPoints, startTrim, endTrim)
+  const directionPoints = trimmedScreenPoints.length >= 2 ? trimmedScreenPoints : screenPoints
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
