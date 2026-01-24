@@ -299,9 +299,13 @@ export function CanvasPage({
       <AccountMenu apiBaseUrl={apiBaseUrl} session={session} onSessionChange={onSessionChange} />
       {boardInfo && (
         <div className="board-title">
-          <a className="board-title__product" href="/boards">
+          <button
+            type="button"
+            className="board-title__product"
+            onClick={() => navigate('/')}
+          >
             Optikon
-          </a>
+          </button>
           <span className="board-title__divider" aria-hidden="true" />
           {editingTitle ? (
             <Input

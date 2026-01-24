@@ -44,12 +44,16 @@ body,
 }
 
 .board-title__product {
+  border: none;
+  padding: 0;
+  background: transparent;
   font-family: 'Caveat', 'Segoe Script', 'Comic Sans MS', cursive;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: rgba(15, 23, 42, 0.7);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .board-title__product:hover {
