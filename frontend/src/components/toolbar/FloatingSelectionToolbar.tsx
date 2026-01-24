@@ -39,8 +39,10 @@ export type SelectionFormatState = {
   color: string | 'mixed'
   highlight: string | null | 'mixed'
   background: TextBackground | null | 'mixed'
+  stickyFill: string | null | 'mixed'
   link: string | null | 'mixed'
   hasTextElements: boolean
+  hasStickyElements: boolean
 }
 
 export type FloatingSelectionToolbarProps = {
@@ -58,6 +60,7 @@ export type FloatingSelectionToolbarProps = {
   onSetColor: (color: string) => void
   onSetHighlight: (color: string | null) => void
   onSetBackground: (bg: TextBackground | null) => void
+  onSetStickyFill: (color: string | null) => void
   onInsertLink?: () => void
   onAddComment?: () => void
 }
@@ -66,6 +69,7 @@ export const FONT_FAMILIES = ['Inter', 'Noto Sans', 'Roboto', 'Georgia', 'Courie
 export const FONT_COLORS = ['#111827', '#374151', '#6B7280', '#DC2626', '#EA580C', '#CA8A04', '#16A34A', '#0EA5E9', '#8B5CF6']
 export const HIGHLIGHT_COLORS = ['transparent', '#FEF08A', '#BBF7D0', '#BAE6FD', '#E9D5FF', '#FECACA', '#FED7AA']
 export const BG_COLORS = ['transparent', '#FFFFFF', '#F3F4F6', '#FEF3C7', '#DCFCE7', '#DBEAFE', '#F3E8FF', '#FCE7F3']
+export const STICKY_COLORS = ['default', '#F9FF4A', '#FF7AF1', '#6BFFB0', '#63F3FF', '#FFA94D', '#FFD166']
 
 const TOOLBAR_HEIGHT = 44
 const TOOLBAR_GAP = 28
@@ -150,7 +154,7 @@ function ChevronDownIcon() {
   return <ChevronDown size={12} strokeWidth={1.5} />
 }
 
-type DropdownType = 'font' | 'textStyle' | 'fontColor' | 'highlightColor' | 'bgColor' | null
+type DropdownType = 'font' | 'textStyle' | 'fontColor' | 'highlightColor' | 'bgColor' | 'stickyFill' | null
 
 export function FloatingSelectionToolbar({
   selectionBoundsScreen,
@@ -167,6 +171,7 @@ export function FloatingSelectionToolbar({
   onSetColor,
   onSetHighlight,
   onSetBackground,
+  onSetStickyFill,
   onInsertLink,
   onAddComment,
 }: FloatingSelectionToolbarProps) {
@@ -258,6 +263,7 @@ export function FloatingSelectionToolbar({
   const currentColor = typeof formatState.color === 'string' ? formatState.color : '#111827'
   const currentHighlight = formatState.highlight !== 'mixed' ? formatState.highlight : null
   const currentBackground = formatState.background !== 'mixed' ? formatState.background : null
+  const currentStickyFill = formatState.stickyFill !== 'mixed' ? formatState.stickyFill : null
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>, isActive: boolean) => {
     if (!isActive) {
@@ -674,6 +680,63 @@ export function FloatingSelectionToolbar({
           </div>
         )}
       </div>
+
+      {formatState.hasStickyElements && (
+        <>
+          <div style={separatorStyle} />
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={buttonBaseStyle}
+              title="Sticky color"
+              onClick={() => toggleDropdown('stickyFill')}
+              onMouseEnter={(e) => handleMouseEnter(e, false)}
+              onMouseLeave={(e) => handleMouseLeave(e, false)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect
+                  x="2"
+                  y="2"
+                  width="12"
+                  height="12"
+                  rx="2"
+                  fill={currentStickyFill ?? '#ffffff'}
+                />
+              </svg>
+            </button>
+            {openDropdown === 'stickyFill' && (
+              <div style={{ ...dropdownStyle, minWidth: 'auto' }}>
+                <div style={colorGridStyle}>
+                  {STICKY_COLORS.map((color) => {
+                    const isDefault = color === 'default'
+                    const swatchColor = isDefault ? '#fff7a6' : color
+                    const selected = (currentStickyFill ?? 'default') === color
+                    return (
+                      <div
+                        key={color}
+                        style={{
+                          ...colorSwatchStyle,
+                          background: swatchColor,
+                          outline: selected ? '2px solid #0ea5e9' : 'none',
+                          outlineOffset: 1,
+                        }}
+                        onClick={() => {
+                          if (isDefault) {
+                            onSetStickyFill(null)
+                          } else {
+                            onSetStickyFill(color)
+                          }
+                          setOpenDropdown(null)
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <div style={separatorStyle} />
 

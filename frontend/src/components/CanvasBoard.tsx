@@ -174,6 +174,48 @@ const FRAME_TITLE_FONT_MIN = 10
 const FRAME_TITLE_FONT_MAX = 20
 const FRAME_TITLE_COLOR = '#0f172a'
 const FRAME_TITLE_HIT_HEIGHT = 24
+
+function clampColorChannel(value: number) {
+  return Math.max(0, Math.min(255, Math.round(value)))
+}
+
+function hexToRgb(hex: string) {
+  const normalized = hex.replace('#', '').trim()
+  if (normalized.length === 3) {
+    const r = parseInt(normalized[0] + normalized[0], 16)
+    const g = parseInt(normalized[1] + normalized[1], 16)
+    const b = parseInt(normalized[2] + normalized[2], 16)
+    return { r, g, b }
+  }
+  if (normalized.length === 6) {
+    const r = parseInt(normalized.slice(0, 2), 16)
+    const g = parseInt(normalized.slice(2, 4), 16)
+    const b = parseInt(normalized.slice(4, 6), 16)
+    return { r, g, b }
+  }
+  return null
+}
+
+function mixColors(base: string, mixWith: string, amount: number) {
+  const baseRgb = hexToRgb(base)
+  const mixRgb = hexToRgb(mixWith)
+  if (!baseRgb || !mixRgb) return base
+  const mix = Math.max(0, Math.min(1, amount))
+  const r = clampColorChannel(baseRgb.r + (mixRgb.r - baseRgb.r) * mix)
+  const g = clampColorChannel(baseRgb.g + (mixRgb.g - baseRgb.g) * mix)
+  const b = clampColorChannel(baseRgb.b + (mixRgb.b - baseRgb.b) * mix)
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+function resolveStickyFillColors(fill?: string) {
+  if (!fill) {
+    return { top: STICKY_FILL_TOP, bottom: STICKY_FILL_BOTTOM, highlight: 'rgba(255, 255, 255, 0.35)' }
+  }
+  const top = mixColors(fill, '#ffffff', 0.22)
+  const bottom = mixColors(fill, '#000000', 0.08)
+  const highlight = mixColors(fill, '#ffffff', 0.6)
+  return { top, bottom, highlight: `${highlight.replace('rgb', 'rgba').replace(')', ', 0.35)')}` }
+}
 function getFrameTitleScreenFontSize(zoom: number) {
   const normalizedZoom = clamp(zoom, 0.4, 3)
   const adjusted = FRAME_TITLE_FONT_SIZE / Math.pow(normalizedZoom, 0.55)
@@ -1138,6 +1180,7 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
   if (typeof element.id !== 'string') return null
   if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
   if (typeof element.text !== 'string') return null
+  const fill = typeof element.fill === 'string' && element.fill.trim() ? element.fill : undefined
   const rawSize = typeof element.size === 'number' && Number.isFinite(element.size) ? element.size : STICKY_SIZE
   const size = Math.max(STICKY_MIN_SIZE, rawSize)
   const provisional: StickyNoteElement = {
@@ -1147,6 +1190,7 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
     y: element.y,
     text: element.text,
     size,
+    fill,
   }
   const fontSize = clampFontSizeForElement(provisional, resolveStickyFontSize(element.fontSize))
   return {
@@ -1157,6 +1201,7 @@ function parseStickyElement(raw: unknown): StickyNoteElement | null {
     text: element.text,
     size,
     fontSize,
+    fill,
   }
 }
 
@@ -1714,12 +1759,13 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   ctx.translate(screenX, screenY)
   ctx.scale(camera.zoom, camera.zoom)
   const gradient = ctx.createLinearGradient(0, 0, 0, stickySize)
-  gradient.addColorStop(0, STICKY_FILL_TOP)
-  gradient.addColorStop(0.8, STICKY_FILL_BOTTOM)
+  const fillColors = resolveStickyFillColors(element.fill)
+  gradient.addColorStop(0, fillColors.top)
+  gradient.addColorStop(0.8, fillColors.bottom)
   ctx.fillStyle = gradient
   drawRoundedRectPath(ctx, 0, 0, stickySize, stickySize, STICKY_CORNER_RADIUS)
   ctx.fill()
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
+  ctx.fillStyle = fillColors.highlight
   ctx.fillRect(STICKY_CORNER_RADIUS, 2, stickySize - STICKY_CORNER_RADIUS * 2, 6)
   // Build font string with style
   const fontWeight = element.style?.fontWeight ?? 400
@@ -3492,9 +3538,13 @@ export function CanvasBoard({
 
   // Compute format state from current selection
   const selectionFormatState = useMemo((): SelectionFormatState => {
-    const textElements = Array.from(selectedIds)
+    const selectedElements = Array.from(selectedIds)
       .map((id) => elements[id])
-      .filter((el): el is StickyNoteElement | TextElement | ShapeElement | FrameElement => el && supportsTextStyle(el))
+      .filter((el): el is BoardElement => !!el)
+    const textElements = selectedElements.filter(
+      (el): el is StickyNoteElement | TextElement | ShapeElement | FrameElement => supportsTextStyle(el)
+    )
+    const stickyElements = selectedElements.filter((el): el is StickyNoteElement => isStickyElement(el))
 
     // Default state when no text elements selected
     const defaultState: SelectionFormatState = {
@@ -3509,12 +3559,27 @@ export function CanvasBoard({
       color: '#111827',
       highlight: null,
       background: null,
+      stickyFill: null,
       link: null,
       hasTextElements: false,
+      hasStickyElements: false,
     }
 
-    if (textElements.length === 0) {
+    if (textElements.length === 0 && stickyElements.length === 0) {
       return defaultState
+    }
+
+    const stickyFillValues = stickyElements.map((el) => el.fill ?? null)
+    const stickyFillFirst = stickyFillValues[0] ?? null
+    const stickyFillAllSame = stickyFillValues.every((v) => v === stickyFillFirst)
+    const stickyFill = stickyFillAllSame ? stickyFillFirst : 'mixed' as const
+
+    if (textElements.length === 0) {
+      return {
+        ...defaultState,
+        stickyFill,
+        hasStickyElements: stickyElements.length > 0,
+      }
     }
 
     // Helper to compute consensus value
@@ -3588,8 +3653,10 @@ export function CanvasBoard({
       color,
       highlight,
       background,
+      stickyFill,
       link,
-      hasTextElements: true,
+      hasTextElements: textElements.length > 0,
+      hasStickyElements: stickyElements.length > 0,
     }
   }, [selectedIds, elements, supportsTextStyle])
 
@@ -3784,6 +3851,36 @@ export function CanvasBoard({
   const handleSetBackground = useCallback((background: TextBackground | null) => {
     applyStyleToSelection({ background })
   }, [applyStyleToSelection])
+
+  const handleSetStickyFill = useCallback(
+    (fill: string | null) => {
+      const stickyElements = Array.from(selectedIds)
+        .map((id) => elements[id])
+        .filter((el): el is StickyNoteElement => !!el && isStickyElement(el))
+
+      if (stickyElements.length === 0) return
+
+      const updatedElements: BoardElement[] = stickyElements.map((el) => ({
+        ...el,
+        fill: fill ?? undefined,
+      }))
+
+      setElements((prev) => {
+        const next = { ...prev }
+        updatedElements.forEach((el) => {
+          next[el.id] = el
+        })
+        return next
+      })
+
+      sendElementsUpdate(updatedElements)
+
+      if (boardId) {
+        void persistElementsUpdate(boardId, updatedElements)
+      }
+    },
+    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate]
+  )
 
   const handleSetLink = useCallback((link: string | null) => {
     applyStyleToSelection({ link })
@@ -6950,6 +7047,7 @@ export function CanvasBoard({
         onSetColor={handleSetColor}
         onSetHighlight={handleSetHighlight}
         onSetBackground={handleSetBackground}
+        onSetStickyFill={handleSetStickyFill}
         onInsertLink={handleOpenLinkPopover}
       />
       <LinkInsertPopover

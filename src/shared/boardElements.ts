@@ -29,6 +29,7 @@ export interface StickyNoteElement extends CanvasElement {
   text: string
   size?: number
   fontSize?: number
+  fill?: string
   style?: TextStyle
 }
 
