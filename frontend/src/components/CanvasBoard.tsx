@@ -493,6 +493,9 @@ function getSegmentOrientation(
 }
 
 function createOrthogonalPoints(start: { x: number; y: number }, end: { x: number; y: number }) {
+  if (start.x === end.x || start.y === end.y) {
+    return []
+  }
   const points: Array<{ x: number; y: number }> = []
   const deltaY = end.y - start.y
   const deltaX = end.x - start.x
@@ -2968,6 +2971,14 @@ function drawLineSelection(
       ctx.stroke()
     }
     screenPath.forEach((point) => drawHandle(point))
+    if (points.length === 2) {
+      const segmentStart = screenPath[1]
+      const segmentEnd = screenPath[2]
+      if (segmentStart && segmentEnd) {
+        const mid = { x: (segmentStart.x + segmentEnd.x) / 2, y: (segmentStart.y + segmentEnd.y) / 2 }
+        drawHandle(mid)
+      }
+    }
   }
   ctx.restore()
 }
@@ -3092,6 +3103,15 @@ export function CanvasBoard({
         nextOrientation: 'horizontal' | 'vertical'
       }
   >(null)
+  const lineSegmentStateRef = useRef<
+    | null
+    | {
+        id: string
+        pointerId: number
+        basePoints: Array<{ x: number; y: number }>
+        orientation: 'horizontal' | 'vertical'
+      }
+  >(null)
   const shapeCreationRef = useRef<
     | null
     | {
@@ -3146,6 +3166,7 @@ export function CanvasBoard({
     | 'line-create'
     | 'line-handle'
     | 'line-bend'
+    | 'line-segment'
   >('none')
   const marqueeCandidateRef = useRef<
     | null
@@ -4743,6 +4764,39 @@ export function CanvasBoard({
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
   )
 
+  const hitTestLineSegmentHandle = useCallback(
+    (point: { x: number; y: number }): { element: LineElement; orientation: 'horizontal' | 'vertical' } | null => {
+      const selected = selectedIdsRef.current
+      if (selected.size !== 1) return null
+      const [id] = Array.from(selected)
+      const element = elements[id]
+      if (!isLineElement(element) || !element.points || element.points.length !== 2) return null
+      const measureCtx = getSharedMeasureContext()
+      const resolved = getResolvedLineEndpoints(element, {
+        resolveElement: (elementId) => elements[elementId],
+        measureCtx,
+      })
+      const segmentStart = resolved.points[0]
+      const segmentEnd = resolved.points[1]
+      if (!segmentStart || !segmentEnd) return null
+      const screenStart = {
+        x: (segmentStart.x + cameraState.offsetX) * cameraState.zoom,
+        y: (segmentStart.y + cameraState.offsetY) * cameraState.zoom,
+      }
+      const screenEnd = {
+        x: (segmentEnd.x + cameraState.offsetX) * cameraState.zoom,
+        y: (segmentEnd.y + cameraState.offsetY) * cameraState.zoom,
+      }
+      const mid = { x: (screenStart.x + screenEnd.x) / 2, y: (screenStart.y + screenEnd.y) / 2 }
+      const distance = Math.hypot(point.x - mid.x, point.y - mid.y)
+      if (distance <= RESIZE_HANDLE_HIT_RADIUS) {
+        return { element, orientation: getSegmentOrientation(segmentStart, segmentEnd) }
+      }
+      return null
+    },
+    [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
+  )
+
   const hitTestTransformHandle = useCallback(
     (
       point: { x: number; y: number }
@@ -4990,6 +5044,22 @@ export function CanvasBoard({
               lineHandleHit.handle === 'start'
                 ? lineHandleHit.element.startBinding ?? null
                 : lineHandleHit.element.endBinding ?? null,
+          }
+          if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }
+          return
+        }
+        const segmentHandleHit = hitTestLineSegmentHandle(canvasPoint)
+        if (segmentHandleHit) {
+          event.preventDefault()
+          suppressClickRef.current = true
+          interactionModeRef.current = 'line-segment'
+          lineSegmentStateRef.current = {
+            id: segmentHandleHit.element.id,
+            pointerId: event.pointerId,
+            basePoints: segmentHandleHit.element.points ? segmentHandleHit.element.points.map((point) => ({ ...point })) : [],
+            orientation: segmentHandleHit.orientation,
           }
           if (event.currentTarget.setPointerCapture) {
             event.currentTarget.setPointerCapture(event.pointerId)
@@ -5275,6 +5345,7 @@ export function CanvasBoard({
       cameraState.zoom,
       elements,
       hitTestElement,
+      hitTestLineSegmentHandle,
       hitTestLineHandle,
       hitTestResizeHandle,
       hitTestTransformHandle,
@@ -5397,6 +5468,39 @@ export function CanvasBoard({
           else nextValue.x = nextPoint.x
           points[bendState.index] = nextValue
           updatedElement = { ...target, points }
+          return { ...prev, [target.id]: updatedElement }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
+            lastBroadcastRef.current = now
+          }
+        }
+        return
+      }
+
+      if (mode === 'line-segment') {
+        const segmentState = lineSegmentStateRef.current
+        if (!segmentState || segmentState.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        let updatedElement: LineElement | null = null
+        setElements((prev) => {
+          const target = prev[segmentState.id]
+          if (!target || !isLineElement(target)) return prev
+          if (!segmentState.basePoints || segmentState.basePoints.length !== 2) return prev
+          const [first, second] = segmentState.basePoints
+          const nextPoints =
+            segmentState.orientation === 'horizontal'
+              ? [
+                  { x: first.x, y: boardPoint.y },
+                  { x: second.x, y: boardPoint.y },
+                ]
+              : [
+                  { x: boardPoint.x, y: first.y },
+                  { x: boardPoint.x, y: second.y },
+                ]
+          updatedElement = { ...target, points: nextPoints, orthogonal: true }
           return { ...prev, [target.id]: updatedElement }
         })
         if (updatedElement) {
@@ -5908,6 +6012,22 @@ export function CanvasBoard({
         marqueeCandidateRef.current = null
         if (!bendState) return
         const element = elements[bendState.id]
+        if (!element || !isLineElement(element)) return
+        sendElementsUpdate([element])
+        if (boardId) {
+          void persistElementsUpdate(boardId, [element])
+        }
+        return
+      }
+
+      if (mode === 'line-segment') {
+        const segmentState = lineSegmentStateRef.current
+        lineSegmentStateRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!segmentState) return
+        const element = elements[segmentState.id]
         if (!element || !isLineElement(element)) return
         sendElementsUpdate([element])
         if (boardId) {
