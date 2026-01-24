@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&display=swap');
+
 :root,
 body,
 #root,
@@ -42,11 +44,16 @@ body,
 }
 
 .board-title__product {
-  font-size: 12px;
+  font-family: 'Caveat', 'Segoe Script', 'Comic Sans MS', cursive;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: rgba(15, 23, 42, 0.7);
+  text-decoration: none;
+}
+
+.board-title__product:hover {
+  text-decoration: underline;
 }
 
 .board-title__divider {
