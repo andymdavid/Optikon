@@ -34,11 +34,57 @@ body,
   padding: 6px 12px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.board-title__product {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.board-title__divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(15, 23, 42, 0.16);
+}
+
+.board-title__name {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.board-title__name:hover {
+  text-decoration: underline;
+}
+
+.board-title__input {
+  min-width: 180px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.board-title__menu {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
 }
 
 .board-title__lock {
