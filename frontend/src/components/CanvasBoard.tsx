@@ -2495,6 +2495,27 @@ function drawLineElement(
   })
   const strokeColor = getLineStrokeColor(element)
   const screenPoints = pathPoints.map(toScreen)
+  const resolveBoundArrowOrigin = (
+    binding: LineEndpointBinding | undefined,
+    tip: { x: number; y: number },
+    arrowLength: number
+  ) => {
+    if (!binding || !options?.resolveElement || arrowLength <= 0) return null
+    const target = options.resolveElement(binding.elementId)
+    if (!target) return null
+    const details = getElementAnchorDetails(target, binding.anchor, { ctx: options.measureCtx ?? null })
+    if (!details) return null
+    const centerScreen = toScreen(details.center)
+    const anchorScreen = toScreen(details.point)
+    const dirX = anchorScreen.x - centerScreen.x
+    const dirY = anchorScreen.y - centerScreen.y
+    const length = Math.hypot(dirX, dirY)
+    if (length <= 1e-5) return null
+    return {
+      x: tip.x + (dirX / length) * arrowLength,
+      y: tip.y + (dirY / length) * arrowLength,
+    }
+  }
   const getSegmentLength = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(b.x - a.x, b.y - a.y)
   const lineLength = screenPoints.reduce((sum, point, index) => {
     if (index === 0) return sum
@@ -2603,29 +2624,39 @@ function drawLineElement(
   }
   if (element.startArrow && startArrowLength > 0 && directionPoints.length >= 2) {
     const tip = directionPoints[0]
-    const directionPoint = pickDirectionPoint(directionPoints, 0, 1) ?? directionPoints[1]
-    const dx = directionPoint.x - tip.x
-    const dy = directionPoint.y - tip.y
-    const length = Math.hypot(dx, dy)
-    const origin =
-      length > 1e-5
-        ? { x: tip.x + (dx / length) * startArrowLength, y: tip.y + (dy / length) * startArrowLength }
-        : directionPoint
-    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startArrowLength)
+    const boundOrigin = resolveBoundArrowOrigin(element.startBinding, tip, startArrowLength)
+    if (boundOrigin) {
+      drawLineArrowhead(ctx, tip, boundOrigin, strokeColor, screenStrokeWidth, startArrowLength)
+    } else {
+      const directionPoint = pickDirectionPoint(directionPoints, 0, 1) ?? directionPoints[1]
+      const dx = directionPoint.x - tip.x
+      const dy = directionPoint.y - tip.y
+      const length = Math.hypot(dx, dy)
+      const origin =
+        length > 1e-5
+          ? { x: tip.x + (dx / length) * startArrowLength, y: tip.y + (dy / length) * startArrowLength }
+          : directionPoint
+      drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startArrowLength)
+    }
   }
   if (element.endArrow && endArrowLength > 0 && directionPoints.length >= 2) {
     const tip = directionPoints[directionPoints.length - 1]
-    const directionPoint =
-      pickDirectionPoint(directionPoints, directionPoints.length - 1, -1) ??
-      directionPoints[directionPoints.length - 2]
-    const dx = directionPoint.x - tip.x
-    const dy = directionPoint.y - tip.y
-    const length = Math.hypot(dx, dy)
-    const origin =
-      length > 1e-5
-        ? { x: tip.x + (dx / length) * endArrowLength, y: tip.y + (dy / length) * endArrowLength }
-        : directionPoint
-    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endArrowLength)
+    const boundOrigin = resolveBoundArrowOrigin(element.endBinding, tip, endArrowLength)
+    if (boundOrigin) {
+      drawLineArrowhead(ctx, tip, boundOrigin, strokeColor, screenStrokeWidth, endArrowLength)
+    } else {
+      const directionPoint =
+        pickDirectionPoint(directionPoints, directionPoints.length - 1, -1) ??
+        directionPoints[directionPoints.length - 2]
+      const dx = directionPoint.x - tip.x
+      const dy = directionPoint.y - tip.y
+      const length = Math.hypot(dx, dy)
+      const origin =
+        length > 1e-5
+          ? { x: tip.x + (dx / length) * endArrowLength, y: tip.y + (dy / length) * endArrowLength }
+          : directionPoint
+      drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endArrowLength)
+    }
   }
   ctx.restore()
 }
