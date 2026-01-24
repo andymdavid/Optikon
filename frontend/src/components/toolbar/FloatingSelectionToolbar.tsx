@@ -616,70 +616,72 @@ export function FloatingSelectionToolbar({
       </div>
 
       {/* Background Color + Opacity */}
-      <div style={{ position: 'relative' }}>
-        <button
-          type="button"
-          style={buttonBaseStyle}
-          title="Background color"
-          onClick={() => toggleDropdown('bgColor')}
-          onMouseEnter={(e) => handleMouseEnter(e, false)}
-          onMouseLeave={(e) => handleMouseLeave(e, false)}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect
-              x="2"
-              y="2"
-              width="12"
-              height="12"
-              rx="2"
-              fill={!currentBackground || currentBackground.color === 'transparent' ? 'none' : currentBackground.color}
-              fillOpacity={currentBackground ? currentBackground.opacity / 100 : 1}
-            />
-          </svg>
-        </button>
-        {openDropdown === 'bgColor' && (
-          <div style={{ ...dropdownStyle, minWidth: 160 }}>
-            <div style={colorGridStyle}>
-              {BG_COLORS.map((color) => (
-                <div
-                  key={color}
-                  style={{
-                    ...colorSwatchStyle,
-                    background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
-                    outline: (currentBackground?.color ?? 'transparent') === color ? '2px solid #0ea5e9' : 'none',
-                    outlineOffset: 1,
-                  }}
-                  onClick={() => {
-                    if (color === 'transparent') {
-                      onSetBackground(null)
+      {!formatState.hasStickyElements && (
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            style={buttonBaseStyle}
+            title="Text background"
+            onClick={() => toggleDropdown('bgColor')}
+            onMouseEnter={(e) => handleMouseEnter(e, false)}
+            onMouseLeave={(e) => handleMouseLeave(e, false)}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect
+                x="2"
+                y="2"
+                width="12"
+                height="12"
+                rx="2"
+                fill={!currentBackground || currentBackground.color === 'transparent' ? 'none' : currentBackground.color}
+                fillOpacity={currentBackground ? currentBackground.opacity / 100 : 1}
+              />
+            </svg>
+          </button>
+          {openDropdown === 'bgColor' && (
+            <div style={{ ...dropdownStyle, minWidth: 160 }}>
+              <div style={colorGridStyle}>
+                {BG_COLORS.map((color) => (
+                  <div
+                    key={color}
+                    style={{
+                      ...colorSwatchStyle,
+                      background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
+                      outline: (currentBackground?.color ?? 'transparent') === color ? '2px solid #0ea5e9' : 'none',
+                      outlineOffset: 1,
+                    }}
+                    onClick={() => {
+                      if (color === 'transparent') {
+                        onSetBackground(null)
+                      } else {
+                        onSetBackground({ color, opacity: currentBackground?.opacity ?? 100 })
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+              <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Opacity: {currentBackground?.opacity ?? 100}%</div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={currentBackground?.opacity ?? 100}
+                  onChange={(e) => {
+                    const opacity = Number(e.target.value)
+                    if (currentBackground) {
+                      onSetBackground({ ...currentBackground, opacity })
                     } else {
-                      onSetBackground({ color, opacity: currentBackground?.opacity ?? 100 })
+                      onSetBackground({ color: '#FFFFFF', opacity })
                     }
                   }}
+                  style={{ width: '100%' }}
                 />
-              ))}
+              </div>
             </div>
-            <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-              <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Opacity: {currentBackground?.opacity ?? 100}%</div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={currentBackground?.opacity ?? 100}
-                onChange={(e) => {
-                  const opacity = Number(e.target.value)
-                  if (currentBackground) {
-                    onSetBackground({ ...currentBackground, opacity })
-                  } else {
-                    onSetBackground({ color: '#FFFFFF', opacity })
-                  }
-                }}
-                style={{ width: '100%' }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {formatState.hasStickyElements && (
         <>
@@ -688,7 +690,7 @@ export function FloatingSelectionToolbar({
             <button
               type="button"
               style={buttonBaseStyle}
-              title="Sticky color"
+              title="Background colour"
               onClick={() => toggleDropdown('stickyFill')}
               onMouseEnter={(e) => handleMouseEnter(e, false)}
               onMouseLeave={(e) => handleMouseLeave(e, false)}
