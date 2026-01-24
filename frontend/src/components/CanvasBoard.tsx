@@ -5199,6 +5199,9 @@ export function CanvasBoard({
           }
           return
         }
+        if (toolMode === 'select' && !event.shiftKey) {
+          clearSelection()
+        }
         dragStateRef.current = null
         marqueeCandidateRef.current = { startBoard: boardPoint, startScreen: canvasPoint, shift: event.shiftKey }
         setMarquee(null)
