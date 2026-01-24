@@ -424,6 +424,10 @@ function getResolvedLineEndpoints(
   const resolver = options?.resolveElement
   const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
   const end = resolveLineEndpointPosition(element, 'end', { resolveElement: resolver, measureCtx })
+  if (element.orthogonal) {
+    const state = resolveOrthogonalState(start, end, element)
+    return { start, end, points: state.points }
+  }
   return { start, end, points: element.points ?? [] }
 }
 
@@ -492,21 +496,87 @@ function getSegmentOrientation(
   return dx >= dy ? 'horizontal' : 'vertical'
 }
 
-function createOrthogonalPoints(start: { x: number; y: number }, end: { x: number; y: number }) {
-  if (start.x === end.x || start.y === end.y) {
-    return []
+type ElbowVariant = 'HVH' | 'VHV'
+
+const isElbowVariant = (value: unknown): value is ElbowVariant => value === 'HVH' || value === 'VHV'
+
+const getDefaultElbowVariant = (start: { x: number; y: number }, end: { x: number; y: number }): ElbowVariant =>
+  Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ? 'VHV' : 'HVH'
+
+const clampElbowOffset = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  variant: ElbowVariant,
+  offset: number
+) => {
+  if (variant === 'HVH') {
+    const min = Math.min(start.x, end.x)
+    const max = Math.max(start.x, end.x)
+    return clamp(offset, min, max)
   }
-  const points: Array<{ x: number; y: number }> = []
-  const deltaY = end.y - start.y
-  const deltaX = end.x - start.x
-  if (Math.abs(deltaY) > Math.abs(deltaX)) {
-    const midY = start.y + deltaY / 2
-    points.push({ x: start.x, y: midY }, { x: end.x, y: midY })
-  } else {
-    const midX = start.x + deltaX / 2
-    points.push({ x: midX, y: start.y }, { x: midX, y: end.y })
+  const min = Math.min(start.y, end.y)
+  const max = Math.max(start.y, end.y)
+  return clamp(offset, min, max)
+}
+
+const getOrthogonalPoints = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  variant: ElbowVariant,
+  offset: number
+) => {
+  if (start.x === end.x || start.y === end.y) return []
+  if (variant === 'HVH') {
+    return [
+      { x: offset, y: start.y },
+      { x: offset, y: end.y },
+    ]
   }
-  return points
+  return [
+    { x: start.x, y: offset },
+    { x: end.x, y: offset },
+  ]
+}
+
+const inferElbowFromPoints = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  points: Array<{ x: number; y: number }>
+): { variant: ElbowVariant; offset: number } | null => {
+  if (points.length !== 2) return null
+  const [first, second] = points
+  if (first.y === start.y && second.y === end.y && first.x === second.x) {
+    return { variant: 'HVH', offset: first.x }
+  }
+  if (first.x === start.x && second.x === end.x && first.y === second.y) {
+    return { variant: 'VHV', offset: first.y }
+  }
+  return null
+}
+
+const resolveOrthogonalState = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  element: LineElement
+): { variant: ElbowVariant; offset: number; points: Array<{ x: number; y: number }>; collapsed: boolean } => {
+  const collapsed = start.x === end.x || start.y === end.y
+  const pointsSource = Array.isArray(element.points) ? element.points : []
+  const inferred = inferElbowFromPoints(start, end, pointsSource)
+  const variant = isElbowVariant(element.elbowVariant)
+    ? element.elbowVariant
+    : inferred?.variant ?? getDefaultElbowVariant(start, end)
+  const rawOffset =
+    typeof element.elbowOffset === 'number' && Number.isFinite(element.elbowOffset)
+      ? element.elbowOffset
+      : inferred?.offset ??
+        (variant === 'HVH' ? start.x + (end.x - start.x) / 2 : start.y + (end.y - start.y) / 2)
+  const offset = clampElbowOffset(start, end, variant, rawOffset)
+  return {
+    variant,
+    offset,
+    points: collapsed ? [] : getOrthogonalPoints(start, end, variant, offset),
+    collapsed,
+  }
 }
 
 type ConnectorHandleSpec = {
@@ -1162,6 +1232,12 @@ function cloneElementForPaste(
         ? { ...element.endBinding, elementId: idMap.get(element.endBinding.elementId) ?? element.endBinding.elementId }
         : undefined
       const points = element.points?.map((point) => ({ x: point.x + dx, y: point.y + dy }))
+      const elbowOffset =
+        element.orthogonal && typeof element.elbowOffset === 'number'
+          ? element.elbowVariant === 'VHV'
+            ? element.elbowOffset + dy
+            : element.elbowOffset + dx
+          : element.elbowOffset
       return {
         ...element,
         id: newId,
@@ -1170,6 +1246,7 @@ function cloneElementForPaste(
         x2: element.x2 + dx,
         y2: element.y2 + dy,
         points,
+        elbowOffset,
         startBinding,
         endBinding,
       }
@@ -1535,6 +1612,11 @@ function parseLineElement(raw: unknown): LineElement | null {
     typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)
       ? Math.max(0.5, element.strokeWidth)
       : LINE_DEFAULT_STROKE_WIDTH
+  const elbowVariant = isElbowVariant(element.elbowVariant) ? element.elbowVariant : undefined
+  const elbowOffset =
+    typeof element.elbowOffset === 'number' && Number.isFinite(element.elbowOffset)
+      ? element.elbowOffset
+      : undefined
   const points = Array.isArray(element.points)
     ? element.points
         .map((point) =>
@@ -1557,6 +1639,8 @@ function parseLineElement(raw: unknown): LineElement | null {
     endArrow: !!element.endArrow,
     points,
     orthogonal: element.orthogonal === true,
+    elbowVariant,
+    elbowOffset,
     startBinding: parseLineEndpointBindingField(element.startBinding) ?? undefined,
     endBinding: parseLineEndpointBindingField(element.endBinding) ?? undefined,
   }
@@ -2970,14 +3054,21 @@ function drawLineSelection(
       ctx.fill()
       ctx.stroke()
     }
-    screenPath.forEach((point) => drawHandle(point))
-    if (points.length === 2) {
-      const segmentStart = screenPath[1]
-      const segmentEnd = screenPath[2]
-      if (segmentStart && segmentEnd) {
-        const mid = { x: (segmentStart.x + segmentEnd.x) / 2, y: (segmentStart.y + segmentEnd.y) / 2 }
-        drawHandle(mid)
+    if (element.orthogonal) {
+      const startHandle = screenPath[0]
+      const endHandle = screenPath[screenPath.length - 1]
+      if (startHandle) drawHandle(startHandle)
+      if (endHandle) drawHandle(endHandle)
+      if (points.length === 2) {
+        const segmentStart = screenPath[1]
+        const segmentEnd = screenPath[2]
+        if (segmentStart && segmentEnd) {
+          const mid = { x: (segmentStart.x + segmentEnd.x) / 2, y: (segmentStart.y + segmentEnd.y) / 2 }
+          drawHandle(mid)
+        }
       }
+    } else {
+      screenPath.forEach((point) => drawHandle(point))
     }
   }
   ctx.restore()
@@ -3108,7 +3199,8 @@ export function CanvasBoard({
     | {
         id: string
         pointerId: number
-        basePoints: Array<{ x: number; y: number }>
+        baseOffset: number
+        variant: ElbowVariant
         orientation: 'horizontal' | 'vertical'
       }
   >(null)
@@ -4741,7 +4833,7 @@ export function CanvasBoard({
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!isLineElement(element) || !element.points || element.points.length === 0) return null
+      if (!isLineElement(element) || element.orthogonal || !element.points || element.points.length === 0) return null
       const measureCtx = getSharedMeasureContext()
       const resolved = getResolvedLineEndpoints(element, {
         resolveElement: (elementId) => elements[elementId],
@@ -4770,12 +4862,13 @@ export function CanvasBoard({
       if (selected.size !== 1) return null
       const [id] = Array.from(selected)
       const element = elements[id]
-      if (!isLineElement(element) || !element.points || element.points.length !== 2) return null
+      if (!isLineElement(element) || !element.orthogonal) return null
       const measureCtx = getSharedMeasureContext()
       const resolved = getResolvedLineEndpoints(element, {
         resolveElement: (elementId) => elements[elementId],
         measureCtx,
       })
+      if (resolved.points.length !== 2) return null
       const segmentStart = resolved.points[0]
       const segmentEnd = resolved.points[1]
       if (!segmentStart || !segmentEnd) return null
@@ -5055,10 +5148,21 @@ export function CanvasBoard({
           event.preventDefault()
           suppressClickRef.current = true
           interactionModeRef.current = 'line-segment'
+          const measureCtx = getSharedMeasureContext()
+          const resolvedEndpoints = getResolvedLineEndpoints(segmentHandleHit.element, {
+            resolveElement: (elementId) => elements[elementId],
+            measureCtx,
+          })
+          const orthogonalState = resolveOrthogonalState(
+            resolvedEndpoints.start,
+            resolvedEndpoints.end,
+            segmentHandleHit.element
+          )
           lineSegmentStateRef.current = {
             id: segmentHandleHit.element.id,
             pointerId: event.pointerId,
-            basePoints: segmentHandleHit.element.points ? segmentHandleHit.element.points.map((point) => ({ ...point })) : [],
+            baseOffset: orthogonalState.offset,
+            variant: orthogonalState.variant,
             orientation: segmentHandleHit.orientation,
           }
           if (event.currentTarget.setPointerCapture) {
@@ -5234,6 +5338,8 @@ export function CanvasBoard({
           const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
           const initialBinding = anchorHit?.anchor ? { elementId: anchorHit.element.id, anchor: anchorHit.anchor } : fallbackSnap?.binding ?? null
           const startPosition = anchorHit?.board ?? fallbackSnap?.position ?? boardPoint
+          const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
+          const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
           let newElement: LineElement = {
             id,
             type: 'line',
@@ -5246,7 +5352,9 @@ export function CanvasBoard({
             startArrow: false,
             endArrow: toolMode === 'arrow',
             orthogonal: isElbowTool,
-            points: isElbowTool ? [] : undefined,
+            points: undefined,
+            elbowVariant: isElbowTool ? defaultVariant : undefined,
+            elbowOffset: isElbowTool ? defaultOffset : undefined,
           }
           if (initialBinding) {
             newElement = { ...newElement, startBinding: initialBinding }
@@ -5313,18 +5421,41 @@ export function CanvasBoard({
       const dragIds = Array.from(dragIdSet)
       const startPositions: Record<
         string,
-        { x: number; y: number; x2?: number; y2?: number; points?: Array<{ x: number; y: number }> }
+        {
+          x: number
+          y: number
+          x2?: number
+          y2?: number
+          points?: Array<{ x: number; y: number }>
+          elbowOffset?: number
+          elbowVariant?: ElbowVariant
+          orthogonal?: boolean
+        }
       > = {}
       dragIds.forEach((id) => {
         const element = elements[id]
         if (element) {
           if (isLineElement(element)) {
+            const lineStart = resolveLineEndpointPosition(element, 'start', {
+              resolveElement: (elementId) => elements[elementId],
+              measureCtx: getSharedMeasureContext(),
+            })
+            const lineEnd = resolveLineEndpointPosition(element, 'end', {
+              resolveElement: (elementId) => elements[elementId],
+              measureCtx: getSharedMeasureContext(),
+            })
+            const orthogonalState = element.orthogonal
+              ? resolveOrthogonalState(lineStart, lineEnd, element)
+              : null
             startPositions[id] = {
               x: element.x1,
               y: element.y1,
               x2: element.x2,
               y2: element.y2,
               points: element.points ? element.points.map((point) => ({ ...point })) : undefined,
+              elbowOffset: orthogonalState?.offset,
+              elbowVariant: orthogonalState?.variant,
+              orthogonal: element.orthogonal === true,
             }
           } else {
             startPositions[id] = { x: element.x, y: element.y }
@@ -5426,8 +5557,26 @@ export function CanvasBoard({
             lineHandleState.handle === 'start'
               ? { ...target, x1: targetPoint.x, y1: targetPoint.y }
               : { ...target, x2: targetPoint.x, y2: targetPoint.y }
-          updatedLine = next
-          return { ...prev, [lineHandleState.id]: next }
+          if (next.orthogonal) {
+            const start = resolveLineEndpointPosition(next, 'start', {
+              resolveElement: (elementId) => prev[elementId],
+              measureCtx,
+            })
+            const end = resolveLineEndpointPosition(next, 'end', {
+              resolveElement: (elementId) => prev[elementId],
+              measureCtx,
+            })
+            const orthogonalState = resolveOrthogonalState(start, end, next)
+            updatedLine = {
+              ...next,
+              elbowVariant: orthogonalState.variant,
+              elbowOffset: orthogonalState.offset,
+              points: undefined,
+            }
+          } else {
+            updatedLine = next
+          }
+          return { ...prev, [lineHandleState.id]: updatedLine }
         })
         if (lineHandleStateRef.current) {
           lineHandleStateRef.current = { ...lineHandleStateRef.current, candidateBinding: snap?.binding ?? null }
@@ -5488,19 +5637,25 @@ export function CanvasBoard({
         setElements((prev) => {
           const target = prev[segmentState.id]
           if (!target || !isLineElement(target)) return prev
-          if (!segmentState.basePoints || segmentState.basePoints.length !== 2) return prev
-          const [first, second] = segmentState.basePoints
-          const nextPoints =
-            segmentState.orientation === 'horizontal'
-              ? [
-                  { x: first.x, y: boardPoint.y },
-                  { x: second.x, y: boardPoint.y },
-                ]
-              : [
-                  { x: boardPoint.x, y: first.y },
-                  { x: boardPoint.x, y: second.y },
-                ]
-          updatedElement = { ...target, points: nextPoints, orthogonal: true }
+          const variant = segmentState.variant
+          const nextOffset =
+            segmentState.orientation === 'horizontal' ? boardPoint.y : boardPoint.x
+          const start = resolveLineEndpointPosition(target, 'start', {
+            resolveElement: (elementId) => prev[elementId],
+            measureCtx: getSharedMeasureContext(),
+          })
+          const end = resolveLineEndpointPosition(target, 'end', {
+            resolveElement: (elementId) => prev[elementId],
+            measureCtx: getSharedMeasureContext(),
+          })
+          const clampedOffset = clampElbowOffset(start, end, variant, nextOffset)
+          updatedElement = {
+            ...target,
+            orthogonal: true,
+            elbowVariant: variant,
+            elbowOffset: clampedOffset,
+            points: undefined,
+          }
           return { ...prev, [target.id]: updatedElement }
         })
         if (updatedElement) {
@@ -5747,7 +5902,16 @@ export function CanvasBoard({
           let updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
           if (creation.kind === 'elbow') {
             const startPoint = creation.start
-            updated = { ...updated, points: createOrthogonalPoints(startPoint, targetPoint), orthogonal: true }
+            const variant = getDefaultElbowVariant(startPoint, targetPoint)
+            const rawOffset = variant === 'HVH' ? startPoint.x + (targetPoint.x - startPoint.x) / 2 : startPoint.y + (targetPoint.y - startPoint.y) / 2
+            const offset = clampElbowOffset(startPoint, targetPoint, variant, rawOffset)
+            updated = {
+              ...updated,
+              orthogonal: true,
+              elbowVariant: variant,
+              elbowOffset: offset,
+              points: undefined,
+            }
           }
           nextLine = updated
           return { ...prev, [creation.id]: updated }
@@ -5854,7 +6018,16 @@ export function CanvasBoard({
               if (!endBindingActive) {
                 lineNext = { ...lineNext, x2: start.x2 + deltaX, y2: start.y2 + deltaY }
               }
-              if (start.points && start.points.length > 0) {
+              if (start.orthogonal && typeof start.elbowOffset === 'number' && start.elbowVariant) {
+                const offsetDelta = start.elbowVariant === 'VHV' ? deltaY : deltaX
+                lineNext = {
+                  ...lineNext,
+                  orthogonal: true,
+                  elbowVariant: start.elbowVariant,
+                  elbowOffset: start.elbowOffset + offsetDelta,
+                  points: undefined,
+                }
+              } else if (start.points && start.points.length > 0) {
                 const shifted = start.points.map((point) => ({ x: point.x + deltaX, y: point.y + deltaY }))
                 lineNext = { ...lineNext, points: shifted }
               }
