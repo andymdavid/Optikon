@@ -2583,23 +2583,25 @@ function drawLineElement(
   if (element.startArrow && startArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[0]
     const directionPoint = trimmedScreenPoints[1]
-    const dx = tip.x - directionPoint.x
-    const dy = tip.y - directionPoint.y
+    const dx = directionPoint.x - tip.x
+    const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
-    const origin = length > 1e-5
-      ? { x: tip.x + (dx / length) * startArrowLength, y: tip.y + (dy / length) * startArrowLength }
-      : directionPoint
+    const origin =
+      length > 1e-5
+        ? { x: tip.x + (dx / length) * startArrowLength, y: tip.y + (dy / length) * startArrowLength }
+        : directionPoint
     drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startArrowLength)
   }
   if (element.endArrow && endArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[screenPoints.length - 1]
     const directionPoint = trimmedScreenPoints[trimmedScreenPoints.length - 2]
-    const dx = tip.x - directionPoint.x
-    const dy = tip.y - directionPoint.y
+    const dx = directionPoint.x - tip.x
+    const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
-    const origin = length > 1e-5
-      ? { x: tip.x + (dx / length) * endArrowLength, y: tip.y + (dy / length) * endArrowLength }
-      : directionPoint
+    const origin =
+      length > 1e-5
+        ? { x: tip.x + (dx / length) * endArrowLength, y: tip.y + (dy / length) * endArrowLength }
+        : directionPoint
     drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endArrowLength)
   }
   ctx.restore()
