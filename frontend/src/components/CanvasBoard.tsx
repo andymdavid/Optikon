@@ -130,6 +130,12 @@ const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => 
   }
   return resolveImageUrl(element.url)
 }
+const normalizeWheelDeltas = (event: WheelEvent) => {
+  let scale = 1
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) scale = 16
+  else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) scale = 800
+  return { deltaX: event.deltaX * scale, deltaY: event.deltaY * scale }
+}
 const STICKY_SIZE = 220
 const STICKY_MIN_SIZE = 40
 const BOARD_BACKGROUND = '#f7f7f8'
@@ -1700,21 +1706,21 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const screenY = (element.y + camera.offsetY) * camera.zoom
   const radius = STICKY_CORNER_RADIUS * camera.zoom
   const { paddingX, paddingY } = getStickyPadding(element)
-  const paddingXScreen = paddingX * camera.zoom
-  const paddingYScreen = paddingY * camera.zoom
-  const fontSize = getElementFontSize(element) * camera.zoom
+  const fontSize = getElementFontSize(element)
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const rect = { x: screenX, y: screenY, width, height }
   drawStickyShadow(ctx, rect, radius)
   ctx.save()
-  const gradient = ctx.createLinearGradient(0, screenY, 0, screenY + height)
+  ctx.translate(screenX, screenY)
+  ctx.scale(camera.zoom, camera.zoom)
+  const gradient = ctx.createLinearGradient(0, 0, 0, stickySize)
   gradient.addColorStop(0, STICKY_FILL_TOP)
   gradient.addColorStop(0.8, STICKY_FILL_BOTTOM)
   ctx.fillStyle = gradient
-  drawRoundedRectPath(ctx, screenX, screenY, width, height, radius)
+  drawRoundedRectPath(ctx, 0, 0, stickySize, stickySize, STICKY_CORNER_RADIUS)
   ctx.fill()
   ctx.fillStyle = 'rgba(255, 255, 255, 0.35)'
-  ctx.fillRect(screenX + radius, screenY + 2 * camera.zoom, width - radius * 2, 6 * camera.zoom)
+  ctx.fillRect(STICKY_CORNER_RADIUS, 2, stickySize - STICKY_CORNER_RADIUS * 2, 6)
   // Build font string with style
   const fontWeight = element.style?.fontWeight ?? 400
   const fontStyle = element.style?.fontStyle ?? 'normal'
@@ -1726,22 +1732,22 @@ function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, c
   const textAlign = element.style?.textAlign ?? 'center'
   ctx.textAlign = textAlign
   const inner = getStickyInnerSize(element)
-  const innerWidth = inner.width * camera.zoom
-  const innerHeight = inner.height * camera.zoom
+  const innerWidth = inner.width
+  const innerHeight = inner.height
   const lines = wrapText(ctx, element.text, innerWidth, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = Math.max(0, (innerHeight - totalHeight) / 2)
   // Calculate textX based on alignment
   let textX: number
   if (textAlign === 'left') {
-    textX = screenX + paddingXScreen
+    textX = paddingX
   } else if (textAlign === 'right') {
-    textX = screenX + width - paddingXScreen
+    textX = stickySize - paddingX
   } else {
-    textX = screenX + width / 2
+    textX = stickySize / 2
   }
   lines.forEach((line, index) => {
-    const textY = screenY + paddingYScreen + offsetY + index * lineHeight
+    const textY = paddingY + offsetY + index * lineHeight
     ctx.fillText(line, textX, textY, innerWidth)
     // Draw underline if element has a link
     if (link) {
@@ -3144,6 +3150,25 @@ export function CanvasBoard({
   const [commentPopoverMode, setCommentPopoverMode] = useState<'closed' | 'view' | 'edit'>('closed')
   const [editingCommentDraft, setEditingCommentDraft] = useState('')
   const isCommentEditing = commentPopoverMode === 'edit'
+  const cameraStateRef = useRef<CameraState>(initialCameraState)
+  const wheelAccumRef = useRef<{
+    panX: number
+    panY: number
+    zoomDeltaY: number
+    focalX: number
+    focalY: number
+    pinchFactor: number
+    hasZoom: boolean
+  }>({
+    panX: 0,
+    panY: 0,
+    zoomDeltaY: 0,
+    focalX: 0,
+    focalY: 0,
+    pinchFactor: 1,
+    hasZoom: false,
+  })
+  const wheelRafRef = useRef<number | null>(null)
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false)
   const [linkPopoverPosition, setLinkPopoverPosition] = useState<{ x: number; y: number } | null>(null)
   const [hoveredLinkElement, setHoveredLinkElement] = useState<{
@@ -3154,6 +3179,10 @@ export function CanvasBoard({
   const hoveredLinkElementRef = useRef<typeof hoveredLinkElement>(null)
   const linkHoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const marqueeRef = useRef<MarqueeState | null>(null)
+
+  useEffect(() => {
+    cameraStateRef.current = cameraState
+  }, [cameraState])
 
   const ensureAvatarImage = useCallback((key: string, url: string) => {
     const cache = commentAvatarCacheRef.current
@@ -5893,28 +5922,57 @@ export function CanvasBoard({
       const canvas = (event.currentTarget as HTMLCanvasElement | null) ?? canvasRef.current
       if (!canvas) return
 
+      const { deltaX, deltaY } = normalizeWheelDeltas(event)
       // Miro-like: pan on scroll, zoom on Cmd+scroll or trackpad pinch (ctrlKey)
       if (!event.metaKey && !event.ctrlKey) {
         event.preventDefault()
-        setCameraState((prev) => ({
-          offsetX: prev.offsetX - event.deltaX / prev.zoom,
-          offsetY: prev.offsetY - event.deltaY / prev.zoom,
-          zoom: prev.zoom,
-        }))
+        const accum = wheelAccumRef.current
+        accum.panX += deltaX
+        accum.panY += deltaY
+        if (wheelRafRef.current === null) {
+          wheelRafRef.current = window.requestAnimationFrame(() => {
+            const current = cameraStateRef.current
+            const next = {
+              offsetX: current.offsetX - accum.panX / current.zoom,
+              offsetY: current.offsetY - accum.panY / current.zoom,
+              zoom: current.zoom,
+            }
+            accum.panX = 0
+            accum.panY = 0
+            wheelRafRef.current = null
+            setCameraState(next)
+          })
+        }
         return
       }
 
       event.preventDefault()
       const rect = canvas.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
-      const boardPoint = screenToBoard(canvasPoint)
-      setCameraState((prev) => {
-        const zoomFactor = Math.exp(-event.deltaY * 0.0015)
-        const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * zoomFactor))
-        const offsetX = canvasPoint.x / newZoom - boardPoint.x
-        const offsetY = canvasPoint.y / newZoom - boardPoint.y
-        return { offsetX, offsetY, zoom: newZoom }
-      })
+      const accum = wheelAccumRef.current
+      accum.zoomDeltaY += deltaY
+      accum.focalX = canvasPoint.x
+      accum.focalY = canvasPoint.y
+      accum.pinchFactor = event.ctrlKey && !event.metaKey ? 0.65 : 1
+      accum.hasZoom = true
+      if (wheelRafRef.current === null) {
+        wheelRafRef.current = window.requestAnimationFrame(() => {
+          const current = cameraStateRef.current
+          const cappedDelta = clamp(accum.zoomDeltaY * accum.pinchFactor, -120, 120)
+          const zoomFactor = Math.exp(-cappedDelta * 0.0012)
+          const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current.zoom * zoomFactor))
+          const boardPoint = {
+            x: accum.focalX / current.zoom - current.offsetX,
+            y: accum.focalY / current.zoom - current.offsetY,
+          }
+          const offsetX = accum.focalX / newZoom - boardPoint.x
+          const offsetY = accum.focalY / newZoom - boardPoint.y
+          accum.zoomDeltaY = 0
+          accum.hasZoom = false
+          wheelRafRef.current = null
+          setCameraState({ offsetX, offsetY, zoom: newZoom })
+        })
+      }
     },
     [isCommentEditing, screenToBoard]
   )
