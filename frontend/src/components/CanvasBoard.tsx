@@ -2601,8 +2601,8 @@ function drawLineElement(
     }
     return null
   }
-  if (element.startArrow && startArrowLength > 0 && trimmedScreenPoints.length >= 2) {
-    const tip = screenPoints[0]
+  if (element.startArrow && startArrowLength > 0 && directionPoints.length >= 2) {
+    const tip = directionPoints[0]
     const directionPoint = pickDirectionPoint(directionPoints, 0, 1) ?? directionPoints[1]
     const dx = directionPoint.x - tip.x
     const dy = directionPoint.y - tip.y
@@ -2613,8 +2613,8 @@ function drawLineElement(
         : directionPoint
     drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startArrowLength)
   }
-  if (element.endArrow && endArrowLength > 0 && trimmedScreenPoints.length >= 2) {
-    const tip = screenPoints[screenPoints.length - 1]
+  if (element.endArrow && endArrowLength > 0 && directionPoints.length >= 2) {
+    const tip = directionPoints[directionPoints.length - 1]
     const directionPoint =
       pickDirectionPoint(directionPoints, directionPoints.length - 1, -1) ??
       directionPoints[directionPoints.length - 2]
