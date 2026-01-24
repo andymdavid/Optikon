@@ -2577,7 +2577,7 @@ function drawLineElement(
     return result
   }
   const trimmedScreenPoints = adjustPolyline(screenPoints, startTrim, endTrim)
-  const directionPoints = trimmedScreenPoints.length >= 2 ? trimmedScreenPoints : screenPoints
+  const directionPoints = screenPoints
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
