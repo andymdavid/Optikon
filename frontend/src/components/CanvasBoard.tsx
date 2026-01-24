@@ -118,6 +118,12 @@ const extractAttachmentId = (url: string) => {
   const dot = base.lastIndexOf('.')
   return dot > 0 ? base.slice(0, dot) : base
 }
+const isTypingTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tagName = target.tagName
+  return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT'
+}
 const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => {
   if (element.attachmentId && boardId) {
     return `${API_BASE_URL}/boards/${boardId}/attachments/${element.attachmentId}`
@@ -6172,6 +6178,7 @@ export function CanvasBoard({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (editingStateRef.current || isCommentEditing) return
+      if (isTypingTarget(event.target)) return
       if (event.metaKey || event.ctrlKey) {
         const key = event.key.toLowerCase()
         if (key === 'c') {
@@ -6267,6 +6274,7 @@ export function CanvasBoard({
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (editingStateRef.current || isCommentEditing) return
+      if (isTypingTarget(event.target)) return
       if (event.code === 'Space') {
         spacePressedRef.current = false
       }
