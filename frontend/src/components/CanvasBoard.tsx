@@ -3312,6 +3312,7 @@ export function CanvasBoard({
   const [connectorHighlight, setConnectorHighlight] = useState<
     { elementId: string; anchor: ConnectorAnchor } | null
   >(null)
+  const [hoveredConnectorElementId, setHoveredConnectorElementId] = useState<string | null>(null)
   const [commentPopoverMode, setCommentPopoverMode] = useState<'closed' | 'view' | 'edit'>('closed')
   const [editingCommentDraft, setEditingCommentDraft] = useState('')
   const isCommentEditing = commentPopoverMode === 'edit'
@@ -5500,6 +5501,13 @@ export function CanvasBoard({
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
       if (editingStateRef.current || isCommentEditing) return
+      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+        const anchorHit = hitTestConnectorAnchor(canvasPoint)
+        const nextHovered = anchorHit ? anchorHit.element.id : null
+        setHoveredConnectorElementId((prev) => (prev === nextHovered ? prev : nextHovered))
+      } else if (hoveredConnectorElementId !== null) {
+        setHoveredConnectorElementId(null)
+      }
 
       const panState = panStateRef.current
       if (mode === 'pan' && panState && event.pointerId === panState.pointerId) {
@@ -6055,10 +6063,13 @@ export function CanvasBoard({
       cameraState.offsetY,
       cameraState.zoom,
       getMeasureContext,
+      hitTestConnectorAnchor,
       isCommentEditing,
+      hoveredConnectorElementId,
       screenToBoard,
       sendElementsUpdate,
       setMarquee,
+      toolMode,
     ]
   )
 
@@ -6344,6 +6355,7 @@ export function CanvasBoard({
 
   const handlePointerLeave = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      setHoveredConnectorElementId(null)
       finishDrag(event, 'cancel')
     },
     [finishDrag]
@@ -6590,6 +6602,11 @@ export function CanvasBoard({
     setElements({})
     setBoardError(null)
   }, [boardId, setSelection])
+
+  useEffect(() => {
+    if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') return
+    setHoveredConnectorElementId(null)
+  }, [toolMode])
 
   useEffect(() => {
     if (toolMode !== 'line' && toolMode !== 'arrow') {
@@ -6978,7 +6995,7 @@ export function CanvasBoard({
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
       }
-      if (showConnectorAnchors && !isLineElement(element)) {
+      if (showConnectorAnchors && !isLineElement(element) && hoveredConnectorElementId === element.id) {
         drawConnectorAnchors(ctx, element, cameraState, sharedMeasureCtx, connectorHighlight)
       }
     }
@@ -7009,7 +7026,17 @@ export function CanvasBoard({
         sharedMeasureCtx
       )
     })
-  }, [cameraState, commentAvatarVersion, connectorHighlight, editingState, elements, imageCacheVersion, selectedIds, toolMode])
+  }, [
+    cameraState,
+    commentAvatarVersion,
+    connectorHighlight,
+    editingState,
+    elements,
+    hoveredConnectorElementId,
+    imageCacheVersion,
+    selectedIds,
+    toolMode,
+  ])
 
   const editingElement = editingState ? elements[editingState.id] : null
   const editingStickyElement = isStickyElement(editingElement) ? editingElement : null
