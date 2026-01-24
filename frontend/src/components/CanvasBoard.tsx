@@ -2495,6 +2495,7 @@ function drawLineElement(
   })
   const strokeColor = getLineStrokeColor(element)
   const screenPoints = pathPoints.map(toScreen)
+  const directionPoints = trimmedScreenPoints.length >= 2 ? trimmedScreenPoints : screenPoints
   const getSegmentLength = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(b.x - a.x, b.y - a.y)
   const lineLength = screenPoints.reduce((sum, point, index) => {
     if (index === 0) return sum
@@ -2602,7 +2603,7 @@ function drawLineElement(
   }
   if (element.startArrow && startArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[0]
-    const directionPoint = pickDirectionPoint(trimmedScreenPoints, 0, 1) ?? trimmedScreenPoints[1]
+    const directionPoint = pickDirectionPoint(directionPoints, 0, 1) ?? directionPoints[1]
     const dx = directionPoint.x - tip.x
     const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
@@ -2615,8 +2616,8 @@ function drawLineElement(
   if (element.endArrow && endArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[screenPoints.length - 1]
     const directionPoint =
-      pickDirectionPoint(trimmedScreenPoints, trimmedScreenPoints.length - 1, -1) ??
-      trimmedScreenPoints[trimmedScreenPoints.length - 2]
+      pickDirectionPoint(directionPoints, directionPoints.length - 1, -1) ??
+      directionPoints[directionPoints.length - 2]
     const dx = directionPoint.x - tip.x
     const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
