@@ -2503,17 +2503,31 @@ function drawLineElement(
   }, 0)
   let startTrim = 0
   let endTrim = 0
+  let startArrowLength = 0
+  let endArrowLength = 0
+  const hasStartBinding =
+    !!element.startBinding &&
+    !!options?.resolveElement &&
+    !!options.resolveElement(element.startBinding.elementId)
+  const hasEndBinding =
+    !!element.endBinding &&
+    !!options?.resolveElement &&
+    !!options.resolveElement(element.endBinding.elementId)
   if (lineLength > 0) {
     if (element.startArrow) {
-      startTrim = computeArrowLength(screenStrokeWidth, lineLength)
+      startArrowLength = computeArrowLength(screenStrokeWidth, lineLength)
     }
     if (element.endArrow) {
-      endTrim = computeArrowLength(screenStrokeWidth, lineLength)
+      endArrowLength = computeArrowLength(screenStrokeWidth, lineLength)
     }
+    startTrim = hasStartBinding ? 0 : startArrowLength
+    endTrim = hasEndBinding ? 0 : endArrowLength
     if (startTrim + endTrim > lineLength) {
       const scale = lineLength / (startTrim + endTrim)
       startTrim *= scale
       endTrim *= scale
+      startArrowLength *= scale
+      endArrowLength *= scale
     }
   }
   const adjustPolyline = (
@@ -2594,17 +2608,17 @@ function drawLineElement(
     const offset = trim > 0 ? trim : Math.max(8, screenStrokeWidth * 2)
     return { x: tip.x + ux * offset, y: tip.y + uy * offset }
   }
-  if (element.startArrow && startTrim > 0 && screenPoints.length >= 2) {
+  if (element.startArrow && startArrowLength > 0 && screenPoints.length >= 2) {
     const tip = screenPoints[0]
     const fallbackOrigin = screenPoints[1]
-    const origin = resolveArrowOrigin(element.startBinding, tip, fallbackOrigin, startTrim)
-    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startTrim)
+    const origin = resolveArrowOrigin(element.startBinding, tip, fallbackOrigin, startArrowLength)
+    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startArrowLength)
   }
-  if (element.endArrow && endTrim > 0 && screenPoints.length >= 2) {
+  if (element.endArrow && endArrowLength > 0 && screenPoints.length >= 2) {
     const tip = screenPoints[screenPoints.length - 1]
     const fallbackOrigin = screenPoints[screenPoints.length - 2]
-    const origin = resolveArrowOrigin(element.endBinding, tip, fallbackOrigin, endTrim)
-    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endTrim)
+    const origin = resolveArrowOrigin(element.endBinding, tip, fallbackOrigin, endArrowLength)
+    drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endArrowLength)
   }
   ctx.restore()
 }
