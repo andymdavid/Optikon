@@ -2588,9 +2588,21 @@ function drawLineElement(
     else ctx.lineTo(point.x, point.y)
   })
   ctx.stroke()
+  const pickDirectionPoint = (points: Array<{ x: number; y: number }>, startIndex: number, step: number) => {
+    const start = points[startIndex]
+    if (!start) return null
+    for (let i = startIndex + step; i >= 0 && i < points.length; i += step) {
+      const candidate = points[i]
+      if (!candidate) continue
+      if (Math.hypot(candidate.x - start.x, candidate.y - start.y) > 1e-3) {
+        return candidate
+      }
+    }
+    return null
+  }
   if (element.startArrow && startArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[0]
-    const directionPoint = trimmedScreenPoints[1]
+    const directionPoint = pickDirectionPoint(trimmedScreenPoints, 0, 1) ?? trimmedScreenPoints[1]
     const dx = directionPoint.x - tip.x
     const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
@@ -2602,7 +2614,9 @@ function drawLineElement(
   }
   if (element.endArrow && endArrowLength > 0 && trimmedScreenPoints.length >= 2) {
     const tip = screenPoints[screenPoints.length - 1]
-    const directionPoint = trimmedScreenPoints[trimmedScreenPoints.length - 2]
+    const directionPoint =
+      pickDirectionPoint(trimmedScreenPoints, trimmedScreenPoints.length - 1, -1) ??
+      trimmedScreenPoints[trimmedScreenPoints.length - 2]
     const dx = directionPoint.x - tip.x
     const dy = directionPoint.y - tip.y
     const length = Math.hypot(dx, dy)
