@@ -3545,6 +3545,7 @@ export function CanvasBoard({
       (el): el is StickyNoteElement | TextElement | ShapeElement | FrameElement => supportsTextStyle(el)
     )
     const stickyElements = selectedElements.filter((el): el is StickyNoteElement => isStickyElement(el))
+    const shapeElements = selectedElements.filter((el): el is ShapeElement => isShapeElement(el))
 
     // Default state when no text elements selected
     const defaultState: SelectionFormatState = {
@@ -3560,9 +3561,11 @@ export function CanvasBoard({
       highlight: null,
       background: null,
       stickyFill: null,
+      shapeFill: null,
       link: null,
       hasTextElements: false,
       hasStickyElements: false,
+      hasShapeElements: false,
     }
 
     if (textElements.length === 0 && stickyElements.length === 0) {
@@ -3573,12 +3576,18 @@ export function CanvasBoard({
     const stickyFillFirst = stickyFillValues[0] ?? null
     const stickyFillAllSame = stickyFillValues.every((v) => v === stickyFillFirst)
     const stickyFill = stickyFillAllSame ? stickyFillFirst : 'mixed' as const
+    const shapeFillValues = shapeElements.map((el) => el.fill ?? null)
+    const shapeFillFirst = shapeFillValues[0] ?? null
+    const shapeFillAllSame = shapeFillValues.every((v) => v === shapeFillFirst)
+    const shapeFill = shapeFillAllSame ? shapeFillFirst : 'mixed' as const
 
     if (textElements.length === 0) {
       return {
         ...defaultState,
         stickyFill,
+        shapeFill,
         hasStickyElements: stickyElements.length > 0,
+        hasShapeElements: shapeElements.length > 0,
       }
     }
 
@@ -3654,9 +3663,11 @@ export function CanvasBoard({
       highlight,
       background,
       stickyFill,
+      shapeFill,
       link,
       hasTextElements: textElements.length > 0,
       hasStickyElements: stickyElements.length > 0,
+      hasShapeElements: shapeElements.length > 0,
     }
   }, [selectedIds, elements, supportsTextStyle])
 
@@ -3861,6 +3872,36 @@ export function CanvasBoard({
       if (stickyElements.length === 0) return
 
       const updatedElements: BoardElement[] = stickyElements.map((el) => ({
+        ...el,
+        fill: fill ?? undefined,
+      }))
+
+      setElements((prev) => {
+        const next = { ...prev }
+        updatedElements.forEach((el) => {
+          next[el.id] = el
+        })
+        return next
+      })
+
+      sendElementsUpdate(updatedElements)
+
+      if (boardId) {
+        void persistElementsUpdate(boardId, updatedElements)
+      }
+    },
+    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate]
+  )
+
+  const handleSetShapeFill = useCallback(
+    (fill: string | null) => {
+      const shapes = Array.from(selectedIds)
+        .map((id) => elements[id])
+        .filter((el): el is ShapeElement => !!el && isShapeElement(el))
+
+      if (shapes.length === 0) return
+
+      const updatedElements: BoardElement[] = shapes.map((el) => ({
         ...el,
         fill: fill ?? undefined,
       }))
@@ -7048,6 +7089,7 @@ export function CanvasBoard({
         onSetHighlight={handleSetHighlight}
         onSetBackground={handleSetBackground}
         onSetStickyFill={handleSetStickyFill}
+        onSetShapeFill={handleSetShapeFill}
         onInsertLink={handleOpenLinkPopover}
       />
       <LinkInsertPopover

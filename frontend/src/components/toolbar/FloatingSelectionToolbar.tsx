@@ -40,9 +40,11 @@ export type SelectionFormatState = {
   highlight: string | null | 'mixed'
   background: TextBackground | null | 'mixed'
   stickyFill: string | null | 'mixed'
+  shapeFill: string | null | 'mixed'
   link: string | null | 'mixed'
   hasTextElements: boolean
   hasStickyElements: boolean
+  hasShapeElements: boolean
 }
 
 export type FloatingSelectionToolbarProps = {
@@ -61,6 +63,7 @@ export type FloatingSelectionToolbarProps = {
   onSetHighlight: (color: string | null) => void
   onSetBackground: (bg: TextBackground | null) => void
   onSetStickyFill: (color: string | null) => void
+  onSetShapeFill: (color: string | null) => void
   onInsertLink?: () => void
   onAddComment?: () => void
 }
@@ -172,6 +175,7 @@ export function FloatingSelectionToolbar({
   onSetHighlight,
   onSetBackground,
   onSetStickyFill,
+  onSetShapeFill,
   onInsertLink,
   onAddComment,
 }: FloatingSelectionToolbarProps) {
@@ -264,6 +268,7 @@ export function FloatingSelectionToolbar({
   const currentHighlight = formatState.highlight !== 'mixed' ? formatState.highlight : null
   const currentBackground = formatState.background !== 'mixed' ? formatState.background : null
   const currentStickyFill = formatState.stickyFill !== 'mixed' ? formatState.stickyFill : null
+  const currentShapeFill = formatState.shapeFill !== 'mixed' ? formatState.shapeFill : null
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>, isActive: boolean) => {
     if (!isActive) {
@@ -616,7 +621,7 @@ export function FloatingSelectionToolbar({
       </div>
 
       {/* Background Color + Opacity */}
-      {!formatState.hasStickyElements && (
+      {(!formatState.hasStickyElements || formatState.hasShapeElements) && (
         <div style={{ position: 'relative' }}>
           <button
             type="button"
@@ -733,6 +738,58 @@ export function FloatingSelectionToolbar({
                       />
                     )
                   })}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {formatState.hasShapeElements && (
+        <>
+          <div style={separatorStyle} />
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={buttonBaseStyle}
+              title="Background colour"
+              onClick={() => toggleDropdown('shapeFill')}
+              onMouseEnter={(e) => handleMouseEnter(e, false)}
+              onMouseLeave={(e) => handleMouseLeave(e, false)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect
+                  x="2"
+                  y="2"
+                  width="12"
+                  height="12"
+                  rx="2"
+                  fill={currentShapeFill ?? 'none'}
+                />
+              </svg>
+            </button>
+            {openDropdown === 'shapeFill' && (
+              <div style={{ ...dropdownStyle, minWidth: 'auto' }}>
+                <div style={colorGridStyle}>
+                  {BG_COLORS.map((color) => (
+                    <div
+                      key={color}
+                      style={{
+                        ...colorSwatchStyle,
+                        background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
+                        outline: (currentShapeFill ?? 'transparent') === color ? '2px solid #0ea5e9' : 'none',
+                        outlineOffset: 1,
+                      }}
+                      onClick={() => {
+                        if (color === 'transparent') {
+                          onSetShapeFill(null)
+                        } else {
+                          onSetShapeFill(color)
+                        }
+                        setOpenDropdown(null)
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
             )}
