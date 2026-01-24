@@ -5339,7 +5339,7 @@ export function CanvasBoard({
             stroke: LINE_DEFAULT_STROKE,
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
-            endArrow: toolMode === 'arrow',
+            endArrow: toolMode === 'arrow' || toolMode === 'elbow',
             orthogonal: isElbowTool,
             points: undefined,
             elbowVariant: isElbowTool ? defaultVariant : undefined,
