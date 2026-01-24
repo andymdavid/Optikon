@@ -3054,17 +3054,27 @@ function drawLineSelection(
       ctx.fill()
       ctx.stroke()
     }
+    const drawSegmentHandle = (point: { x: number; y: number }) => {
+      ctx.beginPath()
+      ctx.fillStyle = ACCENT_COLOR
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1
+      ctx.arc(point.x, point.y, RESIZE_HANDLE_RADIUS - 1, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
     if (element.orthogonal) {
       const startHandle = screenPath[0]
       const endHandle = screenPath[screenPath.length - 1]
       if (startHandle) drawHandle(startHandle)
       if (endHandle) drawHandle(endHandle)
       if (points.length === 2) {
-        const segmentStart = screenPath[1]
-        const segmentEnd = screenPath[2]
-        if (segmentStart && segmentEnd) {
+        for (let index = 0; index < screenPath.length - 1; index += 1) {
+          const segmentStart = screenPath[index]
+          const segmentEnd = screenPath[index + 1]
+          if (!segmentStart || !segmentEnd) continue
           const mid = { x: (segmentStart.x + segmentEnd.x) / 2, y: (segmentStart.y + segmentEnd.y) / 2 }
-          drawHandle(mid)
+          drawSegmentHandle(mid)
         }
       }
     } else {
@@ -3199,7 +3209,6 @@ export function CanvasBoard({
     | {
         id: string
         pointerId: number
-        baseOffset: number
         variant: ElbowVariant
         orientation: 'horizontal' | 'vertical'
       }
@@ -4870,23 +4879,28 @@ export function CanvasBoard({
         measureCtx,
       })
       if (resolved.points.length !== 2) return null
-      const segmentStart = resolved.points[0]
-      const segmentEnd = resolved.points[1]
-      if (!segmentStart || !segmentEnd) return null
-      const screenStart = {
-        x: (segmentStart.x + cameraState.offsetX) * cameraState.zoom,
-        y: (segmentStart.y + cameraState.offsetY) * cameraState.zoom,
+      const pathPoints = [resolved.start, ...resolved.points, resolved.end]
+      let best: { orientation: 'horizontal' | 'vertical'; distance: number } | null = null
+      for (let index = 0; index < pathPoints.length - 1; index += 1) {
+        const segmentStart = pathPoints[index]
+        const segmentEnd = pathPoints[index + 1]
+        if (!segmentStart || !segmentEnd) continue
+        const screenStart = {
+          x: (segmentStart.x + cameraState.offsetX) * cameraState.zoom,
+          y: (segmentStart.y + cameraState.offsetY) * cameraState.zoom,
+        }
+        const screenEnd = {
+          x: (segmentEnd.x + cameraState.offsetX) * cameraState.zoom,
+          y: (segmentEnd.y + cameraState.offsetY) * cameraState.zoom,
+        }
+        const mid = { x: (screenStart.x + screenEnd.x) / 2, y: (screenStart.y + screenEnd.y) / 2 }
+        const distance = Math.hypot(point.x - mid.x, point.y - mid.y)
+        if (distance <= RESIZE_HANDLE_HIT_RADIUS && (!best || distance < best.distance)) {
+          best = { orientation: getSegmentOrientation(segmentStart, segmentEnd), distance }
+        }
       }
-      const screenEnd = {
-        x: (segmentEnd.x + cameraState.offsetX) * cameraState.zoom,
-        y: (segmentEnd.y + cameraState.offsetY) * cameraState.zoom,
-      }
-      const mid = { x: (screenStart.x + screenEnd.x) / 2, y: (screenStart.y + screenEnd.y) / 2 }
-      const distance = Math.hypot(point.x - mid.x, point.y - mid.y)
-      if (distance <= RESIZE_HANDLE_HIT_RADIUS) {
-        return { element, orientation: getSegmentOrientation(segmentStart, segmentEnd) }
-      }
-      return null
+      if (!best) return null
+      return { element, orientation: best.orientation }
     },
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
   )
@@ -5149,21 +5163,11 @@ export function CanvasBoard({
           event.preventDefault()
           suppressClickRef.current = true
           interactionModeRef.current = 'line-segment'
-          const measureCtx = getSharedMeasureContext()
-          const resolvedEndpoints = getResolvedLineEndpoints(segmentHandleHit.element, {
-            resolveElement: (elementId) => elements[elementId],
-            measureCtx,
-          })
-          const orthogonalState = resolveOrthogonalState(
-            resolvedEndpoints.start,
-            resolvedEndpoints.end,
-            segmentHandleHit.element
-          )
+          const variant = segmentHandleHit.orientation === 'horizontal' ? 'VHV' : 'HVH'
           lineSegmentStateRef.current = {
             id: segmentHandleHit.element.id,
             pointerId: event.pointerId,
-            baseOffset: orthogonalState.offset,
-            variant: orthogonalState.variant,
+            variant,
             orientation: segmentHandleHit.orientation,
           }
           if (event.currentTarget.setPointerCapture) {
