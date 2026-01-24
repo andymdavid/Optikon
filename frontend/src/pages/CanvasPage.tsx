@@ -295,7 +295,7 @@ export function CanvasPage({
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell canvas-shell">
       <AccountMenu apiBaseUrl={apiBaseUrl} session={session} onSessionChange={onSessionChange} />
       {boardInfo && (
         <div className="board-title">

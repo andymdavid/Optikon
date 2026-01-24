@@ -30,10 +30,9 @@ body,
   top: 14px;
   left: 16px;
   z-index: 60;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -41,6 +40,8 @@ body,
   font-weight: 600;
   color: #0f172a;
   pointer-events: auto;
+  min-height: 40px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 .board-title__product {
@@ -155,6 +156,11 @@ body,
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
   text-decoration: none;
+}
+
+.canvas-shell .account-menu__trigger,
+.canvas-shell .account-menu__signin {
+  height: 40px;
 }
 
 .account-menu__signin {
