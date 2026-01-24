@@ -2574,14 +2574,36 @@ function drawLineElement(
     else ctx.lineTo(point.x, point.y)
   })
   ctx.stroke()
+  const resolveArrowOrigin = (
+    binding: LineEndpointBinding | undefined,
+    tip: { x: number; y: number },
+    fallbackOrigin: { x: number; y: number },
+    trim: number
+  ) => {
+    if (!binding || !options?.resolveElement) return fallbackOrigin
+    const target = options.resolveElement(binding.elementId)
+    if (!target) return fallbackOrigin
+    const details = getElementAnchorDetails(target, binding.anchor, { ctx: options.measureCtx ?? null })
+    if (!details) return fallbackOrigin
+    const dirX = details.point.x - details.center.x
+    const dirY = details.point.y - details.center.y
+    const length = Math.hypot(dirX, dirY)
+    if (length <= 1e-5) return fallbackOrigin
+    const ux = dirX / length
+    const uy = dirY / length
+    const offset = trim > 0 ? trim : Math.max(8, screenStrokeWidth * 2)
+    return { x: tip.x + ux * offset, y: tip.y + uy * offset }
+  }
   if (element.startArrow && startTrim > 0 && screenPoints.length >= 2) {
     const tip = screenPoints[0]
-    const origin = screenPoints[1]
+    const fallbackOrigin = screenPoints[1]
+    const origin = resolveArrowOrigin(element.startBinding, tip, fallbackOrigin, startTrim)
     drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, startTrim)
   }
   if (element.endArrow && endTrim > 0 && screenPoints.length >= 2) {
     const tip = screenPoints[screenPoints.length - 1]
-    const origin = screenPoints[screenPoints.length - 2]
+    const fallbackOrigin = screenPoints[screenPoints.length - 2]
+    const origin = resolveArrowOrigin(element.endBinding, tip, fallbackOrigin, endTrim)
     drawLineArrowhead(ctx, tip, origin, strokeColor, screenStrokeWidth, endTrim)
   }
   ctx.restore()
