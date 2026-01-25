@@ -425,7 +425,7 @@ function getResolvedLineEndpoints(
   const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
   const end = resolveLineEndpointPosition(element, 'end', { resolveElement: resolver, measureCtx })
   if (element.orthogonal) {
-    const state = resolveOrthogonalState(start, end, element)
+    const state = resolveOrthogonalState(start, end, element, resolver, measureCtx)
     return { start, end, points: state.points }
   }
   return { start, end, points: element.points ?? [] }
@@ -531,6 +531,58 @@ const getAnchorAxis = (anchor: ConnectorAnchor | null): ElbowAxis | null => {
   return null
 }
 
+type RouteRect = {
+  rect: Rect
+  allowExit: boolean
+}
+
+const ROUTE_CLEARANCE = 8
+
+const expandRect = (rect: Rect, padding: number): Rect => ({
+  left: rect.left - padding,
+  right: rect.right + padding,
+  top: rect.top - padding,
+  bottom: rect.bottom + padding,
+})
+
+const pointInRect = (point: { x: number; y: number }, rect: Rect) =>
+  point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
+
+const segmentIntersectsRect = (
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  rect: Rect,
+  allowExit: boolean
+) => {
+  const aInside = pointInRect(a, rect)
+  const bInside = pointInRect(b, rect)
+  if (allowExit && (aInside || bInside)) {
+    if (aInside && bInside) return true
+    return false
+  }
+  if (aInside || bInside) return true
+  const minX = Math.min(a.x, b.x)
+  const maxX = Math.max(a.x, b.x)
+  const minY = Math.min(a.y, b.y)
+  const maxY = Math.max(a.y, b.y)
+  return !(maxX < rect.left || minX > rect.right || maxY < rect.top || minY > rect.bottom)
+}
+
+const countRouteIntersections = (points: Array<{ x: number; y: number }>, rects: RouteRect[]) => {
+  if (points.length < 2 || rects.length === 0) return 0
+  let count = 0
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]
+    const b = points[i + 1]
+    rects.forEach((routeRect) => {
+      if (segmentIntersectsRect(a, b, routeRect.rect, routeRect.allowExit)) {
+        count += 1
+      }
+    })
+  }
+  return count
+}
+
 const getDefaultElbowVariant = (start: { x: number; y: number }, end: { x: number; y: number }): ElbowVariant =>
   Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ? 'VHV' : 'HVH'
 
@@ -557,7 +609,8 @@ const computeAutoOrthogonalRoute = (
   start: { x: number; y: number },
   end: { x: number; y: number },
   startAxis: ElbowAxis | null,
-  endAxis: ElbowAxis | null
+  endAxis: ElbowAxis | null,
+  rects: RouteRect[]
 ) => {
   if (start.x === end.x || start.y === end.y) {
     return {
@@ -567,22 +620,29 @@ const computeAutoOrthogonalRoute = (
     }
   }
   if (startAxis && endAxis && startAxis !== endAxis) {
-    const bend =
+    const bendPrimary =
       startAxis === 'horizontal' ? { x: end.x, y: start.y } : { x: start.x, y: end.y }
+    const bendAlt =
+      startAxis === 'horizontal' ? { x: start.x, y: end.y } : { x: end.x, y: start.y }
+    const primaryPoints = [start, bendPrimary, end]
+    const altPoints = [start, bendAlt, end]
+    const primaryHits = countRouteIntersections(primaryPoints, rects)
+    const altHits = countRouteIntersections(altPoints, rects)
+    const bend = altHits < primaryHits ? bendAlt : bendPrimary
     return {
       variant: startAxis === 'horizontal' ? 'HVH' : 'VHV',
       offset: startAxis === 'horizontal' ? bend.x : bend.y,
       points: [bend],
     }
   }
-  const preferredVariant =
-    (endAxis === 'horizontal' ? 'HVH' : endAxis === 'vertical' ? 'VHV' : null) ??
-    (startAxis === 'horizontal' ? 'HVH' : startAxis === 'vertical' ? 'VHV' : null) ??
-    getDefaultElbowVariant(start, end)
-  const offset =
-    preferredVariant === 'HVH'
-      ? start.x + (end.x - start.x) / 2
-      : start.y + (end.y - start.y) / 2
+  const hvhOffset = start.x + (end.x - start.x) / 2
+  const vhvOffset = start.y + (end.y - start.y) / 2
+  const hvhPoints = [start, ...getOrthogonalPoints(start, end, 'HVH', hvhOffset), end]
+  const vhvPoints = [start, ...getOrthogonalPoints(start, end, 'VHV', vhvOffset), end]
+  const hvhHits = countRouteIntersections(hvhPoints, rects)
+  const vhvHits = countRouteIntersections(vhvPoints, rects)
+  const preferredVariant = vhvHits < hvhHits ? 'VHV' : 'HVH'
+  const offset = preferredVariant === 'HVH' ? hvhOffset : vhvOffset
   return {
     variant: preferredVariant,
     offset,
@@ -609,13 +669,31 @@ const inferElbowFromPoints = (
 const resolveOrthogonalState = (
   start: { x: number; y: number },
   end: { x: number; y: number },
-  element: LineElement
+  element: LineElement,
+  resolveElement?: (id: string) => BoardElement | undefined,
+  measureCtx?: CanvasRenderingContext2D | null
 ): { variant: ElbowVariant; offset: number; points: Array<{ x: number; y: number }>; collapsed: boolean } => {
   const collapsed = start.x === end.x || start.y === end.y
   if (element.elbowAuto !== false) {
     const startAxis = getAnchorAxis(element.startBinding?.anchor ?? null)
     const endAxis = getAnchorAxis(element.endBinding?.anchor ?? null)
-    const autoRoute = computeAutoOrthogonalRoute(start, end, startAxis, endAxis)
+    const ctx = measureCtx ?? getSharedMeasureContext()
+    const rects: RouteRect[] = []
+    if (resolveElement && element.startBinding) {
+      const startElement = resolveElement(element.startBinding.elementId)
+      if (startElement) {
+        const bounds = getElementBounds(startElement, ctx, { resolveElement, measureCtx: ctx })
+        rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit: true })
+      }
+    }
+    if (resolveElement && element.endBinding) {
+      const endElement = resolveElement(element.endBinding.elementId)
+      if (endElement) {
+        const bounds = getElementBounds(endElement, ctx, { resolveElement, measureCtx: ctx })
+        rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit: true })
+      }
+    }
+    const autoRoute = computeAutoOrthogonalRoute(start, end, startAxis, endAxis, rects)
     return {
       variant: autoRoute.variant,
       offset: autoRoute.offset,
@@ -5591,7 +5669,7 @@ export function CanvasBoard({
               measureCtx: getSharedMeasureContext(),
             })
             const orthogonalState = element.orthogonal
-              ? resolveOrthogonalState(lineStart, lineEnd, element)
+              ? resolveOrthogonalState(lineStart, lineEnd, element, (elementId) => elements[elementId], getSharedMeasureContext())
               : null
             startPositions[id] = {
               x: element.x1,
@@ -5731,7 +5809,7 @@ export function CanvasBoard({
               resolveElement: (elementId) => prev[elementId],
               measureCtx,
             })
-            const orthogonalState = resolveOrthogonalState(start, end, next)
+            const orthogonalState = resolveOrthogonalState(start, end, next, (elementId) => prev[elementId], measureCtx)
             updatedLine = {
               ...next,
               elbowVariant: orthogonalState.variant,
@@ -6070,7 +6148,8 @@ export function CanvasBoard({
               startPoint,
               targetPoint,
               getAnchorAxis(updated.startBinding?.anchor ?? null),
-              getAnchorAxis(creation.endBinding?.anchor ?? null)
+              getAnchorAxis(creation.endBinding?.anchor ?? null),
+              []
             )
             updated = {
               ...updated,
