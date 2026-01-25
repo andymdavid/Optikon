@@ -504,13 +504,25 @@ function getLinePathPoints(
   return [start, ...points, end]
 }
 
+function getCurveControlFromMidpoint(
+  start: { x: number; y: number },
+  mid: { x: number; y: number },
+  end: { x: number; y: number }
+) {
+  return {
+    x: 2 * mid.x - 0.5 * (start.x + end.x),
+    y: 2 * mid.y - 0.5 * (start.y + end.y),
+  }
+}
+
 function getCurveSamplePoints(
   start: { x: number; y: number },
-  control: { x: number; y: number },
+  mid: { x: number; y: number },
   end: { x: number; y: number }
 ) {
   const distance = Math.hypot(end.x - start.x, end.y - start.y)
   const segments = clamp(Math.round(distance / 40), 8, 32)
+  const control = getCurveControlFromMidpoint(start, mid, end)
   const points: Array<{ x: number; y: number }> = [start]
   for (let i = 1; i < segments; i += 1) {
     const t = i / segments
