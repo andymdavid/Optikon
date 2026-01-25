@@ -5940,6 +5940,8 @@ export function CanvasBoard({
       hitTestResizeHandle,
       hitTestTransformHandle,
       isCommentEditing,
+      lineArrowEnabled,
+      lineToolKind,
       preventNextPopoverClose,
       openCommentPopoverForElement,
       persistElementCreate,
