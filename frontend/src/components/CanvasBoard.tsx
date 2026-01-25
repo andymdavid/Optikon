@@ -521,12 +521,13 @@ function getSegmentOrientation(
 }
 
 type ElbowVariant = 'HVH' | 'VHV'
+type ElbowAxis = 'horizontal' | 'vertical'
 
 const isElbowVariant = (value: unknown): value is ElbowVariant => value === 'HVH' || value === 'VHV'
 
-const getAnchorPreferredVariant = (anchor: ConnectorAnchor | null): ElbowVariant | null => {
-  if (anchor === 'top' || anchor === 'bottom') return 'HVH'
-  if (anchor === 'left' || anchor === 'right') return 'VHV'
+const getAnchorAxis = (anchor: ConnectorAnchor | null): ElbowAxis | null => {
+  if (anchor === 'left' || anchor === 'right') return 'horizontal'
+  if (anchor === 'top' || anchor === 'bottom') return 'vertical'
   return null
 }
 
@@ -552,6 +553,43 @@ const getOrthogonalPoints = (
   ]
 }
 
+const computeAutoOrthogonalRoute = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  startAxis: ElbowAxis | null,
+  endAxis: ElbowAxis | null
+) => {
+  if (start.x === end.x || start.y === end.y) {
+    return {
+      variant: getDefaultElbowVariant(start, end),
+      offset: startAxis === 'vertical' || endAxis === 'vertical' ? start.x : start.y,
+      points: [] as Array<{ x: number; y: number }>,
+    }
+  }
+  if (startAxis && endAxis && startAxis !== endAxis) {
+    const bend =
+      startAxis === 'horizontal' ? { x: end.x, y: start.y } : { x: start.x, y: end.y }
+    return {
+      variant: startAxis === 'horizontal' ? 'HVH' : 'VHV',
+      offset: startAxis === 'horizontal' ? bend.x : bend.y,
+      points: [bend],
+    }
+  }
+  const preferredVariant =
+    (endAxis === 'horizontal' ? 'HVH' : endAxis === 'vertical' ? 'VHV' : null) ??
+    (startAxis === 'horizontal' ? 'HVH' : startAxis === 'vertical' ? 'VHV' : null) ??
+    getDefaultElbowVariant(start, end)
+  const offset =
+    preferredVariant === 'HVH'
+      ? start.x + (end.x - start.x) / 2
+      : start.y + (end.y - start.y) / 2
+  return {
+    variant: preferredVariant,
+    offset,
+    points: getOrthogonalPoints(start, end, preferredVariant, offset),
+  }
+}
+
 const inferElbowFromPoints = (
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -574,16 +612,22 @@ const resolveOrthogonalState = (
   element: LineElement
 ): { variant: ElbowVariant; offset: number; points: Array<{ x: number; y: number }>; collapsed: boolean } => {
   const collapsed = start.x === end.x || start.y === end.y
+  if (element.elbowAuto !== false) {
+    const startAxis = getAnchorAxis(element.startBinding?.anchor ?? null)
+    const endAxis = getAnchorAxis(element.endBinding?.anchor ?? null)
+    const autoRoute = computeAutoOrthogonalRoute(start, end, startAxis, endAxis)
+    return {
+      variant: autoRoute.variant,
+      offset: autoRoute.offset,
+      points: collapsed ? [] : autoRoute.points,
+      collapsed,
+    }
+  }
   const pointsSource = Array.isArray(element.points) ? element.points : []
   const inferred = inferElbowFromPoints(start, end, pointsSource)
   let variant = isElbowVariant(element.elbowVariant)
     ? element.elbowVariant
     : inferred?.variant ?? getDefaultElbowVariant(start, end)
-  if (element.elbowAuto !== false) {
-    const endPreferred = getAnchorPreferredVariant(element.endBinding?.anchor ?? null)
-    const startPreferred = getAnchorPreferredVariant(element.startBinding?.anchor ?? null)
-    variant = endPreferred ?? startPreferred ?? variant
-  }
   const rawOffset =
     typeof element.elbowOffset === 'number' && Number.isFinite(element.elbowOffset)
       ? element.elbowOffset
@@ -3164,7 +3208,7 @@ function drawLineSelection(
       const endHandle = screenPath[screenPath.length - 1]
       if (startHandle) drawHandle(startHandle)
       if (endHandle) drawHandle(endHandle)
-      if (points.length === 2) {
+      if (points.length >= 1) {
         for (let index = 0; index < screenPath.length - 1; index += 1) {
           const segmentStart = screenPath[index]
           const segmentEnd = screenPath[index + 1]
@@ -4974,7 +5018,7 @@ export function CanvasBoard({
         resolveElement: (elementId) => elements[elementId],
         measureCtx,
       })
-      if (resolved.points.length !== 2) return null
+      if (resolved.points.length < 1) return null
       const pathPoints = [resolved.start, ...resolved.points, resolved.end]
       let best: { orientation: 'horizontal' | 'vertical'; distance: number } | null = null
       for (let index = 0; index < pathPoints.length - 1; index += 1) {
@@ -5688,21 +5732,10 @@ export function CanvasBoard({
               measureCtx,
             })
             const orthogonalState = resolveOrthogonalState(start, end, next)
-            const autoVariant =
-              next.elbowAuto !== false
-                ? getAnchorPreferredVariant(next.endBinding?.anchor ?? null) ??
-                  getAnchorPreferredVariant(next.startBinding?.anchor ?? null) ??
-                  orthogonalState.variant
-                : orthogonalState.variant
             updatedLine = {
               ...next,
-              elbowVariant: autoVariant,
-              elbowOffset:
-                next.elbowAuto !== false
-                  ? autoVariant === 'HVH'
-                    ? start.x + (end.x - start.x) / 2
-                    : start.y + (end.y - start.y) / 2
-                  : orthogonalState.offset,
+              elbowVariant: orthogonalState.variant,
+              elbowOffset: orthogonalState.offset,
               points: undefined,
             }
           } else {
@@ -6033,16 +6066,17 @@ export function CanvasBoard({
           let updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
           if (creation.kind === 'elbow') {
             const startPoint = creation.start
-            const variant = getDefaultElbowVariant(startPoint, targetPoint)
-            const offset =
-              variant === 'HVH'
-                ? startPoint.x + (targetPoint.x - startPoint.x) / 2
-                : startPoint.y + (targetPoint.y - startPoint.y) / 2
+            const autoRoute = computeAutoOrthogonalRoute(
+              startPoint,
+              targetPoint,
+              getAnchorAxis(updated.startBinding?.anchor ?? null),
+              getAnchorAxis(creation.endBinding?.anchor ?? null)
+            )
             updated = {
               ...updated,
               orthogonal: true,
-              elbowVariant: variant,
-              elbowOffset: offset,
+              elbowVariant: autoRoute.variant,
+              elbowOffset: autoRoute.offset,
               elbowAuto: true,
               points: undefined,
             }
