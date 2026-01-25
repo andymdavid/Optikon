@@ -7,12 +7,11 @@ import {
   Diamond,
   Triangle,
   MessageSquare,
-  MoveUpRight,
   Frame,
   CircleAlert,
   Paperclip,
 } from 'lucide-react'
-import { type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 export type ToolMode =
   | 'select'
@@ -25,12 +24,11 @@ export type ToolMode =
   | 'triangle'
   | 'speechBubble'
   | 'line'
-  | 'curve'
-  | 'arrow'
-  | 'elbow'
   | 'frame'
   | 'attachment'
   | 'comment'
+
+export type LineToolKind = 'line' | 'curve' | 'elbow'
 
 type ToolDefinition = {
   mode: ToolMode
@@ -98,30 +96,6 @@ const TOOLS: ToolDefinition[] = [
     ),
   },
   {
-    mode: 'curve',
-    label: 'Curve',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M3 6C8 16 12 4 17 14" />
-        <circle cx="10" cy="10" r="1.2" fill="currentColor" stroke="none" />
-      </svg>
-    ),
-  },
-  {
-    mode: 'arrow',
-    label: 'Arrow',
-    icon: <MoveUpRight size={20} strokeWidth={1.5} />,
-  },
-  {
-    mode: 'elbow',
-    label: 'Elbow Connector',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M4 16V10h12V4" />
-      </svg>
-    ),
-  },
-  {
     mode: 'frame',
     label: 'Frame',
     icon: <Frame size={20} strokeWidth={1.5} />,
@@ -142,6 +116,10 @@ export type ToolRailProps = {
   toolMode: ToolMode
   onToolModeChange: (mode: ToolMode) => void
   isEditing: boolean
+  lineToolKind: LineToolKind
+  onLineToolKindChange: (kind: LineToolKind) => void
+  lineArrowEnabled: boolean
+  onLineArrowEnabledChange: (next: boolean) => void
 }
 
 const railStyle: CSSProperties = {
@@ -179,7 +157,54 @@ const activeButtonStyle: CSSProperties = {
   color: '#0ea5e9',
 }
 
-export function ToolRail({ toolMode, onToolModeChange, isEditing }: ToolRailProps) {
+const lineShelfStyle: CSSProperties = {
+  position: 'absolute',
+  left: 48,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  background: '#ffffff',
+  borderRadius: 12,
+  padding: '10px 12px',
+  boxShadow: '0 10px 24px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  minWidth: 180,
+  zIndex: 25,
+}
+
+const lineShelfRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 36px)',
+  gap: 6,
+}
+
+const lineShelfLabel: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: '#6b7280',
+  letterSpacing: '0.02em',
+  textTransform: 'uppercase',
+}
+
+const lineOptionButton: CSSProperties = {
+  ...buttonBaseStyle,
+  width: 36,
+  height: 36,
+  borderRadius: 8,
+  background: '#f8fafc',
+}
+
+export function ToolRail({
+  toolMode,
+  onToolModeChange,
+  isEditing,
+  lineToolKind,
+  onLineToolKindChange,
+  lineArrowEnabled,
+  onLineArrowEnabledChange,
+}: ToolRailProps) {
+  const [lineShelfOpen, setLineShelfOpen] = useState(false)
   const handleToolClick = (mode: ToolMode) => {
     // Ignore clicks while editing
     if (isEditing) return
@@ -187,8 +212,14 @@ export function ToolRail({ toolMode, onToolModeChange, isEditing }: ToolRailProp
     // Toggle back to select if clicking the active tool
     if (mode === toolMode) {
       onToolModeChange('select')
+      if (mode === 'line') setLineShelfOpen(false)
     } else {
       onToolModeChange(mode)
+      if (mode === 'line') {
+        setLineShelfOpen(true)
+      } else {
+        setLineShelfOpen(false)
+      }
     }
   }
 
@@ -218,6 +249,88 @@ export function ToolRail({ toolMode, onToolModeChange, isEditing }: ToolRailProp
           </button>
         )
       })}
+      {toolMode === 'line' && lineShelfOpen && (
+        <div style={lineShelfStyle}>
+          <div style={lineShelfLabel}>Arrow type</div>
+          <div style={lineShelfRow}>
+            <button
+              type="button"
+              title="Straight"
+              style={{
+                ...lineOptionButton,
+                background: lineToolKind === 'line' ? '#e0f2fe' : lineOptionButton.background,
+                color: lineToolKind === 'line' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onLineToolKindChange('line')}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M4 16L16 4" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Curved"
+              style={{
+                ...lineOptionButton,
+                background: lineToolKind === 'curve' ? '#e0f2fe' : lineOptionButton.background,
+                color: lineToolKind === 'curve' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onLineToolKindChange('curve')}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M3 6C8 16 12 4 17 14" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Elbow"
+              style={{
+                ...lineOptionButton,
+                background: lineToolKind === 'elbow' ? '#e0f2fe' : lineOptionButton.background,
+                color: lineToolKind === 'elbow' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onLineToolKindChange('elbow')}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M4 16V10h12V4" />
+              </svg>
+            </button>
+          </div>
+          <div style={lineShelfLabel}>Arrowheads</div>
+          <div style={lineShelfRow}>
+            <button
+              type="button"
+              title="No arrowhead"
+              style={{
+                ...lineOptionButton,
+                background: lineArrowEnabled ? lineOptionButton.background : '#e0f2fe',
+                color: lineArrowEnabled ? '#374151' : '#0ea5e9',
+              }}
+              onClick={() => onLineArrowEnabledChange(false)}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M4 10H16" />
+                <path d="M7 7L13 13" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Arrowhead"
+              style={{
+                ...lineOptionButton,
+                background: lineArrowEnabled ? '#e0f2fe' : lineOptionButton.background,
+                color: lineArrowEnabled ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onLineArrowEnabledChange(true)}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M4 10H14" />
+                <path d="M11 7L15 10L11 13" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

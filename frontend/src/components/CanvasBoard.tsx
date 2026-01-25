@@ -54,7 +54,7 @@ import {
 } from './toolbar/FloatingSelectionToolbar'
 import { LinkHoverOverlay } from './toolbar/LinkHoverOverlay'
 import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
-import { ToolRail, type ToolMode } from './toolbar/ToolRail'
+import { ToolRail, type LineToolKind, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
 import type {
@@ -3713,6 +3713,8 @@ export function CanvasBoard({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
   const [toolMode, setToolMode] = useState<ToolMode>('select')
+  const [lineToolKind, setLineToolKind] = useState<LineToolKind>('line')
+  const [lineArrowEnabled, setLineArrowEnabled] = useState(false)
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
   const [connectorHighlight, setConnectorHighlight] = useState<
     { elementId: string; anchor: ConnectorAnchor } | null
@@ -5390,13 +5392,13 @@ export function CanvasBoard({
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
-      if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
+      if (toolMode === 'line') {
         const anchorHit = hitTestConnectorAnchor(canvasPoint)
         if (anchorHit) {
           event.preventDefault()
           suppressClickRef.current = true
-          const isElbowTool = toolMode === 'elbow'
-          const isCurveTool = toolMode === 'curve'
+          const isElbowTool = lineToolKind === 'elbow'
+          const isCurveTool = lineToolKind === 'curve'
           const id = randomId()
           const startPosition = anchorHit.board
           const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
@@ -5412,7 +5414,7 @@ export function CanvasBoard({
             stroke: LINE_DEFAULT_STROKE,
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
-            endArrow: toolMode === 'arrow' || toolMode === 'elbow',
+            endArrow: lineArrowEnabled,
             orthogonal: isElbowTool,
             points: isCurveTool ? [{ x: startPosition.x, y: startPosition.y }] : undefined,
             curve: isCurveTool ? true : undefined,
@@ -5785,9 +5787,9 @@ export function CanvasBoard({
           setSelection(new Set([id]))
           return
         }
-        if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
-          const isElbowTool = toolMode === 'elbow'
-          const isCurveTool = toolMode === 'curve'
+        if (toolMode === 'line') {
+          const isElbowTool = lineToolKind === 'elbow'
+          const isCurveTool = lineToolKind === 'curve'
           const id = randomId()
           const measureCtx = getSharedMeasureContext()
           const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
@@ -5805,7 +5807,7 @@ export function CanvasBoard({
             stroke: LINE_DEFAULT_STROKE,
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
-            endArrow: toolMode === 'arrow' || toolMode === 'elbow',
+            endArrow: lineArrowEnabled,
             orthogonal: isElbowTool,
             points: isCurveTool ? [{ x: startPosition.x, y: startPosition.y }] : undefined,
             curve: isCurveTool ? true : undefined,
@@ -5957,7 +5959,7 @@ export function CanvasBoard({
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
       if (editingStateRef.current || isCommentEditing) return
-      if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
+      if (toolMode === 'line') {
         const anchorHit = hitTestConnectorAnchor(canvasPoint)
         const boardPoint = screenToBoard(canvasPoint)
         const hitId = hitTestElement(boardPoint.x, boardPoint.y)
@@ -7063,14 +7065,6 @@ export function CanvasBoard({
         setToolMode((prev) => (prev === 'line' ? 'select' : 'line'))
         return
       }
-      if (event.key === 'a' || event.key === 'A') {
-        setToolMode((prev) => (prev === 'arrow' ? 'select' : 'arrow'))
-        return
-      }
-      if (event.key === 'k' || event.key === 'K') {
-        setToolMode((prev) => (prev === 'elbow' ? 'select' : 'elbow'))
-        return
-      }
       if (event.key === 'c' || event.key === 'C') {
         setToolMode((prev) => (prev === 'comment' ? 'select' : 'comment'))
         return
@@ -7105,12 +7099,12 @@ export function CanvasBoard({
   }, [boardId, setSelection])
 
   useEffect(() => {
-    if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') return
+    if (toolMode === 'line') return
     setHoveredConnectorElementId(null)
   }, [toolMode])
 
   useEffect(() => {
-    if (toolMode !== 'line' && toolMode !== 'curve' && toolMode !== 'arrow' && toolMode !== 'elbow') {
+    if (toolMode !== 'line') {
       setConnectorHighlight((prev) => (prev ? null : prev))
     }
   }, [toolMode])
@@ -7447,7 +7441,7 @@ export function CanvasBoard({
     const values = Object.values(elements)
     const sharedMeasureCtx = getSharedMeasureContext()
     const resolveElement = (id: string) => elements[id]
-    const showConnectorAnchors = toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow'
+    const showConnectorAnchors = toolMode === 'line'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     const editingFrameId = editingState?.elementType === 'frame' ? editingState.id : null
     const editingShapeId = editingState?.elementType === 'shape' ? editingState.id : null
@@ -7884,6 +7878,10 @@ export function CanvasBoard({
         toolMode={toolMode}
         onToolModeChange={setToolMode}
         isEditing={!!editingState || commentPopoverMode !== 'closed'}
+        lineToolKind={lineToolKind}
+        onLineToolKindChange={setLineToolKind}
+        lineArrowEnabled={lineArrowEnabled}
+        onLineArrowEnabledChange={setLineArrowEnabled}
       />
       <ZoomPanel
         zoom={cameraState.zoom}
