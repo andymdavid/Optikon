@@ -418,14 +418,18 @@ function resolveLineEndpointPosition(
 
 function getResolvedLineEndpoints(
   element: LineElement,
-  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+  options?: {
+    resolveElement?: (id: string) => BoardElement | undefined
+    measureCtx?: CanvasRenderingContext2D | null
+    elements?: ElementMap
+  }
 ) {
   const measureCtx = options?.measureCtx ?? null
   const resolver = options?.resolveElement
   const start = resolveLineEndpointPosition(element, 'start', { resolveElement: resolver, measureCtx })
   const end = resolveLineEndpointPosition(element, 'end', { resolveElement: resolver, measureCtx })
   if (element.orthogonal) {
-    const state = resolveOrthogonalState(start, end, element, resolver, measureCtx)
+    const state = resolveOrthogonalState(start, end, element, resolver, measureCtx, options?.elements)
     return { start, end, points: state.points }
   }
   return { start, end, points: element.points ?? [] }
@@ -490,7 +494,11 @@ function getClosestAnchorBinding(
 
 function getLinePathPoints(
   element: LineElement,
-  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+  options?: {
+    resolveElement?: (id: string) => BoardElement | undefined
+    measureCtx?: CanvasRenderingContext2D | null
+    elements?: ElementMap
+  }
 ) {
   const { start, end, points } = getResolvedLineEndpoints(element, options)
   return [start, ...points, end]
@@ -671,7 +679,8 @@ const resolveOrthogonalState = (
   end: { x: number; y: number },
   element: LineElement,
   resolveElement?: (id: string) => BoardElement | undefined,
-  measureCtx?: CanvasRenderingContext2D | null
+  measureCtx?: CanvasRenderingContext2D | null,
+  elements?: ElementMap
 ): { variant: ElbowVariant; offset: number; points: Array<{ x: number; y: number }>; collapsed: boolean } => {
   const collapsed = start.x === end.x || start.y === end.y
   if (element.elbowAuto !== false) {
@@ -679,19 +688,16 @@ const resolveOrthogonalState = (
     const endAxis = getAnchorAxis(element.endBinding?.anchor ?? null)
     const ctx = measureCtx ?? getSharedMeasureContext()
     const rects: RouteRect[] = []
-    if (resolveElement && element.startBinding) {
-      const startElement = resolveElement(element.startBinding.elementId)
-      if (startElement) {
-        const bounds = getElementBounds(startElement, ctx, { resolveElement, measureCtx: ctx })
-        rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit: true })
-      }
-    }
-    if (resolveElement && element.endBinding) {
-      const endElement = resolveElement(element.endBinding.elementId)
-      if (endElement) {
-        const bounds = getElementBounds(endElement, ctx, { resolveElement, measureCtx: ctx })
-        rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit: true })
-      }
+    if (resolveElement && elements) {
+      const allElements = Object.values(elements)
+      allElements.forEach((candidate) => {
+        if (!candidate || isLineElement(candidate) || isCommentElement(candidate)) return
+        const bounds = getElementBounds(candidate, ctx, { resolveElement, measureCtx: ctx })
+        const allowExit =
+          candidate.id === element.startBinding?.elementId ||
+          candidate.id === element.endBinding?.elementId
+        rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit })
+      })
     }
     const autoRoute = computeAutoOrthogonalRoute(start, end, startAxis, endAxis, rects)
     return {
@@ -855,7 +861,11 @@ function getLineStrokeWidth(element: LineElement) {
 
 function getLineElementBounds(
   element: LineElement,
-  options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
+  options?: {
+    resolveElement?: (id: string) => BoardElement | undefined
+    measureCtx?: CanvasRenderingContext2D | null
+    elements?: ElementMap
+  }
 ): LineElementBounds {
   const { start, end, points } = getResolvedLineEndpoints(element, options)
   const center = {
@@ -3239,11 +3249,13 @@ function drawLineSelection(
   camera: CameraState,
   options: { withHandles: boolean },
   resolveElement?: (id: string) => BoardElement | undefined,
-  measureCtx?: CanvasRenderingContext2D | null
+  measureCtx?: CanvasRenderingContext2D | null,
+  elements?: ElementMap
 ) {
   const { start: startBoard, end: endBoard, points } = getResolvedLineEndpoints(element, {
     resolveElement,
     measureCtx,
+    elements,
   })
   const toScreen = (point: { x: number; y: number }) => ({
     x: (point.x + camera.offsetX) * camera.zoom,
@@ -3308,7 +3320,8 @@ function drawElementSelection(
   camera: CameraState,
   options: { withHandles: boolean },
   resolveElement?: (id: string) => BoardElement | undefined,
-  measureCtx?: CanvasRenderingContext2D | null
+  measureCtx?: CanvasRenderingContext2D | null,
+  elements?: ElementMap
 ) {
   if (isStickyElement(element)) {
     drawStickySelection(ctx, element, camera, options)
@@ -3319,7 +3332,7 @@ function drawElementSelection(
     return
   }
   if (isLineElement(element)) {
-    drawLineSelection(ctx, element, camera, options, resolveElement, measureCtx)
+    drawLineSelection(ctx, element, camera, options, resolveElement, measureCtx, elements)
     return
   }
   if (isFrameElement(element)) {
@@ -4489,6 +4502,7 @@ export function CanvasBoard({
             const path = getLinePathPoints(element, {
               resolveElement: (elementId) => elements[elementId],
               measureCtx,
+              elements,
             })
             const distance = pointToMultiSegmentDistance({ x, y }, path)
             if (distance <= tolerance) {
@@ -5066,6 +5080,7 @@ export function CanvasBoard({
       const resolved = getResolvedLineEndpoints(element, {
         resolveElement: (elementId) => elements[elementId],
         measureCtx,
+        elements,
       })
       const handles = resolved.points
       for (let index = 0; index < handles.length; index += 1) {
@@ -5353,6 +5368,7 @@ export function CanvasBoard({
             const resolved = getResolvedLineEndpoints(target, {
               resolveElement: (elementId) => prev[elementId],
               measureCtx,
+              elements: prev,
             })
             let updated: LineElement
             if (lineHandleHit.handle === 'start') {
@@ -5402,6 +5418,7 @@ export function CanvasBoard({
           const resolvedPath = getLinePathPoints(bendHandleHit.element, {
             resolveElement: (elementId) => elements[elementId],
             measureCtx,
+            elements,
           })
           const pathIndex = bendHandleHit.index + 1
           const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
@@ -5849,6 +5866,7 @@ export function CanvasBoard({
           const resolvedPath = getLinePathPoints(target, {
             resolveElement: (elementId) => prev[elementId],
             measureCtx,
+            elements: prev,
           })
           const pathIndex = bendState.index + 1
           const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
@@ -7232,7 +7250,11 @@ export function CanvasBoard({
         const image = imageCacheRef.current.get(resolvedUrl) ?? null
         drawImageElement(ctx, element, cameraState, image)
       } else if (isLineElement(element)) {
-        drawLineElement(ctx, element, cameraState, { resolveElement, measureCtx: sharedMeasureCtx })
+        drawLineElement(ctx, element, cameraState, {
+          resolveElement,
+          measureCtx: sharedMeasureCtx,
+          elements,
+        })
       }
       if (showConnectorAnchors && !isLineElement(element) && hoveredConnectorElementId === element.id) {
         drawConnectorAnchors(ctx, element, cameraState, sharedMeasureCtx, connectorHighlight)
@@ -7262,7 +7284,8 @@ export function CanvasBoard({
         cameraState,
         { withHandles },
         resolveElement,
-        sharedMeasureCtx
+        sharedMeasureCtx,
+        elements
       )
     })
   }, [
