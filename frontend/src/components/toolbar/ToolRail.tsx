@@ -18,17 +18,13 @@ export type ToolMode =
   | 'sticky'
   | 'text'
   | 'rect'
-  | 'ellipse'
-  | 'roundRect'
-  | 'diamond'
-  | 'triangle'
-  | 'speechBubble'
   | 'line'
   | 'frame'
   | 'attachment'
   | 'comment'
 
 export type LineToolKind = 'line' | 'curve' | 'elbow'
+export type ShapeToolKind = 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
 
 type ToolDefinition = {
   mode: ToolMode
@@ -54,37 +50,8 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     mode: 'rect',
-    label: 'Rectangle',
+    label: 'Shapes',
     icon: <Square size={20} strokeWidth={1.5} />,
-  },
-  {
-    mode: 'ellipse',
-    label: 'Ellipse',
-    icon: <Circle size={20} strokeWidth={1.5} />,
-  },
-  {
-    mode: 'roundRect',
-    label: 'Rounded Rectangle',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="4" width="14" height="12" rx="4" />
-      </svg>
-    ),
-  },
-  {
-    mode: 'diamond',
-    label: 'Diamond',
-    icon: <Diamond size={20} strokeWidth={1.5} />,
-  },
-  {
-    mode: 'triangle',
-    label: 'Triangle',
-    icon: <Triangle size={20} strokeWidth={1.5} />,
-  },
-  {
-    mode: 'speechBubble',
-    label: 'Speech Bubble',
-    icon: <MessageSquare size={20} strokeWidth={1.5} />,
   },
   {
     mode: 'line',
@@ -116,6 +83,8 @@ export type ToolRailProps = {
   toolMode: ToolMode
   onToolModeChange: (mode: ToolMode) => void
   isEditing: boolean
+  shapeToolKind: ShapeToolKind
+  onShapeToolKindChange: (kind: ShapeToolKind) => void
   lineToolKind: LineToolKind
   onLineToolKindChange: (kind: LineToolKind) => void
   lineArrowEnabled: boolean
@@ -178,6 +147,12 @@ const lineShelfRow: CSSProperties = {
   gap: 6,
 }
 
+const shapeShelfRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 36px)',
+  gap: 6,
+}
+
 const lineShelfLabel: CSSProperties = {
   fontSize: 11,
   fontWeight: 600,
@@ -198,19 +173,29 @@ export function ToolRail({
   toolMode,
   onToolModeChange,
   isEditing,
+  shapeToolKind,
+  onShapeToolKindChange,
   lineToolKind,
   onLineToolKindChange,
   lineArrowEnabled,
   onLineArrowEnabledChange,
 }: ToolRailProps) {
   const [lineShelfOpen, setLineShelfOpen] = useState(false)
+  const [shapeShelfOpen, setShapeShelfOpen] = useState(false)
   const lineButtonRef = useRef<HTMLButtonElement | null>(null)
+  const shapeButtonRef = useRef<HTMLButtonElement | null>(null)
   const [lineShelfOffset, setLineShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [shapeShelfOffset, setShapeShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   useEffect(() => {
     if (!lineShelfOpen || !lineButtonRef.current) return
     const buttonRect = lineButtonRef.current.getBoundingClientRect()
     setLineShelfOffset({ x: buttonRect.width + 8, y: lineButtonRef.current.offsetTop })
   }, [lineShelfOpen])
+  useEffect(() => {
+    if (!shapeShelfOpen || !shapeButtonRef.current) return
+    const buttonRect = shapeButtonRef.current.getBoundingClientRect()
+    setShapeShelfOffset({ x: buttonRect.width + 8, y: shapeButtonRef.current.offsetTop })
+  }, [shapeShelfOpen])
   const handleToolClick = (mode: ToolMode) => {
     // Ignore clicks while editing
     if (isEditing) return
@@ -218,9 +203,15 @@ export function ToolRail({
     // Toggle back to select if clicking the active tool
     if (mode === toolMode) {
       onToolModeChange('select')
+      if (mode === 'rect') setShapeShelfOpen(false)
       if (mode === 'line') setLineShelfOpen(false)
     } else {
       onToolModeChange(mode)
+      if (mode === 'rect') {
+        setShapeShelfOpen(true)
+      } else {
+        setShapeShelfOpen(false)
+      }
       if (mode === 'line') {
         setLineShelfOpen(true)
       } else {
@@ -234,13 +225,14 @@ export function ToolRail({
       {TOOLS.map((tool) => {
         const isActive = toolMode === tool.mode
         const isLineTool = tool.mode === 'line'
+        const isShapeTool = tool.mode === 'rect'
         return (
           <button
             key={tool.mode}
             type="button"
             title={tool.label}
             style={isActive ? activeButtonStyle : buttonBaseStyle}
-            ref={isLineTool ? lineButtonRef : undefined}
+            ref={isLineTool ? lineButtonRef : isShapeTool ? shapeButtonRef : undefined}
             onClick={() => handleToolClick(tool.mode)}
             onMouseEnter={(e) => {
               if (!isActive) {
@@ -257,6 +249,92 @@ export function ToolRail({
           </button>
         )
       })}
+      {toolMode === 'rect' && shapeShelfOpen && (
+        <div
+          style={{
+            ...lineShelfStyle,
+            transform: `translate(${shapeShelfOffset.x}px, ${shapeShelfOffset.y}px)`,
+          }}
+        >
+          <div style={lineShelfLabel}>Shapes</div>
+          <div style={shapeShelfRow}>
+            <button
+              type="button"
+              title="Rectangle"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'rect' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'rect' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('rect')}
+            >
+              <Square size={18} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              title="Ellipse"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'ellipse' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'ellipse' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('ellipse')}
+            >
+              <Circle size={18} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              title="Rounded Rectangle"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'roundRect' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'roundRect' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('roundRect')}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="3" y="4" width="14" height="12" rx="4" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              title="Diamond"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'diamond' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'diamond' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('diamond')}
+            >
+              <Diamond size={18} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              title="Triangle"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'triangle' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'triangle' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('triangle')}
+            >
+              <Triangle size={18} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              title="Speech Bubble"
+              style={{
+                ...lineOptionButton,
+                background: shapeToolKind === 'speechBubble' ? '#e0f2fe' : lineOptionButton.background,
+                color: shapeToolKind === 'speechBubble' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onShapeToolKindChange('speechBubble')}
+            >
+              <MessageSquare size={18} strokeWidth={1.5} />
+            </button>
+          </div>
+        </div>
+      )}
       {toolMode === 'line' && lineShelfOpen && (
         <div
           style={{

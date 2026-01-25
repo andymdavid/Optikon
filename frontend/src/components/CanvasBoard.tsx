@@ -54,7 +54,7 @@ import {
 } from './toolbar/FloatingSelectionToolbar'
 import { LinkHoverOverlay } from './toolbar/LinkHoverOverlay'
 import { LinkInsertPopover } from './toolbar/LinkInsertPopover'
-import { ToolRail, type LineToolKind, type ToolMode } from './toolbar/ToolRail'
+import { ToolRail, type LineToolKind, type ShapeToolKind, type ToolMode } from './toolbar/ToolRail'
 import { ZoomPanel } from './toolbar/ZoomPanel'
 
 import type {
@@ -3713,6 +3713,7 @@ export function CanvasBoard({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [marquee, setMarqueeState] = useState<MarqueeState | null>(null)
   const [toolMode, setToolMode] = useState<ToolMode>('select')
+  const [shapeToolKind, setShapeToolKind] = useState<ShapeToolKind>('rect')
   const [lineToolKind, setLineToolKind] = useState<LineToolKind>('line')
   const [lineArrowEnabled, setLineArrowEnabled] = useState(false)
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
@@ -5660,24 +5661,16 @@ export function CanvasBoard({
       const hitElementId = hitTestElement(boardPoint.x, boardPoint.y)
       const hitElement = hitElementId ? elements[hitElementId] : null
       if (!hitElement) {
-        if (
-          toolMode === 'rect' ||
-          toolMode === 'frame' ||
-          toolMode === 'ellipse' ||
-          toolMode === 'roundRect' ||
-          toolMode === 'diamond' ||
-          toolMode === 'triangle' ||
-          toolMode === 'speechBubble'
-        ) {
+        if (toolMode === 'rect' || toolMode === 'frame') {
           event.preventDefault()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
-          const isEllipseTool = toolMode === 'ellipse'
+          const isEllipseTool = toolMode === 'rect' && shapeToolKind === 'ellipse'
           const defaultHeight = isEllipseTool
             ? defaultWidth
             : Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 0.9) / cameraState.zoom)
           let newElement: FrameOrShapeElement
-          if (toolMode === 'rect') {
+          if (toolMode === 'rect' && shapeToolKind === 'rect') {
             newElement = {
               id,
               type: 'rect',
@@ -5714,7 +5707,7 @@ export function CanvasBoard({
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
-          } else if (toolMode === 'roundRect') {
+          } else if (shapeToolKind === 'roundRect') {
             newElement = {
               id,
               type: 'roundRect',
@@ -5727,7 +5720,7 @@ export function CanvasBoard({
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
-          } else if (toolMode === 'diamond') {
+          } else if (shapeToolKind === 'diamond') {
             newElement = {
               id,
               type: 'diamond',
@@ -5739,7 +5732,7 @@ export function CanvasBoard({
               stroke: RECT_DEFAULT_STROKE,
               rotation: 0,
             }
-          } else if (toolMode === 'speechBubble') {
+          } else if (shapeToolKind === 'speechBubble') {
             const baseTailSize = Math.max(RECT_MIN_SIZE / 2, Math.min(defaultWidth, defaultHeight) * SPEECH_BUBBLE_DEFAULT_TAIL_RATIO)
             newElement = {
               id,
@@ -5772,7 +5765,7 @@ export function CanvasBoard({
             id,
             baseSize: defaultWidth,
             hasDragged: false,
-            elementType: toolMode as
+            elementType: (toolMode === 'frame' ? 'frame' : shapeToolKind) as
               | 'rect'
               | 'frame'
               | 'ellipse'
@@ -7036,7 +7029,12 @@ export function CanvasBoard({
         return
       }
       if (event.key === 'r' || event.key === 'R') {
-        setToolMode((prev) => (prev === 'rect' ? 'select' : 'rect'))
+        if (toolMode === 'rect' && shapeToolKind === 'rect') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('rect')
+        }
         return
       }
       if (event.key === 'f' || event.key === 'F') {
@@ -7044,23 +7042,48 @@ export function CanvasBoard({
         return
       }
       if (event.key === 'e' || event.key === 'E') {
-        setToolMode((prev) => (prev === 'ellipse' ? 'select' : 'ellipse'))
+        if (toolMode === 'rect' && shapeToolKind === 'ellipse') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('ellipse')
+        }
         return
       }
       if (event.key === 'o' || event.key === 'O') {
-        setToolMode((prev) => (prev === 'roundRect' ? 'select' : 'roundRect'))
+        if (toolMode === 'rect' && shapeToolKind === 'roundRect') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('roundRect')
+        }
         return
       }
       if (event.key === 'd' || event.key === 'D') {
-        setToolMode((prev) => (prev === 'diamond' ? 'select' : 'diamond'))
+        if (toolMode === 'rect' && shapeToolKind === 'diamond') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('diamond')
+        }
         return
       }
       if (event.key === 'b' || event.key === 'B') {
-        setToolMode((prev) => (prev === 'speechBubble' ? 'select' : 'speechBubble'))
+        if (toolMode === 'rect' && shapeToolKind === 'speechBubble') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('speechBubble')
+        }
         return
       }
       if (event.key === 'y' || event.key === 'Y') {
-        setToolMode((prev) => (prev === 'triangle' ? 'select' : 'triangle'))
+        if (toolMode === 'rect' && shapeToolKind === 'triangle') {
+          setToolMode('select')
+        } else {
+          setToolMode('rect')
+          setShapeToolKind('triangle')
+        }
         return
       }
       if (event.key === 'l' || event.key === 'L') {
@@ -7880,6 +7903,8 @@ export function CanvasBoard({
         toolMode={toolMode}
         onToolModeChange={setToolMode}
         isEditing={!!editingState || commentPopoverMode !== 'closed'}
+        shapeToolKind={shapeToolKind}
+        onShapeToolKindChange={setShapeToolKind}
         lineToolKind={lineToolKind}
         onLineToolKindChange={setLineToolKind}
         lineArrowEnabled={lineArrowEnabled}
