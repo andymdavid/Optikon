@@ -5331,6 +5331,53 @@ export function CanvasBoard({
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
+      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+        const anchorHit = hitTestConnectorAnchor(canvasPoint)
+        if (anchorHit) {
+          event.preventDefault()
+          suppressClickRef.current = true
+          const isElbowTool = toolMode === 'elbow'
+          const id = randomId()
+          const startPosition = anchorHit.board
+          const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
+          const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
+          const initialBinding = { elementId: anchorHit.element.id, anchor: anchorHit.anchor }
+          let newElement: LineElement = {
+            id,
+            type: 'line',
+            x1: startPosition.x,
+            y1: startPosition.y,
+            x2: startPosition.x,
+            y2: startPosition.y,
+            stroke: LINE_DEFAULT_STROKE,
+            strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
+            startArrow: false,
+            endArrow: toolMode === 'arrow' || toolMode === 'elbow',
+            orthogonal: isElbowTool,
+            points: undefined,
+            elbowVariant: isElbowTool ? defaultVariant : undefined,
+            elbowOffset: isElbowTool ? defaultOffset : undefined,
+            elbowAuto: isElbowTool ? true : undefined,
+          }
+          newElement = { ...newElement, startBinding: initialBinding }
+          lineCreationRef.current = {
+            pointerId: event.pointerId,
+            id,
+            start: startPosition,
+            hasDragged: false,
+            startBinding: initialBinding,
+            endBinding: null,
+            kind: isElbowTool ? 'elbow' : 'straight',
+          }
+          interactionModeRef.current = 'line-create'
+          setElements((prev) => ({ ...prev, [id]: newElement }))
+          setSelection(new Set([id]))
+          if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }
+          return
+        }
+      }
       if (toolMode === 'comment') {
         event.preventDefault()
         suppressClickRef.current = true
@@ -5676,17 +5723,16 @@ export function CanvasBoard({
           setSelection(new Set([id]))
           return
         }
-        if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
-          const isElbowTool = toolMode === 'elbow'
-          const anchorHit = hitTestConnectorAnchor(canvasPoint)
-          const id = randomId()
-          const measureCtx = getSharedMeasureContext()
-          const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
-          const initialBinding = anchorHit?.anchor ? { elementId: anchorHit.element.id, anchor: anchorHit.anchor } : fallbackSnap?.binding ?? null
-          const startPosition = anchorHit?.board ?? fallbackSnap?.position ?? boardPoint
-          const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
-          const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
-          let newElement: LineElement = {
+      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+        const isElbowTool = toolMode === 'elbow'
+        const id = randomId()
+        const measureCtx = getSharedMeasureContext()
+        const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
+        const initialBinding = fallbackSnap?.binding ?? null
+        const startPosition = fallbackSnap?.position ?? boardPoint
+        const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
+        const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
+        let newElement: LineElement = {
             id,
             type: 'line',
             x1: startPosition.x,
@@ -5852,11 +5898,27 @@ export function CanvasBoard({
         const boardPoint = screenToBoard(canvasPoint)
         const hitId = hitTestElement(boardPoint.x, boardPoint.y)
         const hitElement = hitId ? elements[hitId] : null
-        const nextHovered =
+        let nextHovered =
           anchorHit?.element?.id ??
           (hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)
             ? hitElement.id
             : null)
+        if (!nextHovered && hoveredConnectorElementId) {
+          const hoveredElement = elements[hoveredConnectorElementId]
+          if (hoveredElement && !isLineElement(hoveredElement) && !isCommentElement(hoveredElement)) {
+            const ctx = getSharedMeasureContext()
+            const bounds = getElementBounds(hoveredElement, ctx, {
+              resolveElement: (id) => elements[id],
+              measureCtx: ctx,
+            })
+            const pad =
+              (CONNECTOR_HANDLE_OFFSET_PX + CONNECTOR_HANDLE_RADIUS_PX * 2) /
+              Math.max(0.01, cameraState.zoom)
+            if (pointInRect(boardPoint, expandRect(bounds, pad))) {
+              nextHovered = hoveredConnectorElementId
+            }
+          }
+        }
         setHoveredConnectorElementId((prev) => (prev === nextHovered ? prev : nextHovered))
       } else if (hoveredConnectorElementId !== null) {
         setHoveredConnectorElementId(null)
