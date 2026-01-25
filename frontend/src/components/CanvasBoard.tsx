@@ -5848,13 +5848,15 @@ export function CanvasBoard({
 
       if (editingStateRef.current || isCommentEditing) return
       if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+        const anchorHit = hitTestConnectorAnchor(canvasPoint)
         const boardPoint = screenToBoard(canvasPoint)
         const hitId = hitTestElement(boardPoint.x, boardPoint.y)
         const hitElement = hitId ? elements[hitId] : null
         const nextHovered =
-          hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)
+          anchorHit?.element?.id ??
+          (hitElement && !isLineElement(hitElement) && !isCommentElement(hitElement)
             ? hitElement.id
-            : null
+            : null)
         setHoveredConnectorElementId((prev) => (prev === nextHovered ? prev : nextHovered))
       } else if (hoveredConnectorElementId !== null) {
         setHoveredConnectorElementId(null)
