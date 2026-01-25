@@ -1060,6 +1060,7 @@ function getElementBounds(
   if (isTextElement(element)) return getTextElementBounds(element, ctx).aabb
   if (isRectangleElement(element)) return getRectangleElementBounds(element).aabb
   if (isFrameElement(element)) return getShapeElementBounds(element).aabb
+  if (isSpeechBubbleElement(element)) return getShapeElementBounds(element).aabb
   if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
   if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
