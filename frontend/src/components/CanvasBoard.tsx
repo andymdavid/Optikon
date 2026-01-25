@@ -576,21 +576,6 @@ const segmentIntersectsRect = (
   return !(maxX < rect.left || minX > rect.right || maxY < rect.top || minY > rect.bottom)
 }
 
-const countRouteIntersections = (points: Array<{ x: number; y: number }>, rects: RouteRect[]) => {
-  if (points.length < 2 || rects.length === 0) return 0
-  let count = 0
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const a = points[i]
-    const b = points[i + 1]
-    rects.forEach((routeRect) => {
-      if (segmentIntersectsRect(a, b, routeRect.rect, routeRect.allowExit)) {
-        count += 1
-      }
-    })
-  }
-  return count
-}
-
 const getDefaultElbowVariant = (start: { x: number; y: number }, end: { x: number; y: number }): ElbowVariant =>
   Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ? 'VHV' : 'HVH'
 
@@ -631,7 +616,8 @@ const getCandidateOffsets = (
   axis: 'x' | 'y'
 ) => {
   const candidates: number[] = [start, end, start + (end - start) / 2]
-  rects.forEach(({ rect }) => {
+  rects.forEach(({ rect, allowExit }) => {
+    if (allowExit) return
     if (axis === 'x') {
       candidates.push(rect.left - 1, rect.right + 1)
     } else {
@@ -647,6 +633,59 @@ const getCandidateOffsets = (
   return Array.from(unique.values())
 }
 
+const segmentProximityToRect = (
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  rect: { left: number; right: number; top: number; bottom: number }
+) => {
+  const isHorizontal = Math.abs(a.y - b.y) < 0.001
+  const isVertical = Math.abs(a.x - b.x) < 0.001
+  const PROXIMITY_THRESHOLD = ROUTE_CLEARANCE * 2
+  if (isHorizontal) {
+    const segMinX = Math.min(a.x, b.x)
+    const segMaxX = Math.max(a.x, b.x)
+    if (segMaxX > rect.left && segMinX < rect.right) {
+      const distToTop = Math.abs(a.y - rect.top)
+      const distToBottom = Math.abs(a.y - rect.bottom)
+      const minDist = Math.min(distToTop, distToBottom)
+      if (minDist < PROXIMITY_THRESHOLD && minDist > 0) {
+        return 1 - minDist / PROXIMITY_THRESHOLD
+      }
+    }
+  }
+  if (isVertical) {
+    const segMinY = Math.min(a.y, b.y)
+    const segMaxY = Math.max(a.y, b.y)
+    if (segMaxY > rect.top && segMinY < rect.bottom) {
+      const distToLeft = Math.abs(a.x - rect.left)
+      const distToRight = Math.abs(a.x - rect.right)
+      const minDist = Math.min(distToLeft, distToRight)
+      if (minDist < PROXIMITY_THRESHOLD && minDist > 0) {
+        return 1 - minDist / PROXIMITY_THRESHOLD
+      }
+    }
+  }
+  return 0
+}
+
+const scoreRoute = (points: Array<{ x: number; y: number }>, rects: RouteRect[]) => {
+  if (points.length < 2 || rects.length === 0) return { intersections: 0, proximity: 0 }
+  let intersections = 0
+  let proximity = 0
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]
+    const b = points[i + 1]
+    rects.forEach((routeRect) => {
+      if (segmentIntersectsRect(a, b, routeRect.rect, routeRect.allowExit)) {
+        intersections += 1
+      } else if (!routeRect.allowExit) {
+        proximity += segmentProximityToRect(a, b, routeRect.rect)
+      }
+    })
+  }
+  return { intersections, proximity }
+}
+
 const pickBestOffset = (
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -658,14 +697,19 @@ const pickBestOffset = (
   let best = {
     offset: axis === 'x' ? start.x + (end.x - start.x) / 2 : start.y + (end.y - start.y) / 2,
     hits: Number.POSITIVE_INFINITY,
+    proximity: Number.POSITIVE_INFINITY,
     length: Number.POSITIVE_INFINITY,
   }
   offsets.forEach((offset) => {
     const points = [start, ...getOrthogonalPoints(start, end, variant, offset), end]
-    const hits = countRouteIntersections(points, rects)
+    const score = scoreRoute(points, rects)
     const length = getRouteLength(points)
-    if (hits < best.hits || (hits === best.hits && length < best.length)) {
-      best = { offset, hits, length }
+    const isBetter =
+      score.intersections < best.hits ||
+      (score.intersections === best.hits && score.proximity < best.proximity - 0.1) ||
+      (score.intersections === best.hits && Math.abs(score.proximity - best.proximity) < 0.1 && length < best.length)
+    if (isBetter) {
+      best = { offset, hits: score.intersections, proximity: score.proximity, length }
     }
   })
   return best
@@ -692,9 +736,12 @@ const computeAutoOrthogonalRoute = (
       startAxis === 'horizontal' ? { x: start.x, y: end.y } : { x: end.x, y: start.y }
     const primaryPoints = [start, bendPrimary, end]
     const altPoints = [start, bendAlt, end]
-    const primaryHits = countRouteIntersections(primaryPoints, rects)
-    const altHits = countRouteIntersections(altPoints, rects)
-    const bend = altHits < primaryHits ? bendAlt : bendPrimary
+    const primaryScore = scoreRoute(primaryPoints, rects)
+    const altScore = scoreRoute(altPoints, rects)
+    const altIsBetter =
+      altScore.intersections < primaryScore.intersections ||
+      (altScore.intersections === primaryScore.intersections && altScore.proximity < primaryScore.proximity - 0.1)
+    const bend = altIsBetter ? bendAlt : bendPrimary
     return {
       variant: startAxis === 'horizontal' ? 'HVH' : 'VHV',
       offset: startAxis === 'horizontal' ? bend.x : bend.y,
@@ -704,7 +751,9 @@ const computeAutoOrthogonalRoute = (
   const hvhPick = pickBestOffset(start, end, 'HVH', rects)
   const vhvPick = pickBestOffset(start, end, 'VHV', rects)
   const preferredVariant =
-    vhvPick.hits < hvhPick.hits || (vhvPick.hits === hvhPick.hits && vhvPick.length < hvhPick.length)
+    vhvPick.hits < hvhPick.hits ||
+    (vhvPick.hits === hvhPick.hits && vhvPick.proximity < hvhPick.proximity - 0.1) ||
+    (vhvPick.hits === hvhPick.hits && Math.abs(vhvPick.proximity - hvhPick.proximity) < 0.1 && vhvPick.length < hvhPick.length)
       ? 'VHV'
       : 'HVH'
   const offset = preferredVariant === 'HVH' ? hvhPick.offset : vhvPick.offset
@@ -5875,26 +5924,8 @@ export function CanvasBoard({
               ? { ...target, x1: targetPoint.x, y1: targetPoint.y }
               : { ...target, x2: targetPoint.x, y2: targetPoint.y }
           if (next.orthogonal) {
-            if (next.elbowAuto === false) {
-              // Preserve manual offset when dragging endpoints
-              updatedLine = { ...next, points: undefined }
-            } else {
-              const start = resolveLineEndpointPosition(next, 'start', {
-                resolveElement: (elementId) => prev[elementId],
-                measureCtx,
-              })
-              const end = resolveLineEndpointPosition(next, 'end', {
-                resolveElement: (elementId) => prev[elementId],
-                measureCtx,
-              })
-              const orthogonalState = resolveOrthogonalState(start, end, next, (elementId) => prev[elementId], measureCtx, prev)
-              updatedLine = {
-                ...next,
-                elbowVariant: orthogonalState.variant,
-                elbowOffset: orthogonalState.offset,
-                points: undefined,
-              }
-            }
+            // Manual endpoint drag disables auto-routing
+            updatedLine = { ...next, elbowAuto: false, points: undefined }
           } else {
             updatedLine = next
           }
@@ -6224,12 +6255,22 @@ export function CanvasBoard({
           let updated: LineElement = { ...target, x2: targetPoint.x, y2: targetPoint.y }
           if (creation.kind === 'elbow') {
             const startPoint = creation.start
+            const ctx = measureCtx ?? getSharedMeasureContext()
+            const rects: RouteRect[] = []
+            Object.values(prev).forEach((candidate) => {
+              if (!candidate || isLineElement(candidate) || isCommentElement(candidate)) return
+              const bounds = getElementBounds(candidate, ctx, { resolveElement: (id) => prev[id], measureCtx: ctx })
+              const allowExit =
+                candidate.id === updated.startBinding?.elementId ||
+                candidate.id === creation.endBinding?.elementId
+              rects.push({ rect: expandRect(bounds, ROUTE_CLEARANCE), allowExit })
+            })
             const autoRoute = computeAutoOrthogonalRoute(
               startPoint,
               targetPoint,
               getAnchorAxis(updated.startBinding?.anchor ?? null),
               getAnchorAxis(creation.endBinding?.anchor ?? null),
-              []
+              rects
             )
             updated = {
               ...updated,
@@ -6567,7 +6608,8 @@ export function CanvasBoard({
           startBinding: startBinding ?? undefined,
           endBinding: endBinding ?? undefined,
         }
-        const finalElement = nextElement
+        const finalElement =
+          creationState.kind === 'elbow' ? { ...nextElement, elbowAuto: false } : nextElement
         setElements((prev) => ({ ...prev, [finalElement.id]: finalElement }))
         const length = Math.hypot(finalElement.x2 - finalElement.x1, finalElement.y2 - finalElement.y1)
         if (!creationState.hasDragged && length < RECT_MIN_SIZE / 4) {
