@@ -613,6 +613,64 @@ const getOrthogonalPoints = (
   ]
 }
 
+const getRouteLength = (points: Array<{ x: number; y: number }>) => {
+  if (points.length < 2) return 0
+  let length = 0
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i]
+    const b = points[i + 1]
+    length += Math.hypot(b.x - a.x, b.y - a.y)
+  }
+  return length
+}
+
+const getCandidateOffsets = (
+  start: number,
+  end: number,
+  rects: RouteRect[],
+  axis: 'x' | 'y'
+) => {
+  const candidates: number[] = [start, end, start + (end - start) / 2]
+  rects.forEach(({ rect }) => {
+    if (axis === 'x') {
+      candidates.push(rect.left - 1, rect.right + 1)
+    } else {
+      candidates.push(rect.top - 1, rect.bottom + 1)
+    }
+  })
+  const unique = new Map<number, number>()
+  candidates.forEach((value) => {
+    if (!Number.isFinite(value)) return
+    const key = Math.round(value * 1000)
+    unique.set(key, value)
+  })
+  return Array.from(unique.values())
+}
+
+const pickBestOffset = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  variant: ElbowVariant,
+  rects: RouteRect[]
+) => {
+  const axis: 'x' | 'y' = variant === 'HVH' ? 'x' : 'y'
+  const offsets = getCandidateOffsets(axis === 'x' ? start.x : start.y, axis === 'x' ? end.x : end.y, rects, axis)
+  let best = {
+    offset: axis === 'x' ? start.x + (end.x - start.x) / 2 : start.y + (end.y - start.y) / 2,
+    hits: Number.POSITIVE_INFINITY,
+    length: Number.POSITIVE_INFINITY,
+  }
+  offsets.forEach((offset) => {
+    const points = [start, ...getOrthogonalPoints(start, end, variant, offset), end]
+    const hits = countRouteIntersections(points, rects)
+    const length = getRouteLength(points)
+    if (hits < best.hits || (hits === best.hits && length < best.length)) {
+      best = { offset, hits, length }
+    }
+  })
+  return best
+}
+
 const computeAutoOrthogonalRoute = (
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -643,14 +701,13 @@ const computeAutoOrthogonalRoute = (
       points: [bend],
     }
   }
-  const hvhOffset = start.x + (end.x - start.x) / 2
-  const vhvOffset = start.y + (end.y - start.y) / 2
-  const hvhPoints = [start, ...getOrthogonalPoints(start, end, 'HVH', hvhOffset), end]
-  const vhvPoints = [start, ...getOrthogonalPoints(start, end, 'VHV', vhvOffset), end]
-  const hvhHits = countRouteIntersections(hvhPoints, rects)
-  const vhvHits = countRouteIntersections(vhvPoints, rects)
-  const preferredVariant = vhvHits < hvhHits ? 'VHV' : 'HVH'
-  const offset = preferredVariant === 'HVH' ? hvhOffset : vhvOffset
+  const hvhPick = pickBestOffset(start, end, 'HVH', rects)
+  const vhvPick = pickBestOffset(start, end, 'VHV', rects)
+  const preferredVariant =
+    vhvPick.hits < hvhPick.hits || (vhvPick.hits === hvhPick.hits && vhvPick.length < hvhPick.length)
+      ? 'VHV'
+      : 'HVH'
+  const offset = preferredVariant === 'HVH' ? hvhPick.offset : vhvPick.offset
   return {
     variant: preferredVariant,
     offset,
@@ -5818,20 +5875,25 @@ export function CanvasBoard({
               ? { ...target, x1: targetPoint.x, y1: targetPoint.y }
               : { ...target, x2: targetPoint.x, y2: targetPoint.y }
           if (next.orthogonal) {
-            const start = resolveLineEndpointPosition(next, 'start', {
-              resolveElement: (elementId) => prev[elementId],
-              measureCtx,
-            })
-            const end = resolveLineEndpointPosition(next, 'end', {
-              resolveElement: (elementId) => prev[elementId],
-              measureCtx,
-            })
-            const orthogonalState = resolveOrthogonalState(start, end, next, (elementId) => prev[elementId], measureCtx)
-            updatedLine = {
-              ...next,
-              elbowVariant: orthogonalState.variant,
-              elbowOffset: orthogonalState.offset,
-              points: undefined,
+            if (next.elbowAuto === false) {
+              // Preserve manual offset when dragging endpoints
+              updatedLine = { ...next, points: undefined }
+            } else {
+              const start = resolveLineEndpointPosition(next, 'start', {
+                resolveElement: (elementId) => prev[elementId],
+                measureCtx,
+              })
+              const end = resolveLineEndpointPosition(next, 'end', {
+                resolveElement: (elementId) => prev[elementId],
+                measureCtx,
+              })
+              const orthogonalState = resolveOrthogonalState(start, end, next, (elementId) => prev[elementId], measureCtx, prev)
+              updatedLine = {
+                ...next,
+                elbowVariant: orthogonalState.variant,
+                elbowOffset: orthogonalState.offset,
+                points: undefined,
+              }
             }
           } else {
             updatedLine = next
