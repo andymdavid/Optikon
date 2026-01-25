@@ -200,6 +200,7 @@ export interface LineElement extends CanvasElement {
   x2: number
   y2: number
   points?: Array<{ x: number; y: number }>
+  curve?: boolean
   orthogonal?: boolean
   elbowVariant?: 'HVH' | 'VHV'
   elbowOffset?: number

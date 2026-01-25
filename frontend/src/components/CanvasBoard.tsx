@@ -504,6 +504,40 @@ function getLinePathPoints(
   return [start, ...points, end]
 }
 
+function getCurveSamplePoints(
+  start: { x: number; y: number },
+  control: { x: number; y: number },
+  end: { x: number; y: number }
+) {
+  const distance = Math.hypot(end.x - start.x, end.y - start.y)
+  const segments = clamp(Math.round(distance / 40), 8, 32)
+  const points: Array<{ x: number; y: number }> = [start]
+  for (let i = 1; i < segments; i += 1) {
+    const t = i / segments
+    const mt = 1 - t
+    const x = mt * mt * start.x + 2 * mt * t * control.x + t * t * end.x
+    const y = mt * mt * start.y + 2 * mt * t * control.y + t * t * end.y
+    points.push({ x, y })
+  }
+  points.push(end)
+  return points
+}
+
+function getLineRenderPathPoints(
+  element: LineElement,
+  options?: {
+    resolveElement?: (id: string) => BoardElement | undefined
+    measureCtx?: CanvasRenderingContext2D | null
+    elements?: ElementMap
+  }
+) {
+  const { start, end, points } = getResolvedLineEndpoints(element, options)
+  if (element.curve && !element.orthogonal && points && points.length === 1) {
+    return getCurveSamplePoints(start, points[0], end)
+  }
+  return [start, ...points, end]
+}
+
 function pointToMultiSegmentDistance(
   point: { x: number; y: number },
   path: Array<{ x: number; y: number }>
@@ -1876,6 +1910,7 @@ function parseLineElement(raw: unknown): LineElement | null {
       ? element.elbowOffset
       : undefined
   const elbowAuto = element.elbowAuto !== false
+  const curve = element.curve === true
   const points = Array.isArray(element.points)
     ? element.points
         .map((point) =>
@@ -1897,6 +1932,7 @@ function parseLineElement(raw: unknown): LineElement | null {
     startArrow: !!element.startArrow,
     endArrow: !!element.endArrow,
     points,
+    curve,
     orthogonal: element.orthogonal === true,
     elbowVariant,
     elbowOffset,
@@ -2739,8 +2775,7 @@ function drawLineElement(
 ) {
   const strokeWidth = getLineStrokeWidth(element)
   const screenStrokeWidth = Math.max(1, strokeWidth * camera.zoom)
-  const { start: startBoard, end: endBoard, points } = getResolvedLineEndpoints(element, options)
-  const pathPoints = [startBoard, ...points, endBoard]
+  const pathPoints = getLineRenderPathPoints(element, options)
   const toScreen = (point: { x: number; y: number }) => ({
     x: (point.x + camera.offsetX) * camera.zoom,
     y: (point.y + camera.offsetY) * camera.zoom,
@@ -3367,7 +3402,8 @@ function drawLineSelection(
     x: (point.x + camera.offsetX) * camera.zoom,
     y: (point.y + camera.offsetY) * camera.zoom,
   })
-  const screenPath = [startBoard, ...points, endBoard].map(toScreen)
+  const renderPath = getLineRenderPathPoints(element, { resolveElement, measureCtx, elements })
+  const screenPath = renderPath.map(toScreen)
   const baseWidth = Math.max(1, getLineStrokeWidth(element) * camera.zoom)
   const selectionWidth = Math.max(2, baseWidth + 2)
   ctx.save()
@@ -3414,7 +3450,18 @@ function drawLineSelection(
         }
       }
     } else {
-      screenPath.forEach((point) => drawHandle(point))
+      const startHandle = toScreen(startBoard)
+      const endHandle = toScreen(endBoard)
+      drawHandle(startHandle)
+      drawHandle(endHandle)
+      if (element.curve && points.length === 1) {
+        drawSegmentHandle(toScreen(points[0]))
+      } else {
+        screenPath.forEach((point, index) => {
+          if (index === 0 || index === screenPath.length - 1) return
+          drawHandle(point)
+        })
+      }
     }
   }
   ctx.restore()
@@ -3537,8 +3584,8 @@ export function CanvasBoard({
         pointerId: number
         index: number
         basePoints: Array<{ x: number; y: number }>
-        prevOrientation: 'horizontal' | 'vertical'
-        nextOrientation: 'horizontal' | 'vertical'
+        prevOrientation: 'horizontal' | 'vertical' | 'free'
+        nextOrientation: 'horizontal' | 'vertical' | 'free'
       }
   >(null)
   const lineSegmentStateRef = useRef<
@@ -3570,7 +3617,7 @@ export function CanvasBoard({
         hasDragged: boolean
         startBinding: LineEndpointBinding | null
         endBinding: LineEndpointBinding | null
-        kind: 'straight' | 'elbow'
+        kind: 'straight' | 'elbow' | 'curve'
       }
   >(null)
   const transformStateRef = useRef<TransformState | null>(null)
@@ -4605,7 +4652,7 @@ export function CanvasBoard({
           if (isLineElement(element)) {
             const tolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
             const measureCtx = getSharedMeasureContext()
-            const path = getLinePathPoints(element, {
+            const path = getLineRenderPathPoints(element, {
               resolveElement: (elementId) => elements[elementId],
               measureCtx,
               elements,
@@ -5331,12 +5378,13 @@ export function CanvasBoard({
         return
       }
       const boardPoint = screenToBoard(canvasPoint)
-      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+      if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
         const anchorHit = hitTestConnectorAnchor(canvasPoint)
         if (anchorHit) {
           event.preventDefault()
           suppressClickRef.current = true
           const isElbowTool = toolMode === 'elbow'
+          const isCurveTool = toolMode === 'curve'
           const id = randomId()
           const startPosition = anchorHit.board
           const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
@@ -5354,7 +5402,8 @@ export function CanvasBoard({
             startArrow: false,
             endArrow: toolMode === 'arrow' || toolMode === 'elbow',
             orthogonal: isElbowTool,
-            points: undefined,
+            points: isCurveTool ? [{ x: startPosition.x, y: startPosition.y }] : undefined,
+            curve: isCurveTool ? true : undefined,
             elbowVariant: isElbowTool ? defaultVariant : undefined,
             elbowOffset: isElbowTool ? defaultOffset : undefined,
             elbowAuto: isElbowTool ? true : undefined,
@@ -5367,7 +5416,7 @@ export function CanvasBoard({
             hasDragged: false,
             startBinding: initialBinding,
             endBinding: null,
-            kind: isElbowTool ? 'elbow' : 'straight',
+            kind: isElbowTool ? 'elbow' : isCurveTool ? 'curve' : 'straight',
           }
           interactionModeRef.current = 'line-create'
           setElements((prev) => ({ ...prev, [id]: newElement }))
@@ -5577,8 +5626,9 @@ export function CanvasBoard({
           const prevPoint = resolvedPath[pathIndex - 1] ?? resolvedPath[pathIndex]
           const currentPoint = resolvedPath[pathIndex]
           const nextPoint = resolvedPath[pathIndex + 1] ?? resolvedPath[pathIndex]
-          const prevOrientation = getSegmentOrientation(prevPoint, currentPoint)
-          const nextOrientation = getSegmentOrientation(currentPoint, nextPoint)
+          const isCurve = bendHandleHit.element.curve === true
+          const prevOrientation = isCurve ? 'free' : getSegmentOrientation(prevPoint, currentPoint)
+          const nextOrientation = isCurve ? 'free' : getSegmentOrientation(currentPoint, nextPoint)
           lineBendStateRef.current = {
             id: bendHandleHit.element.id,
             pointerId: event.pointerId,
@@ -5723,16 +5773,17 @@ export function CanvasBoard({
           setSelection(new Set([id]))
           return
         }
-      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
-        const isElbowTool = toolMode === 'elbow'
-        const id = randomId()
-        const measureCtx = getSharedMeasureContext()
-        const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
-        const initialBinding = fallbackSnap?.binding ?? null
-        const startPosition = fallbackSnap?.position ?? boardPoint
-        const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
-        const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
-        let newElement: LineElement = {
+        if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
+          const isElbowTool = toolMode === 'elbow'
+          const isCurveTool = toolMode === 'curve'
+          const id = randomId()
+          const measureCtx = getSharedMeasureContext()
+          const fallbackSnap = findNearestAnchorBinding(boardPoint, elements, id, cameraState, measureCtx)
+          const initialBinding = fallbackSnap?.binding ?? null
+          const startPosition = fallbackSnap?.position ?? boardPoint
+          const defaultVariant = getDefaultElbowVariant(startPosition, startPosition)
+          const defaultOffset = defaultVariant === 'VHV' ? startPosition.y : startPosition.x
+          let newElement: LineElement = {
             id,
             type: 'line',
             x1: startPosition.x,
@@ -5744,7 +5795,8 @@ export function CanvasBoard({
             startArrow: false,
             endArrow: toolMode === 'arrow' || toolMode === 'elbow',
             orthogonal: isElbowTool,
-            points: undefined,
+            points: isCurveTool ? [{ x: startPosition.x, y: startPosition.y }] : undefined,
+            curve: isCurveTool ? true : undefined,
             elbowVariant: isElbowTool ? defaultVariant : undefined,
             elbowOffset: isElbowTool ? defaultOffset : undefined,
             elbowAuto: isElbowTool ? true : undefined,
@@ -5759,7 +5811,7 @@ export function CanvasBoard({
             hasDragged: false,
             startBinding: initialBinding,
             endBinding: null,
-            kind: isElbowTool ? 'elbow' : 'straight',
+            kind: isElbowTool ? 'elbow' : isCurveTool ? 'curve' : 'straight',
           }
           interactionModeRef.current = 'line-create'
           suppressClickRef.current = true
@@ -5893,7 +5945,7 @@ export function CanvasBoard({
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 
       if (editingStateRef.current || isCommentEditing) return
-      if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') {
+      if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') {
         const anchorHit = hitTestConnectorAnchor(canvasPoint)
         const boardPoint = screenToBoard(canvasPoint)
         const hitId = hitTestElement(boardPoint.x, boardPoint.y)
@@ -6030,9 +6082,9 @@ export function CanvasBoard({
           const nextPoint = resolvedPath[pathIndex + 1] ?? resolvedPath[pathIndex]
           const nextValue = { x: boardPoint.x, y: boardPoint.y }
           if (bendState.prevOrientation === 'horizontal') nextValue.y = prevPoint.y
-          else nextValue.x = prevPoint.x
+          else if (bendState.prevOrientation === 'vertical') nextValue.x = prevPoint.x
           if (bendState.nextOrientation === 'horizontal') nextValue.y = nextPoint.y
-          else nextValue.x = nextPoint.x
+          else if (bendState.nextOrientation === 'vertical') nextValue.x = nextPoint.x
           points[bendState.index] = nextValue
           updatedElement = { ...target, points }
           return { ...prev, [target.id]: updatedElement }
@@ -6343,6 +6395,18 @@ export function CanvasBoard({
               elbowOffset: autoRoute.offset,
               elbowAuto: true,
               points: undefined,
+            }
+          } else if (creation.kind === 'curve') {
+            const startPoint = creation.start
+            const controlPoint = {
+              x: (startPoint.x + targetPoint.x) / 2,
+              y: (startPoint.y + targetPoint.y) / 2,
+            }
+            updated = {
+              ...updated,
+              curve: true,
+              orthogonal: false,
+              points: [controlPoint],
             }
           }
           nextLine = updated
@@ -7029,12 +7093,12 @@ export function CanvasBoard({
   }, [boardId, setSelection])
 
   useEffect(() => {
-    if (toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow') return
+    if (toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow') return
     setHoveredConnectorElementId(null)
   }, [toolMode])
 
   useEffect(() => {
-    if (toolMode !== 'line' && toolMode !== 'arrow') {
+    if (toolMode !== 'line' && toolMode !== 'curve' && toolMode !== 'arrow' && toolMode !== 'elbow') {
       setConnectorHighlight((prev) => (prev ? null : prev))
     }
   }, [toolMode])
@@ -7371,7 +7435,7 @@ export function CanvasBoard({
     const values = Object.values(elements)
     const sharedMeasureCtx = getSharedMeasureContext()
     const resolveElement = (id: string) => elements[id]
-    const showConnectorAnchors = toolMode === 'line' || toolMode === 'arrow' || toolMode === 'elbow'
+    const showConnectorAnchors = toolMode === 'line' || toolMode === 'curve' || toolMode === 'arrow' || toolMode === 'elbow'
     const editingTextId = editingState?.elementType === 'text' ? editingState.id : null
     const editingFrameId = editingState?.elementType === 'frame' ? editingState.id : null
     const editingShapeId = editingState?.elementType === 'shape' ? editingState.id : null

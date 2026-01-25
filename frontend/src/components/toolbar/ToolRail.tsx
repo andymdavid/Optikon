@@ -25,6 +25,7 @@ export type ToolMode =
   | 'triangle'
   | 'speechBubble'
   | 'line'
+  | 'curve'
   | 'arrow'
   | 'elbow'
   | 'frame'
@@ -93,6 +94,16 @@ const TOOLS: ToolDefinition[] = [
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M4 16L16 4" />
+      </svg>
+    ),
+  },
+  {
+    mode: 'curve',
+    label: 'Curve',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M3 6C8 16 12 4 17 14" />
+        <circle cx="10" cy="10" r="1.2" fill="currentColor" stroke="none" />
       </svg>
     ),
   },
