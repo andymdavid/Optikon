@@ -5935,6 +5935,7 @@ export function CanvasBoard({
       isCommentEditing,
       lineArrowEnabled,
       lineToolKind,
+      shapeToolKind,
       preventNextPopoverClose,
       openCommentPopoverForElement,
       persistElementCreate,
