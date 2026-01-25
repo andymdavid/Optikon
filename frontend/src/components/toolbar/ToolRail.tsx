@@ -11,7 +11,7 @@ import {
   CircleAlert,
   Paperclip,
 } from 'lucide-react'
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 export type ToolMode =
   | 'select'
@@ -159,9 +159,8 @@ const activeButtonStyle: CSSProperties = {
 
 const lineShelfStyle: CSSProperties = {
   position: 'absolute',
-  left: 48,
-  top: '50%',
-  transform: 'translateY(-50%)',
+  left: 0,
+  top: 0,
   background: '#ffffff',
   borderRadius: 12,
   padding: '10px 12px',
@@ -205,6 +204,13 @@ export function ToolRail({
   onLineArrowEnabledChange,
 }: ToolRailProps) {
   const [lineShelfOpen, setLineShelfOpen] = useState(false)
+  const lineButtonRef = useRef<HTMLButtonElement | null>(null)
+  const [lineShelfOffset, setLineShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  useEffect(() => {
+    if (!lineShelfOpen || !lineButtonRef.current) return
+    const buttonRect = lineButtonRef.current.getBoundingClientRect()
+    setLineShelfOffset({ x: buttonRect.width + 8, y: lineButtonRef.current.offsetTop })
+  }, [lineShelfOpen])
   const handleToolClick = (mode: ToolMode) => {
     // Ignore clicks while editing
     if (isEditing) return
@@ -227,12 +233,14 @@ export function ToolRail({
     <div className="tool-rail" style={railStyle}>
       {TOOLS.map((tool) => {
         const isActive = toolMode === tool.mode
+        const isLineTool = tool.mode === 'line'
         return (
           <button
             key={tool.mode}
             type="button"
             title={tool.label}
             style={isActive ? activeButtonStyle : buttonBaseStyle}
+            ref={isLineTool ? lineButtonRef : undefined}
             onClick={() => handleToolClick(tool.mode)}
             onMouseEnter={(e) => {
               if (!isActive) {
@@ -250,7 +258,12 @@ export function ToolRail({
         )
       })}
       {toolMode === 'line' && lineShelfOpen && (
-        <div style={lineShelfStyle}>
+        <div
+          style={{
+            ...lineShelfStyle,
+            transform: `translate(${lineShelfOffset.x}px, ${lineShelfOffset.y}px)`,
+          }}
+        >
           <div style={lineShelfLabel}>Arrow type</div>
           <div style={lineShelfRow}>
             <button
