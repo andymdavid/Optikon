@@ -1703,6 +1703,10 @@ function parseFrameElement(raw: unknown): FrameElement | null {
   const rotation = resolveTextRotation(element.rotation)
   const title = typeof element.title === 'string' && element.title.trim().length > 0 ? element.title.trim() : 'Frame'
   const text = typeof element.text === 'string' ? element.text : undefined
+  const fill =
+    element.fill === null
+      ? null
+      : (typeof element.fill === 'string' && element.fill.trim().length > 0 ? element.fill : FRAME_FILL_COLOR)
   const provisional: FrameElement = {
     id: element.id,
     type: 'frame',
@@ -1710,6 +1714,7 @@ function parseFrameElement(raw: unknown): FrameElement | null {
     y: element.y,
     w: width,
     h: height,
+    fill,
     rotation,
     title,
     text,
@@ -2674,7 +2679,7 @@ function drawFrameElement(
   ctx.scale(scaleFactor, scaleFactor)
   const width = bounds.width
   const height = bounds.height
-  ctx.fillStyle = FRAME_FILL_COLOR
+  ctx.fillStyle = element.fill === null ? 'transparent' : (element.fill ?? FRAME_FILL_COLOR)
   ctx.strokeStyle = FRAME_BORDER_COLOR
   ctx.lineWidth = 2 / scaleFactor
   ctx.beginPath()
@@ -4243,6 +4248,7 @@ export function CanvasBoard({
     )
     const stickyElements = selectedElements.filter((el): el is StickyNoteElement => isStickyElement(el))
     const shapeElements = selectedElements.filter((el): el is ShapeElement => isShapeElement(el))
+    const frameElements = selectedElements.filter((el): el is FrameElement => isFrameElement(el))
 
     // Default state when no text elements selected
     const defaultState: SelectionFormatState = {
@@ -4259,10 +4265,12 @@ export function CanvasBoard({
       background: null,
       stickyFill: null,
       shapeFill: null,
+      frameFill: null,
       link: null,
       hasTextElements: false,
       hasStickyElements: false,
       hasShapeElements: false,
+      hasFrameElements: false,
     }
 
     if (textElements.length === 0 && stickyElements.length === 0) {
@@ -4277,14 +4285,20 @@ export function CanvasBoard({
     const shapeFillFirst = shapeFillValues[0] ?? null
     const shapeFillAllSame = shapeFillValues.every((v) => v === shapeFillFirst)
     const shapeFill = shapeFillAllSame ? shapeFillFirst : 'mixed' as const
+    const frameFillValues = frameElements.map((el) => (el.fill === undefined ? FRAME_FILL_COLOR : el.fill))
+    const frameFillFirst = frameFillValues[0] ?? null
+    const frameFillAllSame = frameFillValues.every((v) => v === frameFillFirst)
+    const frameFill = frameFillAllSame ? frameFillFirst : 'mixed' as const
 
     if (textElements.length === 0) {
       return {
         ...defaultState,
         stickyFill,
         shapeFill,
+        frameFill,
         hasStickyElements: stickyElements.length > 0,
         hasShapeElements: shapeElements.length > 0,
+        hasFrameElements: frameElements.length > 0,
       }
     }
 
@@ -4361,10 +4375,12 @@ export function CanvasBoard({
       background,
       stickyFill,
       shapeFill,
+      frameFill,
       link,
       hasTextElements: textElements.length > 0,
       hasStickyElements: stickyElements.length > 0,
       hasShapeElements: shapeElements.length > 0,
+      hasFrameElements: frameElements.length > 0,
     }
   }, [selectedIds, elements, supportsTextStyle])
 
@@ -4601,6 +4617,36 @@ export function CanvasBoard({
       const updatedElements: BoardElement[] = shapes.map((el) => ({
         ...el,
         fill: fill ?? undefined,
+      }))
+
+      setElements((prev) => {
+        const next = { ...prev }
+        updatedElements.forEach((el) => {
+          next[el.id] = el
+        })
+        return next
+      })
+
+      sendElementsUpdate(updatedElements)
+
+      if (boardId) {
+        void persistElementsUpdate(boardId, updatedElements)
+      }
+    },
+    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate]
+  )
+
+  const handleSetFrameFill = useCallback(
+    (fill: string | null) => {
+      const frames = Array.from(selectedIds)
+        .map((id) => elements[id])
+        .filter((el): el is FrameElement => !!el && isFrameElement(el))
+
+      if (frames.length === 0) return
+
+      const updatedElements: BoardElement[] = frames.map((el) => ({
+        ...el,
+        fill,
       }))
 
       setElements((prev) => {
@@ -6049,6 +6095,7 @@ export function CanvasBoard({
               y: boardPoint.y,
               w: frameWidth,
               h: frameHeight,
+              fill: FRAME_FILL_COLOR,
               rotation: 0,
               title: 'Frame',
             }
@@ -8441,6 +8488,7 @@ export function CanvasBoard({
         onSetBackground={handleSetBackground}
         onSetStickyFill={handleSetStickyFill}
         onSetShapeFill={handleSetShapeFill}
+        onSetFrameFill={handleSetFrameFill}
         onInsertLink={handleOpenLinkPopover}
       />
       <LinkInsertPopover

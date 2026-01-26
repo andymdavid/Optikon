@@ -68,6 +68,7 @@ export interface FrameElement extends CanvasElement {
   y: number
   w: number
   h: number
+  fill?: string | null
   rotation?: number
   title: string
   text?: string

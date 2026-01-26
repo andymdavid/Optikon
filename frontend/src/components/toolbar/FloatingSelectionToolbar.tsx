@@ -41,10 +41,12 @@ export type SelectionFormatState = {
   background: TextBackground | null | 'mixed'
   stickyFill: string | null | 'mixed'
   shapeFill: string | null | 'mixed'
+  frameFill: string | null | 'mixed'
   link: string | null | 'mixed'
   hasTextElements: boolean
   hasStickyElements: boolean
   hasShapeElements: boolean
+  hasFrameElements: boolean
 }
 
 export type FloatingSelectionToolbarProps = {
@@ -64,6 +66,7 @@ export type FloatingSelectionToolbarProps = {
   onSetBackground: (bg: TextBackground | null) => void
   onSetStickyFill: (color: string | null) => void
   onSetShapeFill: (color: string | null) => void
+  onSetFrameFill: (color: string | null) => void
   onInsertLink?: () => void
   onAddComment?: () => void
 }
@@ -157,7 +160,7 @@ function ChevronDownIcon() {
   return <ChevronDown size={12} strokeWidth={1.5} />
 }
 
-type DropdownType = 'font' | 'textStyle' | 'fontColor' | 'highlightColor' | 'bgColor' | 'stickyFill' | null
+type DropdownType = 'font' | 'textStyle' | 'fontColor' | 'highlightColor' | 'bgColor' | 'stickyFill' | 'shapeFill' | 'frameFill' | null
 
 export function FloatingSelectionToolbar({
   selectionBoundsScreen,
@@ -176,6 +179,7 @@ export function FloatingSelectionToolbar({
   onSetBackground,
   onSetStickyFill,
   onSetShapeFill,
+  onSetFrameFill,
   onInsertLink,
   onAddComment,
 }: FloatingSelectionToolbarProps) {
@@ -269,6 +273,7 @@ export function FloatingSelectionToolbar({
   const currentBackground = formatState.background !== 'mixed' ? formatState.background : null
   const currentStickyFill = formatState.stickyFill !== 'mixed' ? formatState.stickyFill : null
   const currentShapeFill = formatState.shapeFill !== 'mixed' ? formatState.shapeFill : null
+  const currentFrameFill = formatState.frameFill !== 'mixed' ? formatState.frameFill : null
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>, isActive: boolean) => {
     if (!isActive) {
@@ -785,6 +790,58 @@ export function FloatingSelectionToolbar({
                           onSetShapeFill(null)
                         } else {
                           onSetShapeFill(color)
+                        }
+                        setOpenDropdown(null)
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {formatState.hasFrameElements && (
+        <>
+          <div style={separatorStyle} />
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={buttonBaseStyle}
+              title="Background colour"
+              onClick={() => toggleDropdown('frameFill')}
+              onMouseEnter={(e) => handleMouseEnter(e, false)}
+              onMouseLeave={(e) => handleMouseLeave(e, false)}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect
+                  x="2"
+                  y="2"
+                  width="12"
+                  height="12"
+                  rx="2"
+                  fill={currentFrameFill ?? '#ffffff'}
+                />
+              </svg>
+            </button>
+            {openDropdown === 'frameFill' && (
+              <div style={{ ...dropdownStyle, minWidth: 'auto' }}>
+                <div style={colorGridStyle}>
+                  {BG_COLORS.map((color) => (
+                    <div
+                      key={color}
+                      style={{
+                        ...colorSwatchStyle,
+                        background: color === 'transparent' ? 'repeating-linear-gradient(45deg, #ccc, #ccc 2px, #fff 2px, #fff 4px)' : color,
+                        outline: (currentFrameFill ?? '#ffffff') === color ? '2px solid #0ea5e9' : 'none',
+                        outlineOffset: 1,
+                      }}
+                      onClick={() => {
+                        if (color === 'transparent') {
+                          onSetFrameFill(null)
+                        } else {
+                          onSetFrameFill(color)
                         }
                         setOpenDropdown(null)
                       }}
