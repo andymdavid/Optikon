@@ -454,6 +454,11 @@ body,
   text-align: inherit;
 }
 
+.canvas-board__shape-editor[data-shape-type='triangle'] .canvas-board__shape-editor-content {
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+
 .canvas-board__shape-editor-content[data-empty="true"] {
   caret-color: transparent;
 }

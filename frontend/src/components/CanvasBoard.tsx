@@ -2333,7 +2333,9 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
 
   const lines = wrapText(ctx, element.text, inner.width, true)
   const totalHeight = lines.length * lineHeight
-  const offsetY = Math.max(0, (inner.height - totalHeight) / 2)
+  const offsetY = element.type === 'triangle'
+    ? Math.max(0, inner.height - totalHeight)
+    : Math.max(0, (inner.height - totalHeight) / 2)
 
   const blockLeft =
     textAlign === 'left'
@@ -8712,6 +8714,7 @@ export function CanvasBoard({
         editingShapeFontSizePx !== null && (
           <div
             className="canvas-board__shape-editor"
+            data-shape-type={editingShapeElement.type}
             style={{
               left: editingShapeRect.centerX,
               top: editingShapeRect.centerY,
