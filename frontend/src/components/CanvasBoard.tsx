@@ -310,56 +310,6 @@ function getTransformAnchorPoint(bounds: TransformBounds, anchor: ConnectorAncho
   }
 }
 
-function rotatePoint(
-  point: { x: number; y: number },
-  center: { x: number; y: number },
-  rotation: number
-) {
-  if (!rotation) return { ...point }
-  const dx = point.x - center.x
-  const dy = point.y - center.y
-  const cos = Math.cos(rotation)
-  const sin = Math.sin(rotation)
-  return {
-    x: center.x + dx * cos - dy * sin,
-    y: center.y + dx * sin + dy * cos,
-  }
-}
-
-function getTriangleAnchorDetails(
-  element: TriangleElement,
-  anchor: ConnectorAnchor
-): { point: { x: number; y: number }; center: { x: number; y: number } } {
-  const width = Math.max(RECT_MIN_SIZE, element.w)
-  const height = Math.max(RECT_MIN_SIZE, element.h)
-  const center = { x: element.x + width / 2, y: element.y + height / 2 }
-  const rotation = resolveTextRotation(element.rotation)
-  const top = rotatePoint({ x: element.x + width / 2, y: element.y }, center, rotation)
-  const leftBase = rotatePoint({ x: element.x, y: element.y + height }, center, rotation)
-  const rightBase = rotatePoint({ x: element.x + width, y: element.y + height }, center, rotation)
-  const baseMid = rotatePoint({ x: element.x + width / 2, y: element.y + height }, center, rotation)
-  const midpoint = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-  })
-  switch (anchor) {
-    case 'top':
-      return { point: top, center }
-    case 'bottom':
-      return { point: baseMid, center }
-    case 'left': {
-      const point = midpoint(top, leftBase)
-      return { point, center }
-    }
-    case 'right': {
-      const point = midpoint(top, rightBase)
-      return { point, center }
-    }
-    default:
-      return { point: center, center }
-  }
-}
-
 function getElementAnchorDetails(
   element: BoardElement,
   anchor: ConnectorAnchor,
@@ -372,9 +322,6 @@ function getElementAnchorDetails(
     return { point, center }
   }
   const ctx = options?.ctx ?? null
-  if (isTriangleElement(element)) {
-    return getTriangleAnchorDetails(element, anchor)
-  }
   if (isTextElement(element)) {
     const textBounds = getTextElementBounds(element, ctx)
     const point = getTransformAnchorPoint(textBounds, anchor)
@@ -1091,7 +1038,6 @@ function getElementBounds(
   if (isFrameElement(element)) return getShapeElementBounds(element).aabb
   if (isSpeechBubbleElement(element)) return getShapeElementBounds(element).aabb
   if (isRoundedRectElement(element)) return getShapeElementBounds(element).aabb
-  if (isTriangleElement(element)) return getShapeElementBounds(element).aabb
   if (isDiamondElement(element)) return getShapeElementBounds(element).aabb
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   if (isImageElement(element)) return getImageElementBounds(element).aabb
@@ -3620,10 +3566,6 @@ function drawElementSelection(
     drawShapeSelection(ctx, element, camera, options)
     return
   }
-  if (isTriangleElement(element)) {
-    drawShapeSelection(ctx, element, camera, options)
-    return
-  }
   if (isSpeechBubbleElement(element)) {
     drawShapeSelection(ctx, element, camera, options)
     return
@@ -4796,24 +4738,6 @@ export function CanvasBoard({
         const dy = Math.abs(local.y) / halfHeight
         return dx + dy <= 1
       }
-      const pointInTriangle = (point: { x: number; y: number }, element: TriangleElement) => {
-        const bounds = getShapeElementBounds(element)
-        const local = toTextLocalCoordinates(point, bounds)
-        const halfWidth = Math.max(RECT_MIN_SIZE / 2, bounds.width / 2)
-        const halfHeight = Math.max(RECT_MIN_SIZE / 2, bounds.height / 2)
-        // Triangle vertices in local coordinates
-        const p0 = { x: 0, y: -halfHeight }
-        const p1 = { x: -halfWidth, y: halfHeight }
-        const p2 = { x: halfWidth, y: halfHeight }
-        const area = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) =>
-          Math.abs((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2)
-        const totalArea = area(p0, p1, p2)
-        const area1 = area(local, p1, p2)
-        const area2 = area(p0, local, p2)
-        const area3 = area(p0, p1, local)
-        const epsilon = Math.max(0.0001, totalArea * 0.001)
-        return Math.abs(totalArea - (area1 + area2 + area3)) <= epsilon
-      }
       const commentRadius = 14 / Math.max(0.01, cameraState.zoom)
       const testList = (list: Array<BoardElement | undefined>) => {
         for (let i = list.length - 1; i >= 0; i -= 1) {
@@ -4901,12 +4825,6 @@ export function CanvasBoard({
           if (isSpeechBubbleElement(element)) {
             const bounds = getShapeElementBounds(element)
             if (pointInPolygon({ x, y }, bounds.corners)) {
-              return element.id
-            }
-            continue
-          }
-          if (isTriangleElement(element)) {
-            if (pointInTriangle({ x, y }, element)) {
               return element.id
             }
             continue
@@ -7938,10 +7856,6 @@ export function CanvasBoard({
         const renderShape =
           editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
         drawDiamondElement(ctx, renderShape, cameraState)
-      } else if (isTriangleElement(element)) {
-        const renderShape =
-          editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
-        drawTriangleElement(ctx, renderShape, cameraState)
       } else if (isSpeechBubbleElement(element)) {
         const renderShape =
           editingShapeId && editingShapeId === element.id ? { ...element, text: '' } : element
