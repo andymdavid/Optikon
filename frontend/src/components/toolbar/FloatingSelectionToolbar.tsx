@@ -637,12 +637,13 @@ export function FloatingSelectionToolbar({
             onMouseLeave={(e) => handleMouseLeave(e, false)}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M4 4h8M8 4v6" />
               <rect
-                x="2"
-                y="2"
-                width="12"
-                height="12"
-                rx="2"
+                x="3"
+                y="11"
+                width="10"
+                height="3"
+                rx="1"
                 fill={!currentBackground || currentBackground.color === 'transparent' ? 'none' : currentBackground.color}
                 fillOpacity={currentBackground ? currentBackground.opacity / 100 : 1}
               />
