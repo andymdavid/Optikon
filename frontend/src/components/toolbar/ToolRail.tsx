@@ -10,6 +10,8 @@ import {
   Frame,
   CircleAlert,
   Paperclip,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
@@ -89,6 +91,10 @@ export type ToolRailProps = {
   onLineToolKindChange: (kind: LineToolKind) => void
   lineArrowEnabled: boolean
   onLineArrowEnabledChange: (next: boolean) => void
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
 }
 
 const railStyle: CSSProperties = {
@@ -169,6 +175,19 @@ const lineOptionButton: CSSProperties = {
   background: '#f8fafc',
 }
 
+const undoRailStyle: CSSProperties = {
+  position: 'fixed',
+  left: 12,
+  background: '#ffffff',
+  borderRadius: 10,
+  padding: 6,
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  zIndex: 20,
+}
+
 export function ToolRail({
   toolMode,
   onToolModeChange,
@@ -179,13 +198,19 @@ export function ToolRail({
   onLineToolKindChange,
   lineArrowEnabled,
   onLineArrowEnabledChange,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }: ToolRailProps) {
   const [lineShelfOpen, setLineShelfOpen] = useState(false)
   const [shapeShelfOpen, setShapeShelfOpen] = useState(false)
   const lineButtonRef = useRef<HTMLButtonElement | null>(null)
   const shapeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const railRef = useRef<HTMLDivElement | null>(null)
   const [lineShelfOffset, setLineShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [shapeShelfOffset, setShapeShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [undoOffset, setUndoOffset] = useState<{ x: number; y: number }>({ x: 12, y: 0 })
   useEffect(() => {
     if (!lineShelfOpen || !lineButtonRef.current) return
     const buttonRect = lineButtonRef.current.getBoundingClientRect()
@@ -196,6 +221,16 @@ export function ToolRail({
     const buttonRect = shapeButtonRef.current.getBoundingClientRect()
     setShapeShelfOffset({ x: buttonRect.width + 8, y: shapeButtonRef.current.offsetTop })
   }, [shapeShelfOpen])
+  useEffect(() => {
+    const updateUndoPosition = () => {
+      if (!railRef.current) return
+      const rect = railRef.current.getBoundingClientRect()
+      setUndoOffset({ x: rect.left, y: rect.bottom + 12 })
+    }
+    updateUndoPosition()
+    window.addEventListener('resize', updateUndoPosition)
+    return () => window.removeEventListener('resize', updateUndoPosition)
+  }, [])
   const handleToolClick = (mode: ToolMode) => {
     // Ignore clicks while editing
     if (isEditing) return
@@ -221,7 +256,8 @@ export function ToolRail({
   }
 
   return (
-    <div className="tool-rail" style={railStyle}>
+    <>
+      <div ref={railRef} className="tool-rail" style={railStyle}>
       {TOOLS.map((tool) => {
         const isActive = toolMode === tool.mode
         const isLineTool = tool.mode === 'line'
@@ -422,6 +458,43 @@ export function ToolRail({
           </div>
         </div>
       )}
-    </div>
+      </div>
+      <div
+        style={{
+          ...undoRailStyle,
+          left: undoOffset.x,
+          top: undoOffset.y,
+        }}
+      >
+        <button
+          type="button"
+          title="Undo"
+          style={{
+            ...buttonBaseStyle,
+            color: canUndo ? '#374151' : '#9ca3af',
+            cursor: canUndo ? 'pointer' : 'not-allowed',
+          }}
+          onClick={() => {
+            if (canUndo) onUndo()
+          }}
+        >
+          <Undo2 size={18} strokeWidth={1.5} />
+        </button>
+        <button
+          type="button"
+          title="Redo"
+          style={{
+            ...buttonBaseStyle,
+            color: canRedo ? '#374151' : '#9ca3af',
+            cursor: canRedo ? 'pointer' : 'not-allowed',
+          }}
+          onClick={() => {
+            if (canRedo) onRedo()
+          }}
+        >
+          <Redo2 size={18} strokeWidth={1.5} />
+        </button>
+      </div>
+    </>
   )
 }

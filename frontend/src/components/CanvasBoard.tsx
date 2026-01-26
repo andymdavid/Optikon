@@ -3638,6 +3638,10 @@ export function CanvasBoard({
   const lastBroadcastRef = useRef(0)
   const clipboardRef = useRef<BoardElement[] | null>(null)
   const pasteCountRef = useRef(0)
+  const elementsRef = useRef<ElementMap>({})
+  const historyStartRef = useRef<ElementMap | null>(null)
+  const undoStackRef = useRef<ElementMap[]>([])
+  const redoStackRef = useRef<ElementMap[]>([])
   const panStateRef = useRef<{
     pointerId: number
     startX: number
@@ -3717,6 +3721,8 @@ export function CanvasBoard({
   const [shapeToolKind, setShapeToolKind] = useState<ShapeToolKind>('rect')
   const [lineToolKind, setLineToolKind] = useState<LineToolKind>('line')
   const [lineArrowEnabled, setLineArrowEnabled] = useState(false)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
   const [connectorHighlight, setConnectorHighlight] = useState<
     { elementId: string; anchor: ConnectorAnchor } | null
@@ -3758,6 +3764,82 @@ export function CanvasBoard({
   useEffect(() => {
     cameraStateRef.current = cameraState
   }, [cameraState])
+
+  useEffect(() => {
+    elementsRef.current = elements
+  }, [elements])
+
+  const cloneElements = useCallback((source: ElementMap) => {
+    return JSON.parse(JSON.stringify(source)) as ElementMap
+  }, [])
+
+  const beginHistoryCapture = useCallback(() => {
+    if (!historyStartRef.current) {
+      historyStartRef.current = cloneElements(elementsRef.current)
+    }
+  }, [cloneElements])
+
+  const pushHistorySnapshot = useCallback((snapshot: ElementMap) => {
+    undoStackRef.current.push(snapshot)
+    redoStackRef.current = []
+    setCanUndo(undoStackRef.current.length > 0)
+    setCanRedo(false)
+  }, [])
+
+  const commitHistoryCapture = useCallback(() => {
+    if (historyStartRef.current) {
+      pushHistorySnapshot(historyStartRef.current)
+      historyStartRef.current = null
+    }
+  }, [pushHistorySnapshot])
+
+  const clearHistoryCapture = useCallback(() => {
+    historyStartRef.current = null
+  }, [])
+
+  const applyElementsSnapshot = useCallback(
+    (snapshot: ElementMap) => {
+      const current = elementsRef.current
+      const next = cloneElements(snapshot)
+      setElements(next)
+      setSelection(new Set())
+      if (boardId) {
+        const currentIds = new Set(Object.keys(current))
+        const nextIds = new Set(Object.keys(next))
+        const removed = Array.from(currentIds).filter((id) => !nextIds.has(id))
+        if (removed.length > 0) {
+          sendElementsDelete(removed)
+          void persistElementsDelete(boardId, removed)
+        }
+        const updated = Object.values(next)
+        if (updated.length > 0) {
+          sendElementsUpdate(updated)
+          void persistElementsUpdate(boardId, updated)
+        }
+      }
+    },
+    [boardId, cloneElements, persistElementsDelete, persistElementsUpdate, sendElementsDelete, sendElementsUpdate, setSelection]
+  )
+
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return
+    const snapshot = undoStackRef.current.pop()
+    if (!snapshot) return
+    redoStackRef.current.push(cloneElements(elementsRef.current))
+    setCanUndo(undoStackRef.current.length > 0)
+    setCanRedo(true)
+    applyElementsSnapshot(snapshot)
+  }, [applyElementsSnapshot, cloneElements])
+
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return
+    const snapshot = redoStackRef.current.pop()
+    if (!snapshot) return
+    undoStackRef.current.push(cloneElements(elementsRef.current))
+    setCanRedo(redoStackRef.current.length > 0)
+    setCanUndo(true)
+    applyElementsSnapshot(snapshot)
+  }, [applyElementsSnapshot, cloneElements])
 
   const ensureAvatarImage = useCallback((key: string, url: string) => {
     const cache = commentAvatarCacheRef.current
@@ -4806,6 +4888,7 @@ export function CanvasBoard({
     if (!boardId) return
     const selection = clipboardRef.current
     if (!selection || selection.length === 0) return
+    pushHistorySnapshot(cloneElements(elementsRef.current))
     pasteCountRef.current += 1
     const offset = COPY_PASTE_OFFSET_PX * pasteCountRef.current
     const idMap = new Map<string, string>()
@@ -4827,11 +4910,12 @@ export function CanvasBoard({
       sendElementUpdate(element)
       void persistElementCreate(boardId, element)
     })
-  }, [boardId, elements, persistElementCreate, sendElementUpdate, setSelection])
+  }, [boardId, cloneElements, persistElementCreate, pushHistorySnapshot, sendElementUpdate, setSelection])
 
   const createStickyAtPoint = useCallback(
     (boardPoint: { x: number; y: number }, opts?: { autoEdit?: boolean }) => {
       if (!boardId) return
+      pushHistorySnapshot(cloneElements(elementsRef.current))
       const draft: StickyNoteElement = {
         id: randomId(),
         type: 'sticky',
@@ -4853,7 +4937,17 @@ export function CanvasBoard({
       }
       void persistElementCreate(boardId, element)
     },
-    [beginEditingSticky, boardId, getMeasureContext, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+    [
+      beginEditingSticky,
+      boardId,
+      cloneElements,
+      getMeasureContext,
+      persistElementCreate,
+      pushHistorySnapshot,
+      sendElementUpdate,
+      setSelection,
+      upsertElement,
+    ]
   )
 
   const getImageDimensions = useCallback((file: File) => {
@@ -4875,6 +4969,7 @@ export function CanvasBoard({
   const createImageElement = useCallback(
     (attachment: { id: string; url: string; mimeType: string }, boardPoint: { x: number; y: number }, size: { width: number; height: number }) => {
       if (!boardId) return
+      pushHistorySnapshot(cloneElements(elementsRef.current))
       const maxDimension = Math.max(size.width, size.height)
       const scale = maxDimension > 0 ? Math.min(1, IMAGE_MAX_DIMENSION / maxDimension) : 1
       const width = Math.max(IMAGE_MIN_SIZE, size.width * scale)
@@ -4896,7 +4991,7 @@ export function CanvasBoard({
       setSelection(new Set([element.id]))
       void persistElementCreate(boardId, element)
     },
-    [boardId, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+    [boardId, cloneElements, persistElementCreate, pushHistorySnapshot, sendElementUpdate, setSelection, upsertElement]
   )
 
   const uploadAttachment = useCallback(
@@ -4980,6 +5075,7 @@ export function CanvasBoard({
   const createTextAtPoint = useCallback(
     (boardPoint: { x: number; y: number }) => {
       if (!boardId) return
+      pushHistorySnapshot(cloneElements(elementsRef.current))
       const element: TextElement = {
         id: randomId(),
         type: 'text',
@@ -4997,7 +5093,16 @@ export function CanvasBoard({
       beginEditingText(element)
       void persistElementCreate(boardId, element)
     },
-    [beginEditingText, boardId, persistElementCreate, sendElementUpdate, setSelection, upsertElement]
+    [
+      beginEditingText,
+      boardId,
+      cloneElements,
+      persistElementCreate,
+      pushHistorySnapshot,
+      sendElementUpdate,
+      setSelection,
+      upsertElement,
+    ]
   )
 
   const handleCanvasClick = useCallback(
@@ -5092,11 +5197,12 @@ export function CanvasBoard({
   const deleteSelectedElements = useCallback(
     (ids: string[]) => {
       if (!boardId || ids.length === 0) return
+      pushHistorySnapshot(cloneElements(elementsRef.current))
       removeElements(ids)
       sendElementsDelete(ids)
       void persistElementsDelete(boardId, ids)
     },
-    [boardId, persistElementsDelete, removeElements, sendElementsDelete]
+    [boardId, cloneElements, persistElementsDelete, pushHistorySnapshot, removeElements, sendElementsDelete]
   )
 
   const handleCanvasDoubleClick = useCallback(
@@ -5144,6 +5250,7 @@ export function CanvasBoard({
       cameraState,
       boardId,
       elements,
+      beginHistoryCapture,
       hitTestElement,
       isCommentEditing,
       openCommentPopoverForElement,
@@ -5399,6 +5506,7 @@ export function CanvasBoard({
         if (anchorHit) {
           event.preventDefault()
           suppressClickRef.current = true
+          beginHistoryCapture()
           const isElbowTool = lineToolKind === 'elbow'
           const isCurveTool = lineToolKind === 'curve'
           const id = randomId()
@@ -5469,6 +5577,7 @@ export function CanvasBoard({
       if (transformHandleHit) {
         event.preventDefault()
         suppressClickRef.current = true
+        beginHistoryCapture()
         interactionModeRef.current = 'transform'
         const handleSpec = transformHandleHit.handle
         if (handleSpec.kind === 'scale') {
@@ -5546,6 +5655,7 @@ export function CanvasBoard({
       if (handleHit) {
         event.preventDefault()
         suppressClickRef.current = true
+        beginHistoryCapture()
         interactionModeRef.current = 'resize'
         const size = getStickySize(handleHit.element)
         const startX = handleHit.element.x
@@ -5578,6 +5688,7 @@ export function CanvasBoard({
         if (lineHandleHit) {
           event.preventDefault()
           suppressClickRef.current = true
+          beginHistoryCapture()
           interactionModeRef.current = 'line-handle'
           const measureCtx = getSharedMeasureContext()
           setElements((prev) => {
@@ -5614,6 +5725,7 @@ export function CanvasBoard({
         if (segmentHandleHit) {
           event.preventDefault()
           suppressClickRef.current = true
+          beginHistoryCapture()
           interactionModeRef.current = 'line-segment'
           const variant = segmentHandleHit.orientation === 'horizontal' ? 'VHV' : 'HVH'
           lineSegmentStateRef.current = {
@@ -5631,6 +5743,7 @@ export function CanvasBoard({
         if (bendHandleHit) {
           event.preventDefault()
           suppressClickRef.current = true
+          beginHistoryCapture()
           interactionModeRef.current = 'line-bend'
           const measureCtx = getSharedMeasureContext()
           const resolvedPath = getLinePathPoints(bendHandleHit.element, {
@@ -5664,6 +5777,7 @@ export function CanvasBoard({
       if (!hitElement) {
         if (toolMode === 'rect' || toolMode === 'frame') {
           event.preventDefault()
+          beginHistoryCapture()
           const id = randomId()
           const defaultWidth = Math.max(RECT_MIN_SIZE, (RECT_DEFAULT_SCREEN_SIZE * 1.6) / cameraState.zoom)
           const isEllipseTool = toolMode === 'rect' && shapeToolKind === 'ellipse'
@@ -5782,6 +5896,7 @@ export function CanvasBoard({
           return
         }
         if (toolMode === 'line') {
+          beginHistoryCapture()
           const isElbowTool = lineToolKind === 'elbow'
           const isCurveTool = lineToolKind === 'curve'
           const id = randomId()
@@ -5845,6 +5960,7 @@ export function CanvasBoard({
       }
       event.preventDefault()
       suppressClickRef.current = true
+      beginHistoryCapture()
       interactionModeRef.current = 'drag'
 
       const currentSelection = selectedIdsRef.current
@@ -6608,6 +6724,9 @@ export function CanvasBoard({
           if (boardId) {
             void persistElementsUpdate(boardId, finalElements)
           }
+          commitHistoryCapture()
+        } else {
+          clearHistoryCapture()
         }
         suppressClickRef.current = false
         setMarquee(null)
@@ -6629,6 +6748,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementsUpdate(boardId, [element])
         }
+        commitHistoryCapture()
         return
       }
 
@@ -6645,6 +6765,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementsUpdate(boardId, [element])
         }
+        commitHistoryCapture()
         return
       }
 
@@ -6661,6 +6782,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementCreate(boardId, element)
         }
+        commitHistoryCapture()
         return
       }
 
@@ -6683,6 +6805,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementsUpdate(boardId, [updated])
         }
+        commitHistoryCapture()
         updateConnectorHighlight(null)
         return
       }
@@ -6700,6 +6823,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementsUpdate(boardId, [element])
         }
+        commitHistoryCapture()
         return
       }
 
@@ -6716,6 +6840,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementsUpdate(boardId, [element])
         }
+        commitHistoryCapture()
         return
       }
 
@@ -6735,6 +6860,7 @@ export function CanvasBoard({
             return next
           })
           clearSelection()
+          clearHistoryCapture()
         }
         if (!element || !isLineElement(element)) {
           removeDraft()
@@ -6759,6 +6885,7 @@ export function CanvasBoard({
         if (boardId) {
           void persistElementCreate(boardId, finalElement)
         }
+        commitHistoryCapture()
         updateConnectorHighlight(null)
         return
       }
@@ -6833,7 +6960,9 @@ export function CanvasBoard({
     },
     [
       boardId,
+      clearHistoryCapture,
       clearSelection,
+      commitHistoryCapture,
       elements,
       handleCanvasClick,
       isCommentEditing,
@@ -6989,6 +7118,17 @@ export function CanvasBoard({
       if (isTypingTarget(event.target)) return
       if (event.metaKey || event.ctrlKey) {
         const key = event.key.toLowerCase()
+        if (key === 'z') {
+          event.preventDefault()
+          if (event.shiftKey) handleRedo()
+          else handleUndo()
+          return
+        }
+        if (key === 'y') {
+          event.preventDefault()
+          handleRedo()
+          return
+        }
         if (key === 'c') {
           if (selectedIdsRef.current.size === 0) return
           event.preventDefault()
@@ -7117,7 +7257,7 @@ export function CanvasBoard({
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [copySelectedElements, deleteSelectedElements, isCommentEditing, pasteClipboardElements])
+  }, [copySelectedElements, deleteSelectedElements, handleRedo, handleUndo, isCommentEditing, pasteClipboardElements])
 
   useEffect(() => {
     setSelection(new Set())
@@ -7911,6 +8051,10 @@ export function CanvasBoard({
         onLineToolKindChange={setLineToolKind}
         lineArrowEnabled={lineArrowEnabled}
         onLineArrowEnabledChange={setLineArrowEnabled}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
       <ZoomPanel
         zoom={cameraState.zoom}
