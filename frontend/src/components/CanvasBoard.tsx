@@ -2371,15 +2371,24 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.textAlign = 'left'
   ctx.fillStyle = textColor
 
-  const lines = element.type === 'triangle'
-    ? wrapTriangleText(
+  let lines = wrapText(ctx, element.text, inner.width, true)
+  if (element.type === 'triangle') {
+    for (let pass = 0; pass < 3; pass += 1) {
+      const totalLines = Math.max(1, lines.length)
+      const nextLines = wrapTriangleText(
         element.text,
         (lineIndex) => {
-          const lineCenterY = -height / 2 + paddingY + lineIndex * lineHeight + lineHeight / 2
+          const blockTop = height / 2 - paddingY - totalLines * lineHeight
+          const lineCenterY = blockTop + lineIndex * lineHeight + lineHeight / 2
           return getTriangleLineMaxWidth(lineCenterY)
         }
       )
-    : wrapText(ctx, element.text, inner.width, true)
+      if (nextLines.length === lines.length && nextLines.join('\n') === lines.join('\n')) {
+        break
+      }
+      lines = nextLines
+    }
+  }
   const totalHeight = lines.length * lineHeight
   const offsetY = element.type === 'triangle'
     ? Math.max(0, inner.height - totalHeight)
