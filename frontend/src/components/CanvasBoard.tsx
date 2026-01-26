@@ -7365,6 +7365,10 @@ export function CanvasBoard({
     },
     [finishDrag]
   )
+  const isFirefox = useMemo(
+    () => (typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent)),
+    []
+  )
 
   const handleWheel = useCallback(
     (event: WheelEvent) => {
@@ -8143,10 +8147,6 @@ export function CanvasBoard({
   const editingShapePadding = editingShapeElement ? getShapeTextPadding(editingShapeElement) : null
   const editingShapePaddingX = editingShapePadding ? editingShapePadding.paddingX * cameraState.zoom : null
   const editingShapePaddingY = editingShapePadding ? editingShapePadding.paddingY * cameraState.zoom : null
-  const isFirefox = useMemo(
-    () => (typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent)),
-    []
-  )
   const editingShapeFontSizePx =
     editingState?.elementType === 'shape' && typeof editingState.fontSize === 'number'
       ? editingState.fontSize * cameraState.zoom
