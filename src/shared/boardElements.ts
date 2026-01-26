@@ -213,6 +213,13 @@ export interface LineElement extends CanvasElement {
   endBinding?: LineEndpointBinding
 }
 
+export interface FreeDrawElement extends CanvasElement {
+  type: 'freeDraw'
+  points: Array<{ x: number; y: number }>
+  stroke?: string
+  strokeWidth?: number
+}
+
 export type BoardElement =
   | StickyNoteElement
   | TextElement
@@ -225,4 +232,5 @@ export type BoardElement =
   | SpeechBubbleElement
   | ImageElement
   | LineElement
+  | FreeDrawElement
   | CommentElement

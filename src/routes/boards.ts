@@ -770,6 +770,7 @@ export async function handleBoardImport(req: Request, session: Session | null) {
     "speechBubble",
     "image",
     "line",
+    "freeDraw",
   ];
   const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
     typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"]);
@@ -871,6 +872,7 @@ export async function handleBoardElementCreate(req: Request, boardId: number, se
     "triangle",
     "speechBubble",
     "image",
+    "freeDraw",
   ];
   const isAllowedType = (value: unknown): value is SharedBoardElement["type"] =>
     typeof value === "string" && allowedElementTypes.includes(value as SharedBoardElement["type"]);
@@ -901,8 +903,17 @@ export async function handleBoardElementCreate(req: Request, boardId: number, se
   if (canCommentOnly && element.type !== "comment") {
     return jsonResponse({ message: "Forbidden." }, 403);
   }
-  if (typeof (element as { x?: unknown }).x !== "number" || typeof (element as { y?: unknown }).y !== "number") {
-    return logAndReject("missing coordinates");
+  const requiresCoordinates = element.type !== "line" && element.type !== "freeDraw";
+  if (requiresCoordinates) {
+    if (typeof (element as { x?: unknown }).x !== "number" || typeof (element as { y?: unknown }).y !== "number") {
+      return logAndReject("missing coordinates");
+    }
+  }
+  if (element.type === "freeDraw") {
+    const points = (element as { points?: unknown }).points;
+    if (!Array.isArray(points) || points.length === 0) {
+      return logAndReject("missing free draw points");
+    }
   }
   if (element.type === "comment" && typeof (element as { text?: unknown }).text !== "string") {
     return logAndReject("missing comment text");
