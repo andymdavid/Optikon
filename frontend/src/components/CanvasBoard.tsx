@@ -1173,8 +1173,8 @@ function getShapeTextPadding(element: ShapeElement | FrameElement) {
   }
   if (element.type === 'triangle') {
     return {
-      paddingX: Math.max(2, width * 0.3),
-      paddingY: Math.max(2, height * 0.3),
+      paddingX: Math.max(2, width * 0.18),
+      paddingY: Math.max(2, height * 0.18),
     }
   }
   const ratio = Math.min(width, height) / STICKY_SIZE
