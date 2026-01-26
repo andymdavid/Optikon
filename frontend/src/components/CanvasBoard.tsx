@@ -3765,6 +3765,10 @@ export function CanvasBoard({
     cameraStateRef.current = cameraState
   }, [cameraState])
 
+  const cloneElements = useCallback((source: ElementMap) => {
+    return JSON.parse(JSON.stringify(source)) as ElementMap
+  }, [])
+
   const ensureAvatarImage = useCallback((key: string, url: string) => {
     const cache = commentAvatarCacheRef.current
     const existing = cache.get(key) ?? null
@@ -5121,10 +5125,6 @@ export function CanvasBoard({
   useEffect(() => {
     elementsRef.current = elements
   }, [elements])
-
-  const cloneElements = useCallback((source: ElementMap) => {
-    return JSON.parse(JSON.stringify(source)) as ElementMap
-  }, [])
 
   const beginHistoryCapture = useCallback(() => {
     if (!historyStartRef.current) {
