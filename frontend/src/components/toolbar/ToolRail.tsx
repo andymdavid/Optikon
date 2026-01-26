@@ -12,8 +12,12 @@ import {
   Paperclip,
   Undo2,
   Redo2,
+  Pencil,
+  Eraser,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+
+import { STICKY_COLORS } from './FloatingSelectionToolbar'
 
 export type ToolMode =
   | 'select'
@@ -21,18 +25,22 @@ export type ToolMode =
   | 'text'
   | 'rect'
   | 'line'
+  | 'draw'
   | 'frame'
   | 'attachment'
   | 'comment'
 
 export type LineToolKind = 'line' | 'curve' | 'elbow'
 export type ShapeToolKind = 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+export type FreeDrawMode = 'pen' | 'erase'
 
 type ToolDefinition = {
   mode: ToolMode
   label: string
   icon: React.ReactNode
 }
+
+const FREE_DRAW_WIDTHS = [2, 4, 8] as const
 
 const TOOLS: ToolDefinition[] = [
   {
@@ -65,6 +73,11 @@ const TOOLS: ToolDefinition[] = [
     ),
   },
   {
+    mode: 'draw',
+    label: 'Free draw',
+    icon: <Pencil size={20} strokeWidth={1.5} />,
+  },
+  {
     mode: 'frame',
     label: 'Frame',
     icon: <Frame size={20} strokeWidth={1.5} />,
@@ -91,6 +104,12 @@ export type ToolRailProps = {
   onLineToolKindChange: (kind: LineToolKind) => void
   lineArrowEnabled: boolean
   onLineArrowEnabledChange: (next: boolean) => void
+  freeDrawMode: FreeDrawMode
+  onFreeDrawModeChange: (mode: FreeDrawMode) => void
+  freeDrawStrokeWidth: number
+  onFreeDrawStrokeWidthChange: (width: number) => void
+  freeDrawStrokeColor: string
+  onFreeDrawStrokeColorChange: (color: string) => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -159,6 +178,18 @@ const shapeShelfRow: CSSProperties = {
   gap: 6,
 }
 
+const drawShelfRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 36px)',
+  gap: 6,
+}
+
+const drawColorRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(6, 24px)',
+  gap: 6,
+}
+
 const lineShelfLabel: CSSProperties = {
   fontSize: 11,
   fontWeight: 600,
@@ -173,6 +204,18 @@ const lineOptionButton: CSSProperties = {
   height: 36,
   borderRadius: 8,
   background: '#f8fafc',
+}
+
+const drawSwatchStyle: CSSProperties = {
+  width: 24,
+  height: 24,
+  borderRadius: 6,
+  border: '1px solid #e5e7eb',
+  padding: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
 }
 
 const undoRailStyle: CSSProperties = {
@@ -198,6 +241,12 @@ export function ToolRail({
   onLineToolKindChange,
   lineArrowEnabled,
   onLineArrowEnabledChange,
+  freeDrawMode,
+  onFreeDrawModeChange,
+  freeDrawStrokeWidth,
+  onFreeDrawStrokeWidthChange,
+  freeDrawStrokeColor,
+  onFreeDrawStrokeColorChange,
   canUndo,
   canRedo,
   onUndo,
@@ -205,11 +254,14 @@ export function ToolRail({
 }: ToolRailProps) {
   const [lineShelfOpen, setLineShelfOpen] = useState(false)
   const [shapeShelfOpen, setShapeShelfOpen] = useState(false)
+  const [drawShelfOpen, setDrawShelfOpen] = useState(false)
   const lineButtonRef = useRef<HTMLButtonElement | null>(null)
   const shapeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const drawButtonRef = useRef<HTMLButtonElement | null>(null)
   const railRef = useRef<HTMLDivElement | null>(null)
   const [lineShelfOffset, setLineShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [shapeShelfOffset, setShapeShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [drawShelfOffset, setDrawShelfOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [undoOffset, setUndoOffset] = useState<{ x: number; y: number }>({ x: 12, y: 0 })
   useEffect(() => {
     if (!lineShelfOpen || !lineButtonRef.current) return
@@ -221,6 +273,11 @@ export function ToolRail({
     const buttonRect = shapeButtonRef.current.getBoundingClientRect()
     setShapeShelfOffset({ x: buttonRect.width + 8, y: shapeButtonRef.current.offsetTop })
   }, [shapeShelfOpen])
+  useEffect(() => {
+    if (!drawShelfOpen || !drawButtonRef.current) return
+    const buttonRect = drawButtonRef.current.getBoundingClientRect()
+    setDrawShelfOffset({ x: buttonRect.width + 8, y: drawButtonRef.current.offsetTop })
+  }, [drawShelfOpen])
   useEffect(() => {
     const updateUndoPosition = () => {
       if (!railRef.current) return
@@ -240,6 +297,7 @@ export function ToolRail({
       onToolModeChange('select')
       if (mode === 'rect') setShapeShelfOpen(false)
       if (mode === 'line') setLineShelfOpen(false)
+      if (mode === 'draw') setDrawShelfOpen(false)
     } else {
       onToolModeChange(mode)
       if (mode === 'rect') {
@@ -252,6 +310,11 @@ export function ToolRail({
       } else {
         setLineShelfOpen(false)
       }
+      if (mode === 'draw') {
+        setDrawShelfOpen(true)
+      } else {
+        setDrawShelfOpen(false)
+      }
     }
   }
 
@@ -262,13 +325,22 @@ export function ToolRail({
         const isActive = toolMode === tool.mode
         const isLineTool = tool.mode === 'line'
         const isShapeTool = tool.mode === 'rect'
+        const isDrawTool = tool.mode === 'draw'
         return (
           <button
             key={tool.mode}
             type="button"
             title={tool.label}
             style={isActive ? activeButtonStyle : buttonBaseStyle}
-            ref={isLineTool ? lineButtonRef : isShapeTool ? shapeButtonRef : undefined}
+            ref={
+              isLineTool
+                ? lineButtonRef
+                : isShapeTool
+                  ? shapeButtonRef
+                  : isDrawTool
+                    ? drawButtonRef
+                    : undefined
+            }
             onClick={() => handleToolClick(tool.mode)}
             onMouseEnter={(e) => {
               if (!isActive) {
@@ -454,6 +526,82 @@ export function ToolRail({
                 <path d="M4 10H14" />
                 <path d="M11 7L15 10L11 13" />
               </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      {toolMode === 'draw' && drawShelfOpen && (
+        <div
+          style={{
+            ...lineShelfStyle,
+            transform: `translate(${drawShelfOffset.x}px, ${drawShelfOffset.y}px)`,
+          }}
+        >
+          <div style={lineShelfLabel}>Stroke</div>
+          <div style={drawShelfRow}>
+            {FREE_DRAW_WIDTHS.map((width) => (
+              <button
+                key={width}
+                type="button"
+                title={`Stroke ${width}`}
+                style={{
+                  ...lineOptionButton,
+                  background: freeDrawStrokeWidth === width ? '#e0f2fe' : lineOptionButton.background,
+                  color: freeDrawStrokeWidth === width ? '#0ea5e9' : '#374151',
+                }}
+                onClick={() => onFreeDrawStrokeWidthChange(width)}
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+                  <line x1="4" y1="10" x2="16" y2="10" strokeWidth={width} strokeLinecap="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+          <div style={lineShelfLabel}>Color</div>
+          <div style={drawColorRow}>
+            {[...STICKY_COLORS, '#ef4444', '#111827'].map((color) => {
+              const swatchColor = color === 'default' ? '#fff7a6' : color
+              const selected = freeDrawStrokeColor === swatchColor
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  title={color === 'default' ? 'Default' : color}
+                  style={{
+                    ...drawSwatchStyle,
+                    background: swatchColor,
+                    outline: selected ? '2px solid #0ea5e9' : 'none',
+                  }}
+                  onClick={() => onFreeDrawStrokeColorChange(swatchColor)}
+                />
+              )
+            })}
+          </div>
+          <div style={lineShelfLabel}>Mode</div>
+          <div style={drawShelfRow}>
+            <button
+              type="button"
+              title="Pen"
+              style={{
+                ...lineOptionButton,
+                background: freeDrawMode === 'pen' ? '#e0f2fe' : lineOptionButton.background,
+                color: freeDrawMode === 'pen' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onFreeDrawModeChange('pen')}
+            >
+              <Pencil size={18} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              title="Eraser"
+              style={{
+                ...lineOptionButton,
+                background: freeDrawMode === 'erase' ? '#e0f2fe' : lineOptionButton.background,
+                color: freeDrawMode === 'erase' ? '#0ea5e9' : '#374151',
+              }}
+              onClick={() => onFreeDrawModeChange('erase')}
+            >
+              <Eraser size={18} strokeWidth={1.5} />
             </button>
           </div>
         </div>

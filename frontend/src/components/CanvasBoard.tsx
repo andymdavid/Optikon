@@ -71,6 +71,7 @@ import type {
   CommentElement,
   TextElement,
   LineElement,
+  FreeDrawElement,
   LineEndpointBinding,
   ConnectorAnchor,
   TextStyle,
@@ -237,6 +238,10 @@ const SPEECH_BUBBLE_DEFAULT_TAIL_OFFSET = 0.35
 const SPEECH_BUBBLE_DEFAULT_TAIL_RATIO = 0.18
 const LINE_DEFAULT_STROKE = '#2563eb'
 const LINE_DEFAULT_STROKE_WIDTH = 4
+const FREE_DRAW_DEFAULT_STROKE = '#fff7a6'
+const FREE_DRAW_DEFAULT_STROKE_WIDTH = 4
+const FREE_DRAW_MIN_POINT_DISTANCE = 1.5
+const FREE_DRAW_ERASER_RADIUS_PX = 12
 const LINE_ARROW_MIN_SCREEN = 10
 const LINE_ARROW_MAX_SCREEN = 36
 const LINE_ARROW_WIDTH_FACTOR = 0.7
@@ -1011,6 +1016,31 @@ function getLineStrokeWidth(element: LineElement) {
   return LINE_DEFAULT_STROKE_WIDTH
 }
 
+function getFreeDrawStrokeWidth(element: FreeDrawElement) {
+  if (typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)) {
+    return Math.max(0.5, element.strokeWidth)
+  }
+  return FREE_DRAW_DEFAULT_STROKE_WIDTH
+}
+
+function getFreeDrawElementBounds(element: FreeDrawElement): Rect {
+  const strokeWidth = getFreeDrawStrokeWidth(element)
+  const padding = strokeWidth / 2
+  const points = Array.isArray(element.points) ? element.points : []
+  if (points.length === 0) {
+    return { left: 0, right: 0, top: 0, bottom: 0 }
+  }
+  return points.reduce<Rect>(
+    (acc, point) => ({
+      left: Math.min(acc.left, point.x - padding),
+      right: Math.max(acc.right, point.x + padding),
+      top: Math.min(acc.top, point.y - padding),
+      bottom: Math.max(acc.bottom, point.y + padding),
+    }),
+    { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }
+  )
+}
+
 function getLineElementBounds(
   element: LineElement,
   options?: {
@@ -1067,6 +1097,7 @@ function getElementBounds(
   if (isEllipseElement(element)) return getEllipseElementBounds(element).aabb
   if (isImageElement(element)) return getImageElementBounds(element).aabb
   if (isLineElement(element)) return getLineElementBounds(element, options).aabb
+  if (isFreeDrawElement(element)) return getFreeDrawElementBounds(element)
   return { left: 0, top: 0, right: 0, bottom: 0 }
 }
 
@@ -1332,6 +1363,10 @@ function isLineElement(element: BoardElement | null | undefined): element is Lin
   return !!element && element.type === 'line'
 }
 
+function isFreeDrawElement(element: BoardElement | null | undefined): element is FreeDrawElement {
+  return !!element && element.type === 'freeDraw'
+}
+
 type GridSpec = {
   primaryBoardSpacing: number
   primarySpacingPx: number
@@ -1555,6 +1590,10 @@ function cloneElementForPaste(
         startBinding,
         endBinding,
       }
+    }
+    case 'freeDraw': {
+      const points = element.points.map((point) => ({ x: point.x + dx, y: point.y + dy }))
+      return { ...element, id: newId, points }
     }
     default:
       {
@@ -1955,6 +1994,34 @@ function parseLineElement(raw: unknown): LineElement | null {
   }
 }
 
+function parseFreeDrawElement(raw: unknown): FreeDrawElement | null {
+  if (!raw || typeof raw !== 'object') return null
+  const element = raw as Partial<FreeDrawElement>
+  if (element.type !== 'freeDraw') return null
+  if (typeof element.id !== 'string') return null
+  const points = Array.isArray(element.points)
+    ? element.points
+        .map((point) =>
+          point && typeof point === 'object' && typeof point.x === 'number' && typeof point.y === 'number'
+            ? { x: point.x, y: point.y }
+            : null
+        )
+        .filter((point): point is { x: number; y: number } => !!point)
+    : []
+  if (points.length === 0) return null
+  const strokeWidth =
+    typeof element.strokeWidth === 'number' && Number.isFinite(element.strokeWidth)
+      ? Math.max(0.5, element.strokeWidth)
+      : FREE_DRAW_DEFAULT_STROKE_WIDTH
+  return {
+    id: element.id,
+    type: 'freeDraw',
+    points,
+    stroke: typeof element.stroke === 'string' ? element.stroke : FREE_DRAW_DEFAULT_STROKE,
+    strokeWidth,
+  }
+}
+
 function parseCommentElement(raw: unknown): CommentElement | null {
   if (!raw || typeof raw !== 'object') return null
   const element = raw as Partial<CommentElement>
@@ -1989,6 +2056,7 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
   if (type === 'image') return parseImageElement(raw)
   if (type === 'line') return parseLineElement(raw)
+  if (type === 'freeDraw') return parseFreeDrawElement(raw)
   if (type === 'comment') return parseCommentElement(raw)
   return null
 }
@@ -2961,6 +3029,42 @@ function drawLineElement(
   ctx.restore()
 }
 
+function drawFreeDrawElement(
+  ctx: CanvasRenderingContext2D,
+  element: FreeDrawElement,
+  camera: CameraState
+) {
+  const points = element.points
+  if (!points || points.length === 0) return
+  const strokeWidth = getFreeDrawStrokeWidth(element)
+  const screenStrokeWidth = Math.max(1, strokeWidth * camera.zoom)
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
+  const screenPoints = points.map(toScreen)
+  ctx.save()
+  ctx.strokeStyle = element.stroke ?? FREE_DRAW_DEFAULT_STROKE
+  ctx.lineWidth = screenStrokeWidth
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  if (screenPoints.length === 1) {
+    const point = screenPoints[0]
+    ctx.beginPath()
+    ctx.fillStyle = element.stroke ?? FREE_DRAW_DEFAULT_STROKE
+    ctx.arc(point.x, point.y, screenStrokeWidth / 2, 0, Math.PI * 2)
+    ctx.fill()
+  } else {
+    ctx.beginPath()
+    screenPoints.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y)
+      else ctx.lineTo(point.x, point.y)
+    })
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 type SpeechBubbleTail = Required<SpeechBubbleElement>['tail']
 
 function getSpeechBubbleTail(element: SpeechBubbleElement, width: number, height: number) {
@@ -3480,6 +3584,42 @@ function drawLineSelection(
   ctx.restore()
 }
 
+function drawFreeDrawSelection(
+  ctx: CanvasRenderingContext2D,
+  element: FreeDrawElement,
+  camera: CameraState
+) {
+  const points = element.points
+  if (!points || points.length === 0) return
+  const strokeWidth = getFreeDrawStrokeWidth(element)
+  const screenStrokeWidth = Math.max(1, strokeWidth * camera.zoom)
+  const selectionWidth = Math.max(2, screenStrokeWidth + 4)
+  const toScreen = (point: { x: number; y: number }) => ({
+    x: (point.x + camera.offsetX) * camera.zoom,
+    y: (point.y + camera.offsetY) * camera.zoom,
+  })
+  const screenPoints = points.map(toScreen)
+  ctx.save()
+  ctx.strokeStyle = 'rgba(14, 165, 233, 0.35)'
+  ctx.lineWidth = selectionWidth
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  if (screenPoints.length === 1) {
+    const point = screenPoints[0]
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, selectionWidth / 2, 0, Math.PI * 2)
+    ctx.stroke()
+  } else {
+    ctx.beginPath()
+    screenPoints.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y)
+      else ctx.lineTo(point.x, point.y)
+    })
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 function drawElementSelection(
   ctx: CanvasRenderingContext2D,
   element: BoardElement,
@@ -3499,6 +3639,10 @@ function drawElementSelection(
   }
   if (isLineElement(element)) {
     drawLineSelection(ctx, element, camera, options, resolveElement, measureCtx, elements)
+    return
+  }
+  if (isFreeDrawElement(element)) {
+    drawFreeDrawSelection(ctx, element, camera)
     return
   }
   if (isFrameElement(element)) {
@@ -3633,6 +3777,15 @@ export function CanvasBoard({
         kind: 'straight' | 'elbow' | 'curve'
       }
   >(null)
+  const freeDrawRef = useRef<
+    | null
+    | {
+        pointerId: number
+        id: string | null
+        lastPoint: { x: number; y: number }
+        changed: boolean
+      }
+  >(null)
   const transformStateRef = useRef<TransformState | null>(null)
   const suppressClickRef = useRef(false)
   const lastBroadcastRef = useRef(0)
@@ -3669,6 +3822,7 @@ export function CanvasBoard({
     | 'line-handle'
     | 'line-bend'
     | 'line-segment'
+    | 'free-draw'
   >('none')
   const marqueeCandidateRef = useRef<
     | null
@@ -3721,6 +3875,9 @@ export function CanvasBoard({
   const [shapeToolKind, setShapeToolKind] = useState<ShapeToolKind>('rect')
   const [lineToolKind, setLineToolKind] = useState<LineToolKind>('line')
   const [lineArrowEnabled, setLineArrowEnabled] = useState(false)
+  const [freeDrawMode, setFreeDrawMode] = useState<'pen' | 'erase'>('pen')
+  const [freeDrawStrokeWidth, setFreeDrawStrokeWidth] = useState(FREE_DRAW_DEFAULT_STROKE_WIDTH)
+  const [freeDrawStrokeColor, setFreeDrawStrokeColor] = useState(FREE_DRAW_DEFAULT_STROKE)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [editingState, setEditingStateInternal] = useState<EditingState | null>(null)
@@ -4689,6 +4846,24 @@ export function CanvasBoard({
             }
             continue
           }
+          if (isFreeDrawElement(element)) {
+            const baseTolerance = LINE_HIT_RADIUS_PX / cameraState.zoom
+            const strokeWidth = getFreeDrawStrokeWidth(element)
+            const tolerance = Math.max(baseTolerance, strokeWidth / 2 + 4 / cameraState.zoom)
+            const path = element.points
+            if (path.length === 1) {
+              const distance = Math.hypot(path[0].x - x, path[0].y - y)
+              if (distance <= tolerance) {
+                return element.id
+              }
+            } else {
+              const distance = pointToMultiSegmentDistance({ x, y }, path)
+              if (distance <= tolerance) {
+                return element.id
+              }
+            }
+            continue
+          }
           if (isTextElement(element)) {
             const bounds = getTextElementBounds(element, ctx)
             if (pointInPolygon({ x, y }, bounds.corners)) {
@@ -5331,7 +5506,7 @@ export function CanvasBoard({
       const values = Object.values(elements)
       for (let index = values.length - 1; index >= 0; index -= 1) {
         const element = values[index]
-        if (!element || isLineElement(element)) continue
+        if (!element || isLineElement(element) || isFreeDrawElement(element)) continue
         const handles = getConnectorAnchorHandles(element, cameraState, measureCtx)
         for (const handle of handles) {
           const distance = Math.hypot(point.x - handle.screen.x, point.y - handle.screen.y)
@@ -5458,6 +5633,35 @@ export function CanvasBoard({
     [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, elements]
   )
 
+  const eraseFreeDrawAtPoint = useCallback(
+    (boardPoint: { x: number; y: number }) => {
+      const values = Object.values(elements)
+      const tolerance = FREE_DRAW_ERASER_RADIUS_PX / Math.max(0.01, cameraState.zoom)
+      for (let index = values.length - 1; index >= 0; index -= 1) {
+        const element = values[index]
+        if (!isFreeDrawElement(element)) continue
+        const strokeWidth = getFreeDrawStrokeWidth(element)
+        const hitRadius = tolerance + strokeWidth / 2
+        const points = element.points
+        if (!points || points.length === 0) continue
+        const distance =
+          points.length === 1
+            ? Math.hypot(points[0].x - boardPoint.x, points[0].y - boardPoint.y)
+            : pointToMultiSegmentDistance(boardPoint, points)
+        if (distance <= hitRadius) {
+          removeElements([element.id])
+          sendElementsDelete([element.id])
+          if (boardId) {
+            void persistElementsDelete(boardId, [element.id])
+          }
+          return true
+        }
+      }
+      return false
+    },
+    [boardId, cameraState.zoom, elements, persistElementsDelete, removeElements, sendElementsDelete]
+  )
+
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const rect = event.currentTarget.getBoundingClientRect()
@@ -5550,6 +5754,43 @@ export function CanvasBoard({
           }
           return
         }
+      }
+      if (toolMode === 'draw') {
+        event.preventDefault()
+        suppressClickRef.current = true
+        beginHistoryCapture()
+        interactionModeRef.current = 'free-draw'
+        const boardPoint = screenToBoard(canvasPoint)
+        if (freeDrawMode === 'erase') {
+          const changed = eraseFreeDrawAtPoint(boardPoint)
+          freeDrawRef.current = {
+            pointerId: event.pointerId,
+            id: null,
+            lastPoint: boardPoint,
+            changed,
+          }
+        } else {
+          const id = randomId()
+          const element: FreeDrawElement = {
+            id,
+            type: 'freeDraw',
+            points: [{ x: boardPoint.x, y: boardPoint.y }],
+            stroke: freeDrawStrokeColor,
+            strokeWidth: freeDrawStrokeWidth,
+          }
+          setElements((prev) => ({ ...prev, [id]: element }))
+          setSelection(new Set([id]))
+          freeDrawRef.current = {
+            pointerId: event.pointerId,
+            id,
+            lastPoint: boardPoint,
+            changed: true,
+          }
+        }
+        if (event.currentTarget.setPointerCapture) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }
+        return
       }
       if (toolMode === 'comment') {
         event.preventDefault()
@@ -6026,6 +6267,12 @@ export function CanvasBoard({
               elbowVariant: orthogonalState?.variant,
               orthogonal: element.orthogonal === true,
             }
+          } else if (isFreeDrawElement(element)) {
+            startPositions[id] = {
+              x: element.points[0]?.x ?? 0,
+              y: element.points[0]?.y ?? 0,
+              points: element.points.map((point) => ({ ...point })),
+            }
           } else {
             startPositions[id] = { x: element.x, y: element.y }
           }
@@ -6044,6 +6291,10 @@ export function CanvasBoard({
       cameraState.offsetY,
       cameraState.zoom,
       elements,
+      eraseFreeDrawAtPoint,
+      freeDrawMode,
+      freeDrawStrokeColor,
+      freeDrawStrokeWidth,
       hitTestElement,
       hitTestLineSegmentHandle,
       hitTestLineHandle,
@@ -6141,6 +6392,39 @@ export function CanvasBoard({
               }
             : prev
         )
+        return
+      }
+
+      if (mode === 'free-draw') {
+        const drawState = freeDrawRef.current
+        if (!drawState || drawState.pointerId !== event.pointerId) return
+        const boardPoint = screenToBoard(canvasPoint)
+        const minDistance = FREE_DRAW_MIN_POINT_DISTANCE / Math.max(0.01, cameraState.zoom)
+        const distance = Math.hypot(boardPoint.x - drawState.lastPoint.x, boardPoint.y - drawState.lastPoint.y)
+        if (distance < minDistance) return
+        drawState.lastPoint = boardPoint
+        if (freeDrawMode === 'erase') {
+          const erased = eraseFreeDrawAtPoint(boardPoint)
+          if (erased) {
+            drawState.changed = true
+          }
+          return
+        }
+        let updatedElement: FreeDrawElement | null = null
+        setElements((prev) => {
+          const target = drawState.id ? prev[drawState.id] : null
+          if (!target || !isFreeDrawElement(target)) return prev
+          const nextPoints = [...target.points, { x: boardPoint.x, y: boardPoint.y }]
+          updatedElement = { ...target, points: nextPoints }
+          return { ...prev, [target.id]: updatedElement }
+        })
+        if (updatedElement) {
+          const now = Date.now()
+          if (now - lastBroadcastRef.current >= DRAG_THROTTLE_MS) {
+            sendElementsUpdate([updatedElement])
+            lastBroadcastRef.current = now
+          }
+        }
         return
       }
 
@@ -6656,6 +6940,10 @@ export function CanvasBoard({
               }
               updated = lineNext
             }
+          } else if (isFreeDrawElement(existing)) {
+            const basePoints = start.points ?? existing.points
+            const shifted = basePoints.map((point) => ({ x: point.x + deltaX, y: point.y + deltaY }))
+            updated = { ...existing, points: shifted }
           } else {
             updated = { ...existing, x: start.x + deltaX, y: start.y + deltaY }
           }
@@ -6677,6 +6965,8 @@ export function CanvasBoard({
       cameraState.offsetX,
       cameraState.offsetY,
       cameraState.zoom,
+      eraseFreeDrawAtPoint,
+      freeDrawMode,
       getMeasureContext,
       hitTestConnectorAnchor,
       isCommentEditing,
@@ -6783,6 +7073,35 @@ export function CanvasBoard({
           void persistElementCreate(boardId, element)
         }
         commitHistoryCapture()
+        return
+      }
+
+      if (mode === 'free-draw') {
+        const drawState = freeDrawRef.current
+        freeDrawRef.current = null
+        suppressClickRef.current = false
+        setMarquee(null)
+        marqueeCandidateRef.current = null
+        if (!drawState) {
+          clearHistoryCapture()
+          return
+        }
+        if (freeDrawMode === 'pen') {
+          const element = drawState.id ? elements[drawState.id] : null
+          if (!element || !isFreeDrawElement(element)) {
+            clearHistoryCapture()
+            return
+          }
+          sendElementsUpdate([element])
+          if (boardId) {
+            void persistElementCreate(boardId, element)
+          }
+        }
+        if (drawState.changed) {
+          commitHistoryCapture()
+        } else {
+          clearHistoryCapture()
+        }
         return
       }
 
@@ -6964,6 +7283,7 @@ export function CanvasBoard({
       clearSelection,
       commitHistoryCapture,
       elements,
+      freeDrawMode,
       handleCanvasClick,
       isCommentEditing,
       persistElementCreate,
@@ -7654,6 +7974,8 @@ export function CanvasBoard({
         const resolvedUrl = resolveBoardImageUrl(boardId, element)
         const image = imageCacheRef.current.get(resolvedUrl) ?? null
         drawImageElement(ctx, element, cameraState, image)
+      } else if (isFreeDrawElement(element)) {
+        drawFreeDrawElement(ctx, element, cameraState)
       } else if (isLineElement(element)) {
         drawLineElement(ctx, element, cameraState, {
           resolveElement,
@@ -7661,7 +7983,12 @@ export function CanvasBoard({
           elements,
         })
       }
-      if (showConnectorAnchors && !isLineElement(element) && hoveredConnectorElementId === element.id) {
+      if (
+        showConnectorAnchors &&
+        !isLineElement(element) &&
+        !isFreeDrawElement(element) &&
+        hoveredConnectorElementId === element.id
+      ) {
         drawConnectorAnchors(ctx, element, cameraState, sharedMeasureCtx, connectorHighlight)
       }
     }
@@ -7674,6 +8001,9 @@ export function CanvasBoard({
     selectedArray.forEach((id) => {
       const element = elements[id]
       if (!element) return
+      if (isFreeDrawElement(element) && (toolMode === 'draw' || interactionModeRef.current === 'free-draw')) {
+        return
+      }
       const withHandles = singleSelectionId === id
       let selectionElement: BoardElement = element
       if (
@@ -8051,6 +8381,12 @@ export function CanvasBoard({
         onLineToolKindChange={setLineToolKind}
         lineArrowEnabled={lineArrowEnabled}
         onLineArrowEnabledChange={setLineArrowEnabled}
+        freeDrawMode={freeDrawMode}
+        onFreeDrawModeChange={setFreeDrawMode}
+        freeDrawStrokeWidth={freeDrawStrokeWidth}
+        onFreeDrawStrokeWidthChange={setFreeDrawStrokeWidth}
+        freeDrawStrokeColor={freeDrawStrokeColor}
+        onFreeDrawStrokeColorChange={setFreeDrawStrokeColor}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={handleUndo}
