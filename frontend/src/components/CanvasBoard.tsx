@@ -4812,6 +4812,107 @@ export function CanvasBoard({
     pasteCountRef.current = 0
   }, [elements])
 
+  const sendElementsDelete = useCallback(
+    (ids: string[]) => {
+      const socket = socketRef.current
+      if (!socket || !boardId || ids.length === 0) return
+      const message = {
+        type: 'elementsDelete',
+        payload: { boardId, ids },
+      }
+      logOutbound(message)
+      socket.send(JSON.stringify(message))
+    },
+    [boardId]
+  )
+
+  const persistElementsDelete = useCallback(async (board: string, ids: string[]) => {
+    if (ids.length === 0) return
+    try {
+      const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids }),
+      })
+      if (!response.ok) throw new Error('Failed to delete elements')
+    } catch (error) {
+      console.error('Failed to delete board elements', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    elementsRef.current = elements
+  }, [elements])
+
+  const beginHistoryCapture = useCallback(() => {
+    if (!historyStartRef.current) {
+      historyStartRef.current = cloneElements(elementsRef.current)
+    }
+  }, [cloneElements])
+
+  const pushHistorySnapshot = useCallback((snapshot: ElementMap) => {
+    undoStackRef.current.push(snapshot)
+    redoStackRef.current = []
+    setCanUndo(undoStackRef.current.length > 0)
+    setCanRedo(false)
+  }, [])
+
+  const commitHistoryCapture = useCallback(() => {
+    if (historyStartRef.current) {
+      pushHistorySnapshot(historyStartRef.current)
+      historyStartRef.current = null
+    }
+  }, [pushHistorySnapshot])
+
+  const clearHistoryCapture = useCallback(() => {
+    historyStartRef.current = null
+  }, [])
+
+  const applyElementsSnapshot = useCallback(
+    (snapshot: ElementMap) => {
+      const current = elementsRef.current
+      const next = cloneElements(snapshot)
+      setElements(next)
+      setSelection(new Set())
+      if (boardId) {
+        const currentIds = new Set(Object.keys(current))
+        const nextIds = new Set(Object.keys(next))
+        const removed = Array.from(currentIds).filter((id) => !nextIds.has(id))
+        if (removed.length > 0) {
+          sendElementsDelete(removed)
+          void persistElementsDelete(boardId, removed)
+        }
+        const updated = Object.values(next)
+        if (updated.length > 0) {
+          sendElementsUpdate(updated)
+          void persistElementsUpdate(boardId, updated)
+        }
+      }
+    },
+    [boardId, cloneElements, persistElementsDelete, persistElementsUpdate, sendElementsDelete, sendElementsUpdate, setSelection]
+  )
+
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return
+    const snapshot = undoStackRef.current.pop()
+    if (!snapshot) return
+    redoStackRef.current.push(cloneElements(elementsRef.current))
+    setCanUndo(undoStackRef.current.length > 0)
+    setCanRedo(true)
+    applyElementsSnapshot(snapshot)
+  }, [applyElementsSnapshot, cloneElements])
+
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return
+    const snapshot = redoStackRef.current.pop()
+    if (!snapshot) return
+    undoStackRef.current.push(cloneElements(elementsRef.current))
+    setCanRedo(redoStackRef.current.length > 0)
+    setCanUndo(true)
+    applyElementsSnapshot(snapshot)
+  }, [applyElementsSnapshot, cloneElements])
+
   const pasteClipboardElements = useCallback(() => {
     if (!boardId) return
     const selection = clipboardRef.current
@@ -5092,107 +5193,6 @@ export function CanvasBoard({
       return next
     })
   }, [])
-
-  const sendElementsDelete = useCallback(
-    (ids: string[]) => {
-      const socket = socketRef.current
-      if (!socket || !boardId || ids.length === 0) return
-      const message = {
-        type: 'elementsDelete',
-        payload: { boardId, ids },
-      }
-      logOutbound(message)
-      socket.send(JSON.stringify(message))
-    },
-    [boardId]
-  )
-
-  const persistElementsDelete = useCallback(async (board: string, ids: string[]) => {
-    if (ids.length === 0) return
-    try {
-      const response = await fetch(`${API_BASE_URL}/boards/${board}/elements`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ ids }),
-      })
-      if (!response.ok) throw new Error('Failed to delete elements')
-    } catch (error) {
-      console.error('Failed to delete board elements', error)
-    }
-  }, [])
-
-  useEffect(() => {
-    elementsRef.current = elements
-  }, [elements])
-
-  const beginHistoryCapture = useCallback(() => {
-    if (!historyStartRef.current) {
-      historyStartRef.current = cloneElements(elementsRef.current)
-    }
-  }, [cloneElements])
-
-  const pushHistorySnapshot = useCallback((snapshot: ElementMap) => {
-    undoStackRef.current.push(snapshot)
-    redoStackRef.current = []
-    setCanUndo(undoStackRef.current.length > 0)
-    setCanRedo(false)
-  }, [])
-
-  const commitHistoryCapture = useCallback(() => {
-    if (historyStartRef.current) {
-      pushHistorySnapshot(historyStartRef.current)
-      historyStartRef.current = null
-    }
-  }, [pushHistorySnapshot])
-
-  const clearHistoryCapture = useCallback(() => {
-    historyStartRef.current = null
-  }, [])
-
-  const applyElementsSnapshot = useCallback(
-    (snapshot: ElementMap) => {
-      const current = elementsRef.current
-      const next = cloneElements(snapshot)
-      setElements(next)
-      setSelection(new Set())
-      if (boardId) {
-        const currentIds = new Set(Object.keys(current))
-        const nextIds = new Set(Object.keys(next))
-        const removed = Array.from(currentIds).filter((id) => !nextIds.has(id))
-        if (removed.length > 0) {
-          sendElementsDelete(removed)
-          void persistElementsDelete(boardId, removed)
-        }
-        const updated = Object.values(next)
-        if (updated.length > 0) {
-          sendElementsUpdate(updated)
-          void persistElementsUpdate(boardId, updated)
-        }
-      }
-    },
-    [boardId, cloneElements, persistElementsDelete, persistElementsUpdate, sendElementsDelete, sendElementsUpdate, setSelection]
-  )
-
-  const handleUndo = useCallback(() => {
-    if (undoStackRef.current.length === 0) return
-    const snapshot = undoStackRef.current.pop()
-    if (!snapshot) return
-    redoStackRef.current.push(cloneElements(elementsRef.current))
-    setCanUndo(undoStackRef.current.length > 0)
-    setCanRedo(true)
-    applyElementsSnapshot(snapshot)
-  }, [applyElementsSnapshot, cloneElements])
-
-  const handleRedo = useCallback(() => {
-    if (redoStackRef.current.length === 0) return
-    const snapshot = redoStackRef.current.pop()
-    if (!snapshot) return
-    undoStackRef.current.push(cloneElements(elementsRef.current))
-    setCanRedo(redoStackRef.current.length > 0)
-    setCanUndo(true)
-    applyElementsSnapshot(snapshot)
-  }, [applyElementsSnapshot, cloneElements])
 
   const deleteSelectedElements = useCallback(
     (ids: string[]) => {
