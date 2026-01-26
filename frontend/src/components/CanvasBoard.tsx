@@ -2338,12 +2338,36 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       lines.push(value)
       lineIndex += 1
     }
+    const splitWordToFit = (word: string, maxWidth: number) => {
+      const parts: string[] = []
+      let remaining = word
+      while (remaining.length > 0) {
+        let fit = remaining.length
+        while (fit > 1 && ctx.measureText(remaining.slice(0, fit)).width > maxWidth) {
+          fit -= 1
+        }
+        parts.push(remaining.slice(0, fit))
+        remaining = remaining.slice(fit)
+      }
+      return parts
+    }
     paragraphs.forEach((paragraph, paragraphIndex) => {
       const words = paragraph.trim().length > 0 ? paragraph.trim().split(/\s+/) : ['']
       let line = ''
       words.forEach((word) => {
         const testLine = line ? `${line} ${word}` : word
         const maxWidth = getMaxWidth(lineIndex)
+        const wordWidth = ctx.measureText(word).width
+        if (wordWidth > maxWidth && maxWidth > 0) {
+          if (line) {
+            pushLine(line)
+            line = ''
+          }
+          splitWordToFit(word, maxWidth).forEach((part) => {
+            pushLine(part)
+          })
+          return
+        }
         if (ctx.measureText(testLine).width <= maxWidth || line === '') {
           line = testLine
         } else {
@@ -2435,9 +2459,10 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
     const textY = blockTop + index * lineHeight
     const lineWidth = ctx.measureText(line).width
     let lineStartX = blockLeft
+    let lineMaxWidth = inner.width
     if (element.type === 'triangle') {
       const lineCenterY = textY + lineHeight / 2
-      const lineMaxWidth = getTriangleLineMaxWidth(lineCenterY)
+      lineMaxWidth = getTriangleLineMaxWidth(lineCenterY)
       const lineLeft = -lineMaxWidth / 2
       let xOffset = 0
       if (textAlign === 'center') {
@@ -2464,7 +2489,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       ctx.fillRect(
         textStartX - highlightPadding,
         textY - highlightPadding,
-        lineWidth + highlightPadding * 2,
+        Math.min(lineWidth, lineMaxWidth) + highlightPadding * 2,
         lineHeight
       )
     }
@@ -2479,7 +2504,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
     }
 
     ctx.fillStyle = textColor
-    ctx.fillText(line, textStartX, textY, inner.width)
+    ctx.fillText(line, textStartX, textY, lineMaxWidth)
 
     if (underline) {
       ctx.strokeStyle = textColor
@@ -2487,7 +2512,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       const underlineY = textY + fontSize * 1.1
       ctx.beginPath()
       ctx.moveTo(textStartX, underlineY)
-      ctx.lineTo(textStartX + lineWidth, underlineY)
+      ctx.lineTo(textStartX + Math.min(lineWidth, lineMaxWidth), underlineY)
       ctx.stroke()
     }
 
@@ -2497,7 +2522,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       const strikeY = textY + fontSize * 0.5
       ctx.beginPath()
       ctx.moveTo(textStartX, strikeY)
-      ctx.lineTo(textStartX + lineWidth, strikeY)
+      ctx.lineTo(textStartX + Math.min(lineWidth, lineMaxWidth), strikeY)
       ctx.stroke()
     }
 
