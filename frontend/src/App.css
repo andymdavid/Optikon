@@ -457,6 +457,7 @@ body,
 .canvas-board__shape-editor[data-shape-type='triangle'] .canvas-board__shape-editor-content {
   justify-content: flex-end;
   padding-bottom: 6px;
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
 }
 
 .canvas-board__shape-editor-content[data-empty="true"] {

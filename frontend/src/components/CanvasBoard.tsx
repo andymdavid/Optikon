@@ -2351,6 +2351,16 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
         : -inner.width / 2
   const blockTop = -height / 2 + paddingY + offsetY
 
+  if (element.type === 'triangle') {
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(0, -height / 2)
+    ctx.lineTo(width / 2, height / 2)
+    ctx.lineTo(-width / 2, height / 2)
+    ctx.closePath()
+    ctx.clip()
+  }
+
   if (background && background.color !== 'transparent') {
     ctx.fillStyle = background.color
     ctx.globalAlpha = background.opacity / 100
@@ -2431,6 +2441,9 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       charInParagraph = 0
     }
   })
+  if (element.type === 'triangle') {
+    ctx.restore()
+  }
   ctx.restore()
 }
 
