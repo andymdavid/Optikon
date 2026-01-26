@@ -3875,6 +3875,7 @@ export function CanvasBoard({
   const [shapeToolKind, setShapeToolKind] = useState<ShapeToolKind>('rect')
   const [lineToolKind, setLineToolKind] = useState<LineToolKind>('line')
   const [lineArrowEnabled, setLineArrowEnabled] = useState(false)
+  const [lineStrokeColor, setLineStrokeColor] = useState(LINE_DEFAULT_STROKE)
   const [freeDrawMode, setFreeDrawMode] = useState<'pen' | 'erase'>('pen')
   const [freeDrawStrokeWidth, setFreeDrawStrokeWidth] = useState(FREE_DRAW_DEFAULT_STROKE_WIDTH)
   const [freeDrawStrokeColor, setFreeDrawStrokeColor] = useState(FREE_DRAW_DEFAULT_STROKE)
@@ -5725,7 +5726,7 @@ export function CanvasBoard({
             y1: startPosition.y,
             x2: startPosition.x,
             y2: startPosition.y,
-            stroke: LINE_DEFAULT_STROKE,
+            stroke: lineStrokeColor,
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
             endArrow: lineArrowEnabled,
@@ -6154,7 +6155,7 @@ export function CanvasBoard({
             y1: startPosition.y,
             x2: startPosition.x,
             y2: startPosition.y,
-            stroke: LINE_DEFAULT_STROKE,
+            stroke: lineStrokeColor,
             strokeWidth: LINE_DEFAULT_STROKE_WIDTH,
             startArrow: false,
             endArrow: lineArrowEnabled,
@@ -6303,6 +6304,7 @@ export function CanvasBoard({
       isCommentEditing,
       lineArrowEnabled,
       lineToolKind,
+      lineStrokeColor,
       shapeToolKind,
       preventNextPopoverClose,
       openCommentPopoverForElement,
@@ -8001,6 +8003,9 @@ export function CanvasBoard({
     selectedArray.forEach((id) => {
       const element = elements[id]
       if (!element) return
+      if (isLineElement(element) && interactionModeRef.current === 'line-create') {
+        return
+      }
       if (isFreeDrawElement(element) && (toolMode === 'draw' || interactionModeRef.current === 'free-draw')) {
         return
       }
@@ -8381,6 +8386,8 @@ export function CanvasBoard({
         onLineToolKindChange={setLineToolKind}
         lineArrowEnabled={lineArrowEnabled}
         onLineArrowEnabledChange={setLineArrowEnabled}
+        lineStrokeColor={lineStrokeColor}
+        onLineStrokeColorChange={setLineStrokeColor}
         freeDrawMode={freeDrawMode}
         onFreeDrawModeChange={setFreeDrawMode}
         freeDrawStrokeWidth={freeDrawStrokeWidth}

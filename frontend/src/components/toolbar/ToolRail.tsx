@@ -104,6 +104,8 @@ export type ToolRailProps = {
   onLineToolKindChange: (kind: LineToolKind) => void
   lineArrowEnabled: boolean
   onLineArrowEnabledChange: (next: boolean) => void
+  lineStrokeColor: string
+  onLineStrokeColorChange: (color: string) => void
   freeDrawMode: FreeDrawMode
   onFreeDrawModeChange: (mode: FreeDrawMode) => void
   freeDrawStrokeWidth: number
@@ -241,6 +243,8 @@ export function ToolRail({
   onLineToolKindChange,
   lineArrowEnabled,
   onLineArrowEnabledChange,
+  lineStrokeColor,
+  onLineStrokeColorChange,
   freeDrawMode,
   onFreeDrawModeChange,
   freeDrawStrokeWidth,
@@ -450,7 +454,7 @@ export function ToolRail({
             transform: `translate(${lineShelfOffset.x}px, ${lineShelfOffset.y}px)`,
           }}
         >
-          <div style={lineShelfLabel}>Arrow type</div>
+          <div style={lineShelfLabel}>Line type</div>
           <div style={lineShelfRow}>
             <button
               type="button"
@@ -527,6 +531,26 @@ export function ToolRail({
                 <path d="M11 7L15 10L11 13" />
               </svg>
             </button>
+          </div>
+          <div style={lineShelfLabel}>Color</div>
+          <div style={drawColorRow}>
+            {[...STICKY_COLORS, '#ef4444', '#111827'].map((color) => {
+              const swatchColor = color === 'default' ? '#fff7a6' : color
+              const selected = lineStrokeColor === swatchColor
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  title={color === 'default' ? 'Default' : color}
+                  style={{
+                    ...drawSwatchStyle,
+                    background: swatchColor,
+                    outline: selected ? '2px solid #0ea5e9' : 'none',
+                  }}
+                  onClick={() => onLineStrokeColorChange(swatchColor)}
+                />
+              )
+            })}
           </div>
         </div>
       )}
