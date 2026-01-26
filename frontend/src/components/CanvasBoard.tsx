@@ -526,7 +526,7 @@ function getCurveSamplePoints(
   end: { x: number; y: number }
 ) {
   const distance = Math.hypot(end.x - start.x, end.y - start.y)
-  const segments = clamp(Math.round(distance / 40), 8, 32)
+  const segments = clamp(Math.round(distance / 8), 32, 160)
   const control = getCurveControlFromMidpoint(start, mid, end)
   const points: Array<{ x: number; y: number }> = [start]
   for (let i = 1; i < segments; i += 1) {
