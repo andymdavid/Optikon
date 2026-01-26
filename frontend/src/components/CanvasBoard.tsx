@@ -2324,6 +2324,40 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   const bullets = element.style?.bullets ?? false
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const inner = getShapeInnerSize(element)
+  const getTriangleLineMaxWidth = (lineCenterY: number) => {
+    const clampedY = clamp(lineCenterY, -height / 2, height / 2)
+    const ratio = (clampedY + height / 2) / height
+    const halfWidth = (width / 2) * ratio
+    return Math.max(0, (halfWidth - paddingX) * 2)
+  }
+  const wrapTriangleText = (text: string, getMaxWidth: (lineIndex: number) => number) => {
+    const paragraphs = text.split('\n')
+    const lines: string[] = []
+    let lineIndex = 0
+    const pushLine = (value: string) => {
+      lines.push(value)
+      lineIndex += 1
+    }
+    paragraphs.forEach((paragraph, paragraphIndex) => {
+      const words = paragraph.trim().length > 0 ? paragraph.trim().split(/\s+/) : ['']
+      let line = ''
+      words.forEach((word) => {
+        const testLine = line ? `${line} ${word}` : word
+        const maxWidth = getMaxWidth(lineIndex)
+        if (ctx.measureText(testLine).width <= maxWidth || line === '') {
+          line = testLine
+        } else {
+          pushLine(line)
+          line = word
+        }
+      })
+      pushLine(line)
+      if (paragraphIndex < paragraphs.length - 1) {
+        pushLine('')
+      }
+    })
+    return lines
+  }
 
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
   const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
@@ -2337,7 +2371,15 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.textAlign = 'left'
   ctx.fillStyle = textColor
 
-  const lines = wrapText(ctx, element.text, inner.width, true)
+  const lines = element.type === 'triangle'
+    ? wrapTriangleText(
+        element.text,
+        (lineIndex) => {
+          const lineCenterY = -height / 2 + paddingY + lineIndex * lineHeight + lineHeight / 2
+          return getTriangleLineMaxWidth(lineCenterY)
+        }
+      )
+    : wrapText(ctx, element.text, inner.width, true)
   const totalHeight = lines.length * lineHeight
   const offsetY = element.type === 'triangle'
     ? Math.max(0, inner.height - totalHeight)
@@ -2349,7 +2391,9 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       : textAlign === 'right'
         ? width / 2 - paddingX - inner.width
         : -inner.width / 2
-  const blockTop = -height / 2 + paddingY + offsetY
+  const blockTop = element.type === 'triangle'
+    ? height / 2 - paddingY - totalHeight
+    : -height / 2 + paddingY + offsetY
 
   if (element.type === 'triangle') {
     ctx.save()
@@ -2381,13 +2425,27 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   lines.forEach((line, index) => {
     const textY = blockTop + index * lineHeight
     const lineWidth = ctx.measureText(line).width
-    let xOffset = 0
-    if (textAlign === 'center') {
-      xOffset = (inner.width - lineWidth) / 2
-    } else if (textAlign === 'right') {
-      xOffset = inner.width - lineWidth
+    let lineStartX = blockLeft
+    if (element.type === 'triangle') {
+      const lineCenterY = textY + lineHeight / 2
+      const lineMaxWidth = getTriangleLineMaxWidth(lineCenterY)
+      const lineLeft = -lineMaxWidth / 2
+      let xOffset = 0
+      if (textAlign === 'center') {
+        xOffset = (lineMaxWidth - lineWidth) / 2
+      } else if (textAlign === 'right') {
+        xOffset = lineMaxWidth - lineWidth
+      }
+      lineStartX = lineLeft + xOffset
+    } else {
+      let xOffset = 0
+      if (textAlign === 'center') {
+        xOffset = (inner.width - lineWidth) / 2
+      } else if (textAlign === 'right') {
+        xOffset = inner.width - lineWidth
+      }
+      lineStartX = blockLeft + xOffset
     }
-    const lineStartX = blockLeft + xOffset
     const bulletOffset = bullets ? 20 : 0
     const textStartX = lineStartX + bulletOffset
 
