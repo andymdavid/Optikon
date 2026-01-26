@@ -5,7 +5,6 @@ import {
   Square,
   Circle,
   Diamond,
-  Triangle,
   MessageSquare,
   Frame,
   CircleAlert,
@@ -31,7 +30,7 @@ export type ToolMode =
   | 'comment'
 
 export type LineToolKind = 'line' | 'curve' | 'elbow'
-export type ShapeToolKind = 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+export type ShapeToolKind = 'rect' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble'
 export type FreeDrawMode = 'pen' | 'erase'
 
 type ToolDefinition = {
@@ -419,18 +418,6 @@ export function ToolRail({
               onClick={() => onShapeToolKindChange('diamond')}
             >
               <Diamond size={18} strokeWidth={1.5} />
-            </button>
-            <button
-              type="button"
-              title="Triangle"
-              style={{
-                ...lineOptionButton,
-                background: shapeToolKind === 'triangle' ? '#e0f2fe' : lineOptionButton.background,
-                color: shapeToolKind === 'triangle' ? '#0ea5e9' : '#374151',
-              }}
-              onClick={() => onShapeToolKindChange('triangle')}
-            >
-              <Triangle size={18} strokeWidth={1.5} />
             </button>
             <button
               type="button"

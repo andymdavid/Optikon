@@ -127,21 +127,6 @@ export interface DiamondElement extends CanvasElement {
   style?: TextStyle
 }
 
-export interface TriangleElement extends CanvasElement {
-  type: 'triangle'
-  x: number
-  y: number
-  w: number
-  h: number
-  fill?: string
-  stroke?: string
-  rotation?: number
-  text?: string
-  fontFamily?: string
-  fontSize?: number
-  textAutoFit?: boolean
-  style?: TextStyle
-}
 
 export interface SpeechBubbleTail {
   side: 'bottom' | 'top' | 'left' | 'right'
@@ -229,7 +214,6 @@ export type BoardElement =
   | EllipseElement
   | RoundedRectElement
   | DiamondElement
-  | TriangleElement
   | SpeechBubbleElement
   | ImageElement
   | LineElement

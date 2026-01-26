@@ -63,7 +63,6 @@ import type {
   RectangleElement,
   FrameElement,
   DiamondElement,
-  TriangleElement,
   SpeechBubbleElement,
   RoundedRectElement,
   ImageElement,
@@ -1171,12 +1170,6 @@ function getShapeTextPadding(element: ShapeElement | FrameElement) {
       paddingY: Math.max(2, height / 4),
     }
   }
-  if (element.type === 'triangle') {
-    return {
-      paddingX: Math.max(2, width * 0.18),
-      paddingY: Math.max(2, height * 0.18),
-    }
-  }
   const ratio = Math.min(width, height) / STICKY_SIZE
   const paddingX = Math.max(2, STICKY_PADDING_X * ratio)
   const paddingY = Math.max(2, STICKY_PADDING_Y * ratio)
@@ -1316,10 +1309,6 @@ function isDiamondElement(element: BoardElement | null | undefined): element is 
   return !!element && element.type === 'diamond'
 }
 
-function isTriangleElement(element: BoardElement | null | undefined): element is TriangleElement {
-  return !!element && element.type === 'triangle'
-}
-
 function isSpeechBubbleElement(
   element: BoardElement | null | undefined
 ): element is SpeechBubbleElement {
@@ -1336,7 +1325,6 @@ function isShapeElement(element: BoardElement | null | undefined): element is Sh
     isEllipseElement(element) ||
     isRoundedRectElement(element) ||
     isDiamondElement(element) ||
-    isTriangleElement(element) ||
     isSpeechBubbleElement(element)
   )
 }
@@ -1408,7 +1396,7 @@ type TransformState =
       mode: 'shapeScale'
       pointerId: number
       id: string
-      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
+    elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble' | 'image'
       handle: 'nw' | 'ne' | 'se' | 'sw'
       startBounds: ShapeElementBounds
     }
@@ -1416,7 +1404,7 @@ type TransformState =
       mode: 'width'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
+    elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble' | 'image'
       handle: 'e' | 'w'
       startBounds: TextElementBounds | ShapeElementBounds
     }
@@ -1424,7 +1412,7 @@ type TransformState =
       mode: 'height'
       pointerId: number
       id: string
-      elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
+    elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble' | 'image'
       handle: 'n' | 's'
       startBounds: ShapeElementBounds
     }
@@ -1432,7 +1420,7 @@ type TransformState =
       mode: 'rotate'
       pointerId: number
       id: string
-      elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble' | 'image'
+    elementType: 'text' | 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble' | 'image'
       handle: 'rotate'
       startBounds: TextElementBounds | ShapeElementBounds
       startPointerAngle: number
@@ -1564,8 +1552,6 @@ function cloneElementForPaste(
     case 'roundRect':
       return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
     case 'diamond':
-      return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
-    case 'triangle':
       return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
     case 'speechBubble':
       return { ...element, id: newId, x: element.x + dx, y: element.y + dy }
@@ -1838,38 +1824,6 @@ function parseDiamondElement(raw: unknown): DiamondElement | null {
   return { ...provisional, fontSize }
 }
 
-function parseTriangleElement(raw: unknown): TriangleElement | null {
-  if (!raw || typeof raw !== 'object') return null
-  const element = raw as Partial<TriangleElement>
-  if (element.type !== 'triangle') return null
-  if (typeof element.id !== 'string') return null
-  if (typeof element.x !== 'number' || typeof element.y !== 'number') return null
-  if (typeof element.w !== 'number' || typeof element.h !== 'number') return null
-  const width = Math.max(RECT_MIN_SIZE, element.w)
-  const height = Math.max(RECT_MIN_SIZE, element.h)
-  const rotation = resolveTextRotation(element.rotation)
-  const text = typeof element.text === 'string' ? element.text : undefined
-  const provisional: TriangleElement = {
-    id: element.id,
-    type: 'triangle',
-    x: element.x,
-    y: element.y,
-    w: width,
-    h: height,
-    fill: typeof element.fill === 'string' ? element.fill : RECT_DEFAULT_FILL,
-    stroke: typeof element.stroke === 'string' ? element.stroke : RECT_DEFAULT_STROKE,
-    rotation,
-    text,
-    fontFamily: typeof element.fontFamily === 'string' ? element.fontFamily : undefined,
-    textAutoFit: typeof element.textAutoFit === 'boolean' ? element.textAutoFit : undefined,
-  }
-  const fontSize =
-    typeof element.fontSize === 'number' && Number.isFinite(element.fontSize)
-      ? clampFontSizeForShape(provisional, element.fontSize)
-      : undefined
-  return { ...provisional, fontSize }
-}
-
 function parseSpeechBubbleElement(raw: unknown): SpeechBubbleElement | null {
   if (!raw || typeof raw !== 'object') return null
   const element = raw as Partial<SpeechBubbleElement>
@@ -2069,7 +2023,6 @@ function parseBoardElement(raw: unknown): BoardElement | null {
   if (type === 'ellipse') return parseEllipseElement(raw)
   if (type === 'roundRect') return parseRoundedRectElement(raw)
   if (type === 'diamond') return parseDiamondElement(raw)
-  if (type === 'triangle') return parseTriangleElement(raw)
   if (type === 'speechBubble') return parseSpeechBubbleElement(raw)
   if (type === 'image') return parseImageElement(raw)
   if (type === 'line') return parseLineElement(raw)
@@ -2324,64 +2277,6 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   const bullets = element.style?.bullets ?? false
   const lineHeight = fontSize * STICKY_TEXT_LINE_HEIGHT
   const inner = getShapeInnerSize(element)
-  const getTriangleLineMaxWidth = (lineCenterY: number) => {
-    const clampedY = clamp(lineCenterY, -height / 2, height / 2)
-    const ratio = (clampedY + height / 2) / height
-    const halfWidth = (width / 2) * ratio
-    return Math.max(0, (halfWidth - paddingX) * 2)
-  }
-  const wrapTriangleText = (text: string, getMaxWidth: (lineIndex: number) => number) => {
-    const paragraphs = text.split('\n')
-    const lines: string[] = []
-    let lineIndex = 0
-    const pushLine = (value: string) => {
-      lines.push(value)
-      lineIndex += 1
-    }
-    const splitWordToFit = (word: string, maxWidth: number) => {
-      const parts: string[] = []
-      let remaining = word
-      while (remaining.length > 0) {
-        let fit = remaining.length
-        while (fit > 1 && ctx.measureText(remaining.slice(0, fit)).width > maxWidth) {
-          fit -= 1
-        }
-        parts.push(remaining.slice(0, fit))
-        remaining = remaining.slice(fit)
-      }
-      return parts
-    }
-    paragraphs.forEach((paragraph, paragraphIndex) => {
-      const words = paragraph.trim().length > 0 ? paragraph.trim().split(/\s+/) : ['']
-      let line = ''
-      words.forEach((word) => {
-        const testLine = line ? `${line} ${word}` : word
-        const maxWidth = getMaxWidth(lineIndex)
-        const wordWidth = ctx.measureText(word).width
-        if (wordWidth > maxWidth && maxWidth > 0) {
-          if (line) {
-            pushLine(line)
-            line = ''
-          }
-          splitWordToFit(word, maxWidth).forEach((part) => {
-            pushLine(part)
-          })
-          return
-        }
-        if (ctx.measureText(testLine).width <= maxWidth || line === '') {
-          line = testLine
-        } else {
-          pushLine(line)
-          line = word
-        }
-      })
-      pushLine(line)
-      if (paragraphIndex < paragraphs.length - 1) {
-        pushLine('')
-      }
-    })
-    return lines
-  }
 
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
   const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
@@ -2395,28 +2290,9 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.textAlign = 'left'
   ctx.fillStyle = textColor
 
-  let lines = wrapText(ctx, element.text, inner.width, true)
-  if (element.type === 'triangle') {
-    for (let pass = 0; pass < 3; pass += 1) {
-      const totalLines = Math.max(1, lines.length)
-      const nextLines = wrapTriangleText(
-        element.text,
-        (lineIndex) => {
-          const blockTop = height / 2 - paddingY - totalLines * lineHeight
-          const lineCenterY = blockTop + lineIndex * lineHeight + lineHeight / 2
-          return getTriangleLineMaxWidth(lineCenterY)
-        }
-      )
-      if (nextLines.length === lines.length && nextLines.join('\n') === lines.join('\n')) {
-        break
-      }
-      lines = nextLines
-    }
-  }
+  const lines = wrapText(ctx, element.text, inner.width, true)
   const totalHeight = lines.length * lineHeight
-  const offsetY = element.type === 'triangle'
-    ? Math.max(0, inner.height - totalHeight)
-    : Math.max(0, (inner.height - totalHeight) / 2)
+  const offsetY = Math.max(0, (inner.height - totalHeight) / 2)
 
   const blockLeft =
     textAlign === 'left'
@@ -2424,19 +2300,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       : textAlign === 'right'
         ? width / 2 - paddingX - inner.width
         : -inner.width / 2
-  const blockTop = element.type === 'triangle'
-    ? height / 2 - paddingY - totalHeight
-    : -height / 2 + paddingY + offsetY
-
-  if (element.type === 'triangle') {
-    ctx.save()
-    ctx.beginPath()
-    ctx.moveTo(0, -height / 2)
-    ctx.lineTo(width / 2, height / 2)
-    ctx.lineTo(-width / 2, height / 2)
-    ctx.closePath()
-    ctx.clip()
-  }
+  const blockTop = -height / 2 + paddingY + offsetY
 
   if (background && background.color !== 'transparent') {
     ctx.fillStyle = background.color
@@ -2458,28 +2322,13 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   lines.forEach((line, index) => {
     const textY = blockTop + index * lineHeight
     const lineWidth = ctx.measureText(line).width
-    let lineStartX = blockLeft
-    let lineMaxWidth = inner.width
-    if (element.type === 'triangle') {
-      const lineCenterY = textY + lineHeight / 2
-      lineMaxWidth = getTriangleLineMaxWidth(lineCenterY)
-      const lineLeft = -lineMaxWidth / 2
-      let xOffset = 0
-      if (textAlign === 'center') {
-        xOffset = (lineMaxWidth - lineWidth) / 2
-      } else if (textAlign === 'right') {
-        xOffset = lineMaxWidth - lineWidth
-      }
-      lineStartX = lineLeft + xOffset
-    } else {
-      let xOffset = 0
-      if (textAlign === 'center') {
-        xOffset = (inner.width - lineWidth) / 2
-      } else if (textAlign === 'right') {
-        xOffset = inner.width - lineWidth
-      }
-      lineStartX = blockLeft + xOffset
+    let xOffset = 0
+    if (textAlign === 'center') {
+      xOffset = (inner.width - lineWidth) / 2
+    } else if (textAlign === 'right') {
+      xOffset = inner.width - lineWidth
     }
+    const lineStartX = blockLeft + xOffset
     const bulletOffset = bullets ? 20 : 0
     const textStartX = lineStartX + bulletOffset
 
@@ -2489,7 +2338,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       ctx.fillRect(
         textStartX - highlightPadding,
         textY - highlightPadding,
-        Math.min(lineWidth, lineMaxWidth) + highlightPadding * 2,
+        lineWidth + highlightPadding * 2,
         lineHeight
       )
     }
@@ -2504,7 +2353,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
     }
 
     ctx.fillStyle = textColor
-    ctx.fillText(line, textStartX, textY, lineMaxWidth)
+    ctx.fillText(line, textStartX, textY, inner.width)
 
     if (underline) {
       ctx.strokeStyle = textColor
@@ -2512,7 +2361,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       const underlineY = textY + fontSize * 1.1
       ctx.beginPath()
       ctx.moveTo(textStartX, underlineY)
-      ctx.lineTo(textStartX + Math.min(lineWidth, lineMaxWidth), underlineY)
+      ctx.lineTo(textStartX + lineWidth, underlineY)
       ctx.stroke()
     }
 
@@ -2522,7 +2371,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       const strikeY = textY + fontSize * 0.5
       ctx.beginPath()
       ctx.moveTo(textStartX, strikeY)
-      ctx.lineTo(textStartX + Math.min(lineWidth, lineMaxWidth), strikeY)
+      ctx.lineTo(textStartX + lineWidth, strikeY)
       ctx.stroke()
     }
 
@@ -2533,9 +2382,6 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
       charInParagraph = 0
     }
   })
-  if (element.type === 'triangle') {
-    ctx.restore()
-  }
   ctx.restore()
 }
 
@@ -3340,31 +3186,6 @@ function drawSpeechBubbleElement(
   drawShapeText(ctx, element, camera)
 }
 
-function drawTriangleElement(ctx: CanvasRenderingContext2D, element: TriangleElement, camera: CameraState) {
-  const bounds = getShapeElementBounds(element)
-  ctx.save()
-  const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
-  const screenCenterY = (bounds.center.y + camera.offsetY) * camera.zoom
-  ctx.translate(screenCenterX, screenCenterY)
-  ctx.rotate(bounds.rotation)
-  const scaleFactor = bounds.scale * camera.zoom
-  ctx.scale(scaleFactor, scaleFactor)
-  ctx.fillStyle = element.fill ?? RECT_DEFAULT_FILL
-  ctx.strokeStyle = element.stroke ?? RECT_DEFAULT_STROKE
-  ctx.lineWidth = 2 / scaleFactor
-  const halfWidth = bounds.width / 2
-  const halfHeight = bounds.height / 2
-  ctx.beginPath()
-  ctx.moveTo(0, -halfHeight)
-  ctx.lineTo(-halfWidth, halfHeight)
-  ctx.lineTo(halfWidth, halfHeight)
-  ctx.closePath()
-  ctx.fill()
-  ctx.stroke()
-  ctx.restore()
-  drawShapeText(ctx, element, camera)
-}
-
 function drawStickySelection(
   ctx: CanvasRenderingContext2D,
   element: StickyNoteElement,
@@ -3886,7 +3707,7 @@ export function CanvasBoard({
         id: string
         baseSize: number
         hasDragged: boolean
-        elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'triangle' | 'speechBubble'
+        elementType: 'rect' | 'frame' | 'ellipse' | 'roundRect' | 'diamond' | 'speechBubble'
       }
   >(null)
   const lineCreationRef = useRef<
@@ -6003,7 +5824,6 @@ export function CanvasBoard({
             | 'ellipse'
             | 'roundRect'
             | 'diamond'
-            | 'triangle'
             | 'speechBubble'
             | 'image'
           transformStateRef.current = {
@@ -6030,7 +5850,6 @@ export function CanvasBoard({
             | 'ellipse'
             | 'roundRect'
             | 'diamond'
-            | 'triangle'
             | 'speechBubble'
             | 'image'
           transformStateRef.current = {
@@ -6272,7 +6091,6 @@ export function CanvasBoard({
           } else {
             newElement = {
               id,
-              type: 'triangle',
               x: boardPoint.x,
               y: boardPoint.y,
               w: defaultWidth,
@@ -6294,7 +6112,6 @@ export function CanvasBoard({
               | 'ellipse'
               | 'roundRect'
               | 'diamond'
-              | 'triangle'
               | 'speechBubble',
           }
           interactionModeRef.current = 'shape-create'
@@ -7708,15 +7525,6 @@ export function CanvasBoard({
         } else {
           setToolMode('rect')
           setShapeToolKind('speechBubble')
-        }
-        return
-      }
-      if (event.key === 'y' || event.key === 'Y') {
-        if (toolMode === 'rect' && shapeToolKind === 'triangle') {
-          setToolMode('select')
-        } else {
-          setToolMode('rect')
-          setShapeToolKind('triangle')
         }
         return
       }

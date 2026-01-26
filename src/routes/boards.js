@@ -53,7 +53,6 @@ export async function handleBoardElementCreate(req, boardId) {
         "ellipse",
         "roundRect",
         "diamond",
-        "triangle",
         "speechBubble",
     ];
     const isAllowedType = (value) => typeof value === "string" && allowedElementTypes.includes(value);
