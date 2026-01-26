@@ -1165,10 +1165,16 @@ function getShapeDimensions(element: ShapeElement | FrameElement) {
 
 function getShapeTextPadding(element: ShapeElement | FrameElement) {
   const { width, height } = getShapeDimensions(element)
-  if (element.type === 'diamond' || element.type === 'triangle') {
+  if (element.type === 'diamond') {
     return {
       paddingX: Math.max(2, width / 4),
       paddingY: Math.max(2, height / 4),
+    }
+  }
+  if (element.type === 'triangle') {
+    return {
+      paddingX: Math.max(2, width * 0.3),
+      paddingY: Math.max(2, height * 0.3),
     }
   }
   const ratio = Math.min(width, height) / STICKY_SIZE
