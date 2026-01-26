@@ -7409,7 +7409,7 @@ export function CanvasBoard({
         wheelRafRef.current = window.requestAnimationFrame(() => {
           const current = cameraStateRef.current
           const cappedDelta = clamp(accum.zoomDeltaY * accum.pinchFactor, -120, 120)
-          const zoomFactor = Math.exp(-cappedDelta * 0.0012)
+          const zoomFactor = Math.exp(-cappedDelta * 0.0012 * (isFirefox ? 1.12 : 1))
           const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current.zoom * zoomFactor))
           const boardPoint = {
             x: accum.focalX / current.zoom - current.offsetX,
@@ -7424,7 +7424,7 @@ export function CanvasBoard({
         })
       }
     },
-    [isCommentEditing, screenToBoard]
+    [isCommentEditing, isFirefox, screenToBoard]
   )
 
   useEffect(() => {
@@ -8143,6 +8143,10 @@ export function CanvasBoard({
   const editingShapePadding = editingShapeElement ? getShapeTextPadding(editingShapeElement) : null
   const editingShapePaddingX = editingShapePadding ? editingShapePadding.paddingX * cameraState.zoom : null
   const editingShapePaddingY = editingShapePadding ? editingShapePadding.paddingY * cameraState.zoom : null
+  const isFirefox = useMemo(
+    () => (typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent)),
+    []
+  )
   const editingShapeFontSizePx =
     editingState?.elementType === 'shape' && typeof editingState.fontSize === 'number'
       ? editingState.fontSize * cameraState.zoom
