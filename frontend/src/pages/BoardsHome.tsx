@@ -180,6 +180,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [workspaceTitleDraft, setWorkspaceTitleDraft] = useState('')
   const [workspaceSaving, setWorkspaceSaving] = useState(false)
   const [workspaceInviteOpen, setWorkspaceInviteOpen] = useState(false)
+  const [workspaceInviteTarget, setWorkspaceInviteTarget] = useState('')
+  const [workspaceInviteSaving, setWorkspaceInviteSaving] = useState(false)
+  const [workspaceInviteError, setWorkspaceInviteError] = useState<string | null>(null)
+  const [workspaceInviteSuccess, setWorkspaceInviteSuccess] = useState<string | null>(null)
   const [loginOpen, setLoginOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
@@ -221,6 +225,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const selectedWorkspace =
     selectedWorkspaceId != null ? workspaceById.get(Number(selectedWorkspaceId)) ?? null : null
+  const isSelectedWorkspaceOwner =
+    !!session?.pubkey &&
+    !!selectedWorkspace?.ownerPubkey &&
+    session.pubkey === selectedWorkspace.ownerPubkey
 
   const filteredBoards = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -549,6 +557,59 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       setWorkspacesError('Unable to create workspace.')
     } finally {
       setWorkspaceSaving(false)
+    }
+  }
+
+  const handleInviteWorkspaceMember = async () => {
+    if (!session?.pubkey) return
+    if (!selectedWorkspaceId) {
+      setWorkspaceInviteError('Select a workspace first.')
+      return
+    }
+    if (!selectedWorkspace) {
+      setWorkspaceInviteError('Workspace not found.')
+      return
+    }
+    if (!selectedWorkspace.ownerPubkey || selectedWorkspace.ownerPubkey !== session.pubkey) {
+      setWorkspaceInviteError('Only the workspace owner can invite members.')
+      return
+    }
+    if (workspaceInviteSaving) return
+    const target = workspaceInviteTarget.trim()
+    if (!target) {
+      setWorkspaceInviteError('Enter a npub or pubkey to invite.')
+      return
+    }
+    if (!target.startsWith('npub') && !/^([0-9a-f]{64})$/i.test(target)) {
+      setWorkspaceInviteError('Enter a valid npub or 64-char hex pubkey.')
+      return
+    }
+    setWorkspaceInviteSaving(true)
+    setWorkspaceInviteError(null)
+    setWorkspaceInviteSuccess(null)
+    try {
+      const payload = target.startsWith('npub') ? { npub: target } : { pubkey: target }
+      const response = await fetch(`${apiBaseUrl}/workspaces/${selectedWorkspaceId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        let message = 'Unable to invite member.'
+        try {
+          const data = (await response.json()) as { message?: string }
+          if (data?.message) message = data.message
+        } catch (_err) {}
+        throw new Error(message)
+      }
+      setWorkspaceInviteTarget('')
+      setWorkspaceInviteSuccess('Member added to workspace.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to invite member.'
+      setWorkspaceInviteError(message)
+    } finally {
+      setWorkspaceInviteSaving(false)
     }
   }
 
@@ -977,7 +1038,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <div>
             <h2 className="text-base font-semibold text-slate-900">Invite to workspace</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Workspace invites are not wired yet.
+              Add members to {selectedWorkspace ? selectedWorkspace.title : 'this workspace'}.
             </p>
           </div>
           <Button
@@ -989,11 +1050,46 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             <X size={18} className="text-slate-500" />
           </Button>
         </div>
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-          Use board sharing from the ellipses menu for now. Inviting to a workspace will come later.
-        </div>
+        {!selectedWorkspaceId ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Select a workspace before inviting members.
+          </div>
+        ) : !isSelectedWorkspaceOwner ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            Only the workspace owner can invite members.
+          </div>
+        ) : (
+          <div className="mt-5 space-y-2">
+            <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Nostr npub or pubkey
+            </label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="npub1... or 64-char pubkey"
+                value={workspaceInviteTarget}
+                onChange={(event) => setWorkspaceInviteTarget(event.target.value)}
+                disabled={workspaceInviteSaving}
+              />
+              <Button onClick={() => void handleInviteWorkspaceMember()} disabled={workspaceInviteSaving}>
+                Invite
+              </Button>
+            </div>
+            {workspaceInviteError && (
+              <p className="text-xs text-rose-600">{workspaceInviteError}</p>
+            )}
+            {workspaceInviteSuccess && (
+              <p className="text-xs text-emerald-600">{workspaceInviteSuccess}</p>
+            )}
+          </div>
+        )}
         <div className="mt-6 flex justify-end">
-          <Button onClick={() => setWorkspaceInviteOpen(false)}>Close</Button>
+          <Button
+            variant="ghost"
+            onClick={() => setWorkspaceInviteOpen(false)}
+            disabled={workspaceInviteSaving}
+          >
+            Close
+          </Button>
         </div>
       </div>
     </div>
@@ -1779,7 +1875,14 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <Building2 size={16} />
               Create workspace
             </Button>
-            <Button onClick={() => setWorkspaceInviteOpen(true)}>
+            <Button
+              onClick={() => {
+                setWorkspaceInviteTarget('')
+                setWorkspaceInviteError(null)
+                setWorkspaceInviteSuccess(null)
+                setWorkspaceInviteOpen(true)
+              }}
+            >
               <UserPlus size={16} />
               Invite to workspace
             </Button>

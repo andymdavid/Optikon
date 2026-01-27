@@ -15,6 +15,31 @@ function normalizeWorkspaceTitle(title: string | null | undefined, fallback: str
   return fallback;
 }
 
+export function getWorkspaceForSession(workspaceId: number, session: Session | null) {
+  if (!session?.pubkey) return null;
+  const workspace = getWorkspaceById(workspaceId);
+  if (!workspace) return null;
+  const isOwner = !!workspace.owner_pubkey && workspace.owner_pubkey === session.pubkey;
+  if (isOwner) {
+    upsertWorkspaceMember(workspaceId, session.pubkey, "owner");
+    return workspace;
+  }
+  const member = getWorkspaceMember(workspaceId, session.pubkey);
+  if (!member) return null;
+  return workspace;
+}
+
+export function isWorkspaceOwner(session: Session | null, workspaceId: number) {
+  if (!session?.pubkey) return false;
+  const workspace = getWorkspaceById(workspaceId);
+  if (!workspace) return false;
+  if (workspace.owner_pubkey && workspace.owner_pubkey === session.pubkey) {
+    upsertWorkspaceMember(workspaceId, session.pubkey, "owner");
+    return true;
+  }
+  return false;
+}
+
 export function ensurePersonalWorkspace(session: Session) {
   const existing = getPersonalWorkspaceForPubkey(session.pubkey);
   if (existing) {
@@ -46,13 +71,22 @@ export function createWorkspaceForSession(session: Session | null, title: string
 
 export function isWorkspaceMember(session: Session | null, workspaceId: number) {
   if (!session?.pubkey) return false;
-  const member = getWorkspaceMember(workspaceId, session.pubkey);
-  if (member) return true;
+  return !!getWorkspaceForSession(workspaceId, session);
+}
+
+export function addWorkspaceMember(
+  session: Session | null,
+  workspaceId: number,
+  pubkey: string,
+  role: string = "member"
+) {
+  if (!session?.pubkey) return { ok: false as const, status: 401 as const, message: "Unauthorized." };
   const workspace = getWorkspaceById(workspaceId);
-  if (!workspace) return false;
-  if (workspace.owner_pubkey && workspace.owner_pubkey === session.pubkey) {
-    upsertWorkspaceMember(workspaceId, session.pubkey, "owner");
-    return true;
+  if (!workspace) return { ok: false as const, status: 404 as const, message: "Workspace not found." };
+  if (!isWorkspaceOwner(session, workspaceId)) {
+    return { ok: false as const, status: 403 as const, message: "Only the workspace owner can invite." };
   }
-  return false;
+  const member = upsertWorkspaceMember(workspaceId, pubkey, role);
+  if (!member) return { ok: false as const, status: 500 as const, message: "Unable to add member." };
+  return { ok: true as const, member, workspace };
 }

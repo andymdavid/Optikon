@@ -42,7 +42,7 @@ import {
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
-import { handleWorkspaceCreate, handleWorkspacesList } from "./routes/workspaces";
+import { handleWorkspaceCreate, handleWorkspaceMemberCreate, handleWorkspacesList } from "./routes/workspaces";
 import { AuthService } from "./services/auth";
 import { canViewBoard } from "./services/boardAccess";
 import { fetchBoardById } from "./services/boards";
@@ -510,6 +510,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
       if (pathname === "/boards") return respond(await handleBoardCreate(req, session));
       if (pathname === "/boards/import") return respond(await handleBoardImport(req, session));
       if (pathname === "/workspaces") return respond(await handleWorkspaceCreate(req, session));
+      const workspaceMembersMatch = pathname.match(/^\/workspaces\/(\d+)\/members$/);
+      if (workspaceMembersMatch) {
+        return respond(await handleWorkspaceMemberCreate(req, Number(workspaceMembersMatch[1]), session));
+      }
       if (pathname === "/auth/login") {
         const limited = enforceRateLimit(loginRateLimiter, rateLimitKey("auth-login", requestIp));
         if (limited) return respond(limited);
