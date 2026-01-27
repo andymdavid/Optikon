@@ -1061,29 +1061,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
       <span className="text-[13px] text-slate-500">Filter by</span>
-      <Select defaultValue="all">
+      <Select value={filterBy} onValueChange={(value) => setFilterBy(value as typeof filterBy)}>
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="All boards" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All boards</SelectItem>
+          <SelectItem value="starred">Starred</SelectItem>
         </SelectContent>
       </Select>
-      <Select defaultValue="anyone">
+      <Select value={ownedBy} onValueChange={(value) => setOwnedBy(value as typeof ownedBy)}>
         <SelectTrigger className="w-[160px]">
           <SelectValue placeholder="Owned by anyone" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="anyone">Owned by anyone</SelectItem>
+          <SelectItem value="me">Owned by me</SelectItem>
+          <SelectItem value="not-me">Not owned by me</SelectItem>
         </SelectContent>
       </Select>
       <span className="ml-3 text-[13px] text-slate-500">Sort by</span>
-      <Select defaultValue="last-opened">
+      <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="Last opened" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="last-opened">Last opened</SelectItem>
+          <SelectItem value="last-modified">Last modified</SelectItem>
+          <SelectItem value="last-created">Last created</SelectItem>
+          <SelectItem value="alpha">Alphabetically</SelectItem>
         </SelectContent>
       </Select>
       <ToggleGroup
