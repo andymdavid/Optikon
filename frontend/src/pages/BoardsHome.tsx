@@ -1,8 +1,6 @@
 import {
   Cloud,
   FileText,
-  LayoutGrid,
-  List,
   Lock,
   MoreHorizontal,
   Pencil,
@@ -44,7 +42,6 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table'
-import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group'
 
 type BoardSummary = {
   id: number | string
@@ -1119,19 +1116,28 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <SelectItem value="alpha">Alphabetically</SelectItem>
         </SelectContent>
       </Select>
-      <ToggleGroup
-        type="single"
-        value="list"
-        className="ml-auto"
-        aria-label="View toggle"
-      >
-        <ToggleGroupItem value="grid" aria-label="Grid view" disabled>
-          <LayoutGrid size={18} />
-        </ToggleGroupItem>
-        <ToggleGroupItem value="list" aria-label="List view">
-          <List size={18} />
-        </ToggleGroupItem>
-      </ToggleGroup>
+      <div className="ml-auto flex items-center gap-3">
+        <div className="relative">
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+          <Input
+            placeholder="Search boards..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-64 pl-9"
+          />
+        </div>
+        <CreateBoardMenu />
+        <AccountMenu
+          apiBaseUrl={apiBaseUrl}
+          session={session}
+          onSessionChange={handleSessionChange}
+          loginOpen={loginOpen}
+          onLoginOpenChange={setLoginOpen}
+        />
+      </div>
     </div>
   )
 
@@ -1442,30 +1448,8 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       />
       {shareModal}
       {detailsModal}
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header>
         <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <Input
-              placeholder="Search boards..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-64 pl-9"
-            />
-          </div>
-          <CreateBoardMenu />
-          <AccountMenu
-            apiBaseUrl={apiBaseUrl}
-            session={session}
-            onSessionChange={handleSessionChange}
-            loginOpen={loginOpen}
-            onLoginOpenChange={setLoginOpen}
-          />
-        </div>
       </header>
       <BoardsFilters />
       {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
