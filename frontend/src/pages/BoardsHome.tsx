@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { AccountMenu } from '../components/account/AccountMenu'
+import { NostrLoginCard } from '../components/account/NostrLoginModal'
 import {
   fetchProfile,
   formatProfileName,
@@ -1862,30 +1863,28 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   if (!session) {
     return (
-      <div className="boards-home mx-auto flex min-h-[60vh] max-w-[90%] flex-col justify-center py-16 text-slate-900">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-base font-semibold text-white">
-            O
+      <div className="splash-shell text-slate-900">
+        <div className="splash-card">
+          <div className="splash-left">
+            <div>
+              <a href="/" className="splash-left__logo">Optikon</a>
+            </div>
+            <div className="splash-left__content">
+              <p className="splash-left__eyebrow">Realtime Canvas Boards</p>
+              <h1 className="splash-left__title">Welcome back</h1>
+              <p className="splash-left__subtitle">
+                Sign in with Nostr to open your workspaces. Shared boards still work by link.
+              </p>
+            </div>
           </div>
-          <div>
-            <div className="text-lg font-semibold text-slate-900">Optikon</div>
-            <div className="text-xs text-slate-500">Infinite canvas boards</div>
+          <div className="splash-right">
+            <NostrLoginCard
+              apiBaseUrl={apiBaseUrl}
+              onSuccess={(nextSession) =>
+                handleSessionChange({ pubkey: nextSession.pubkey, npub: nextSession.npub })
+              }
+            />
           </div>
-        </div>
-        <div className="mt-6 max-w-xl space-y-3">
-          <h1 className="text-2xl font-semibold text-slate-900">Sign in to view your workspaces</h1>
-          <p className="text-sm text-slate-600">
-            Boards Home is now workspace-scoped. Public boards can still be opened by link.
-          </p>
-        </div>
-        <div className="mt-6">
-          <AccountMenu
-            apiBaseUrl={apiBaseUrl}
-            session={session}
-            onSessionChange={handleSessionChange}
-            loginOpen={loginOpen}
-            onLoginOpenChange={setLoginOpen}
-          />
         </div>
       </div>
     )

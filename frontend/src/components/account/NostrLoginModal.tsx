@@ -163,7 +163,7 @@ async function completeLogin(apiBaseUrl: string, method: LoginMethod, event: Log
   return (await response.json()) as SessionInfo
 }
 
-function NostrLoginCard({
+export function NostrLoginCard({
   apiBaseUrl,
   onSuccess,
 }: {
