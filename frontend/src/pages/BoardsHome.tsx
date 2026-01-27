@@ -1870,10 +1870,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <a href="/" className="splash-left__logo">Optikon</a>
             </div>
             <div className="splash-left__content">
-              <p className="splash-left__eyebrow">Realtime Canvas Boards</p>
-              <h1 className="splash-left__title">Welcome back</h1>
+              <h1 className="splash-left__title">Where ideas take shape.</h1>
               <p className="splash-left__subtitle">
-                Sign in with Nostr to open your workspaces. Shared boards still work by link.
+                An infinite canvas for ideas, planning, and collaboration.
               </p>
             </div>
           </div>
