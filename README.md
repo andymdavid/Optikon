@@ -1,51 +1,104 @@
-# Do the Other Stuff
+# Optikon
 
-Minimal todo tracker powered by Bun, TypeScript, and SQLite. Runs as a single Bun server that renders HTML directly, so applying a custom skin is just a matter of swapping out styles.
+Miro-like infinite canvas application focused on realtime collaboration, drawing, and structured boards. This codebase is actively evolving and is not production-ready.
 
-## Getting started
+## What this project is
+
+- An infinite canvas with shared board state.
+- Emphasis on realtime collaboration (presence + live updates).
+- Boards are structured objects (metadata + persisted elements), not just ad-hoc local sketches.
+
+## Architecture overview
+
+- Frontend: React + a Canvas-based renderer.
+- Core canvas: `frontend/src/components/CanvasBoard.tsx`.
+- Backend: Bun server + SQLite in `src/server.ts` and `src/db.ts`.
+- Realtime: WebSockets at `/ws` broadcast element updates and cursor presence.
+- Persistence: board and element state is stored server-side in SQLite.
+
+Useful starting points:
+
+- `frontend/src/components/CanvasBoard.tsx`
+- `frontend/src/pages/BoardsHome.tsx`
+- `frontend/src/pages/CanvasPage.tsx`
+- `src/server.ts`
+- `src/routes/boards.ts`
+- `src/services/boards.ts`
+- `src/shared/boardElements.ts`
+- `docs/structure.md`
+- `docs/data_model.md`
+
+## Board model and persistence
+
+- Boards are identified by numeric IDs.
+- Board list: `/`
+- Board canvas: `/b/:boardId`
+- Boards and elements are loaded from the server via `/boards` and `/boards/:id/elements`.
+- Board metadata includes `last_accessed_at`, `updated_at`, `starred`, `archived_at`, and ownership/default role fields.
+- Board element data is persisted per board in SQLite (`board_elements`).
+- Board state is not stored in `localStorage` (aside from small UX helpers like "recent board").
+
+## Canvas concepts (high level)
+
+- Shared schema: `BoardElement` in `src/shared/boardElements.ts` (shapes, text, sticky notes, frames, lines/connectors, images, comments, free draw).
+- Camera model: pan via camera offsets and zoom via a scalar zoom factor.
+- Tool modes (examples): select, shapes, text, connectors, comments, and drawing/eraser flows.
+- Orthogonal connectors exist (`orthogonal`, elbow variants/offsets), but routing is still evolving.
+
+## Auth and identity (current state)
+
+- Authentication is Nostr-based (signed login events).
+- Sessions are cookie-based (`nostr_session`).
+- Session records are currently persisted in SQLite (`sessions` table).
+- Identity is only partially wired into canvas features (for example, element authorship/comment identity is still shallow).
+
+Relevant files:
+
+- `src/services/auth.ts`
+- `frontend/src/components/account/NostrLoginModal.tsx`
+
+## Running locally
+
+Prerequisites:
+
+- Bun 1.x
+- Ports `3025` (backend) and `5510` (frontend) available
+
+Install dependencies from the repo root:
 
 ```bash
 bun install
-PORT=4000 bun start
 ```
 
-`bun start` runs `src/server.ts`, which boots `Bun.serve` on `PORT` (defaults to `3025`). The app creates `do-the-other-stuff.sqlite` the first time it runs.
+Run both backend and frontend in dev mode:
 
-## Features
-
-- Add todos with the input at the top of the page.
-- Toggle completion using the `Done` / `Undo` button next to each item.
-- Remove items entirely with `Delete`.
-- Remaining count updates automatically based on completed items.
-
-The UI is intentionally unstyled beyond a bare minimum so you can drop in any look you want.
-
-## Skinning approach
-
-Everything renders from `renderPage` in `src/server.ts`. The markup uses consistent hooks:
-
-- `.app-shell`: Wraps the entire interface.
-- `.todo-form`, `.todo-list`, `.todo-item`, `.todo-title`, `.actions`: Provide structure for layout tweaks.
-- `.done` class sits on completed `li` items.
-
-To build a custom skin you can:
-
-1. Copy the `<style>` block in `renderPage` into a separate CSS file.
-2. Replace the inline styles with `<link rel="stylesheet" href="/app.css" />` and serve static assets any way you prefer (e.g., add a tiny `Bun.file` handler).
-3. Adjust typography, colors, spacing, or even replace the markup while keeping the form routes (`/todos`, `/todos/:id/toggle`, `/todos/:id/delete`) intact.
-
-Because the app is framework-free HTML, you can also render from a template engine or component system later without changing the persistence layer.
-
-## Development helpers
-
-- `bun start` runs the Bun backend only (`bun --hot run src/server.ts`).
-- `bun run dev` from the repo root launches both servers: backend at http://localhost:3025 and the Vite frontend at http://localhost:5510. Visit the Vite URL during development to use the Canvas UI.
-- `bun run reset-db` removes the SQLite file if you want to start fresh.
-
-## Folder layout
-
+```bash
+bun run dev
 ```
-src/
-  db.ts        // sqlite helpers
-  server.ts    // Bun HTTP server + HTML rendering
+
+Notes:
+
+- Backend: `http://localhost:3025`
+- Frontend (Vite): `http://localhost:5510`
+- The frontend currently targets `http://localhost:3025` directly in `frontend/src/App.tsx`.
+- SQLite defaults to `do-the-other-stuff.sqlite` in the repo root.
+- To reset the database:
+
+```bash
+bun run reset-db
+```
+
+## Development checks
+
+From the repo root:
+
+```bash
+bun run lint
+bun test
+```
+
+TypeScript checking for the frontend is part of the frontend build:
+
+```bash
+bun run --cwd frontend build
 ```
