@@ -14,7 +14,12 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
-import { fetchProfilePicture, getAvatarFallback } from './canvas/nostrProfiles'
+import {
+  fetchProfile,
+  fetchProfilePicture,
+  formatProfileName,
+  getAvatarFallback,
+} from './canvas/nostrProfiles'
 import {
   STICKY_FONT_FAMILY,
   TEXT_COLOR,
@@ -98,6 +103,15 @@ export type CameraState = {
 }
 
 type ElementMap = Record<string, BoardElement>
+
+type RemoteCursor = {
+  pubkey: string
+  npub: string
+  label: string
+  color: string
+  boardPoint: { x: number; y: number }
+  updatedAt: number
+}
 
 const initialCameraState: CameraState = {
   offsetX: 0,
@@ -1190,6 +1204,8 @@ function rectsIntersect(a: Rect, b: Rect) {
 const DRAG_THROTTLE_MS = 50
 const MIN_ZOOM = 0.01
 const MAX_ZOOM = 4
+const CURSOR_STALE_MS = 8000
+const CURSOR_COLORS = ['#0ea5e9', '#ef4444', '#22c55e', '#f59e0b', '#6366f1', '#14b8a6'] as const
 
 function logInbound(message: unknown) {
   console.log('[ws in]', message)
@@ -1474,6 +1490,25 @@ function logOutbound(message: unknown) {
 
 function randomId() {
   return Math.random().toString(36).slice(2, 10)
+}
+
+function hashString(value: string) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
+
+function cursorColorForPubkey(pubkey: string) {
+  if (!pubkey) return CURSOR_COLORS[0]
+  return CURSOR_COLORS[hashString(pubkey) % CURSOR_COLORS.length]
+}
+
+function shortenNpub(npub: string) {
+  if (!npub) return 'anon'
+  if (npub.length <= 12) return npub
+  return `${npub.slice(0, 8)}\u2026${npub.slice(-4)}`
 }
 
 function cloneElementForPaste(
@@ -3589,6 +3624,9 @@ export function CanvasBoard({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
+  const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({})
+  const cursorLabelsRef = useRef(new Map<string, string>())
+  const cursorLabelInFlightRef = useRef(new Map<string, Promise<string>>())
   const dragStateRef = useRef<
     | {
         ids: string[]
@@ -4336,6 +4374,34 @@ export function CanvasBoard({
       socket.send(JSON.stringify(message))
     },
     [boardId, session]
+  )
+  const resolveCursorLabel = useCallback(
+    (pubkey: string, npub: string) => {
+      if (!pubkey) return
+      const cached = cursorLabelsRef.current.get(pubkey)
+      if (cached) return
+      if (cursorLabelInFlightRef.current.has(pubkey)) return
+      const task = (async () => {
+        const profile = await fetchProfile(pubkey)
+        const formatted = formatProfileName(profile)
+        const label = formatted ?? shortenNpub(npub)
+        cursorLabelsRef.current.set(pubkey, label)
+        setRemoteCursors((prev) => {
+          const existing = prev[pubkey]
+          if (!existing) return prev
+          return {
+            ...prev,
+            [pubkey]: { ...existing, label },
+          }
+        })
+        return label
+      })()
+      cursorLabelInFlightRef.current.set(pubkey, task)
+      void task.finally(() => {
+        cursorLabelInFlightRef.current.delete(pubkey)
+      })
+    },
+    []
   )
 
   const persistElementsUpdate = useCallback(
@@ -7767,6 +7833,31 @@ export function CanvasBoard({
                 return next
               })
             }
+          } else if (parsed?.type === 'cursorMove') {
+            const payload = parsed.payload as {
+              boardPoint?: { x?: unknown; y?: unknown }
+              user?: { pubkey?: unknown; npub?: unknown } | null
+            }
+            const point = payload.boardPoint
+            const user = payload.user
+            if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') return
+            if (!user || typeof user.pubkey !== 'string' || typeof user.npub !== 'string') return
+            if (session?.pubkey && user.pubkey === session.pubkey) return
+            const label = cursorLabelsRef.current.get(user.pubkey) ?? shortenNpub(user.npub)
+            const color = cursorColorForPubkey(user.pubkey)
+            const nextCursor: RemoteCursor = {
+              pubkey: user.pubkey,
+              npub: user.npub,
+              label,
+              color,
+              boardPoint: { x: point.x, y: point.y },
+              updatedAt: Date.now(),
+            }
+            setRemoteCursors((prev) => ({
+              ...prev,
+              [user.pubkey]: nextCursor,
+            }))
+            resolveCursorLabel(user.pubkey, user.npub)
           } else if (parsed?.type === 'elementsDelete') {
             const ids = (parsed.payload as { ids?: unknown })?.ids
             if (Array.isArray(ids)) {
@@ -7818,7 +7909,7 @@ export function CanvasBoard({
       }
       socket.close()
     }
-  }, [boardError, boardId, removeElements, sendElementUpdate, upsertElement, session])
+  }, [boardError, boardId, removeElements, resolveCursorLabel, sendElementUpdate, upsertElement, session])
 
   useEffect(() => {
     if (!boardId) return
@@ -7835,6 +7926,29 @@ export function CanvasBoard({
     logOutbound(joinPayload)
     socket.send(JSON.stringify(joinPayload))
   }, [boardId, session])
+  useEffect(() => {
+    setRemoteCursors({})
+  }, [boardId])
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const cutoff = Date.now() - CURSOR_STALE_MS
+      setRemoteCursors((prev) => {
+        let changed = false
+        const next: Record<string, RemoteCursor> = {}
+        Object.entries(prev).forEach(([key, cursor]) => {
+          if (cursor.updatedAt >= cutoff) {
+            next[key] = cursor
+          } else {
+            changed = true
+          }
+        })
+        return changed ? next : prev
+      })
+    }, 1000)
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -8253,6 +8367,13 @@ export function CanvasBoard({
     hoveredLinkElementRef.current = null
     setHoveredLinkElement(null)
   }, [])
+  const remoteCursorEntries = useMemo(() => {
+    return Object.values(remoteCursors).map((cursor) => {
+      const screenX = (cursor.boardPoint.x + cameraState.offsetX) * cameraState.zoom
+      const screenY = (cursor.boardPoint.y + cameraState.offsetY) * cameraState.zoom
+      return { ...cursor, screenX, screenY }
+    })
+  }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, remoteCursors])
 
   const showFloatingToolbar =
     selectedIds.size > 0 &&
@@ -8298,6 +8419,58 @@ export function CanvasBoard({
         style={{ display: 'none' }}
         onChange={handleAttachmentInputChange}
       />
+      {remoteCursorEntries.length > 0 && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 20,
+          }}
+        >
+          {remoteCursorEntries.map((cursor) => (
+            <div
+              key={cursor.pubkey}
+              style={{
+                position: 'absolute',
+                transform: `translate(${cursor.screenX}px, ${cursor.screenY}px)`,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 4,
+              }}
+            >
+              <div
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: '6px solid transparent',
+                  borderRight: '6px solid transparent',
+                  borderBottom: `12px solid ${cursor.color}`,
+                  transform: 'rotate(-20deg) translate(-4px, -8px)',
+                  filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.25))',
+                }}
+              />
+              <div
+                style={{
+                  background: cursor.color,
+                  color: '#ffffff',
+                  padding: '3px 8px',
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  boxShadow: '0 4px 10px rgba(15, 23, 42, 0.15)',
+                  whiteSpace: 'nowrap',
+                  transform: 'translate(6px, -6px)',
+                }}
+              >
+                {cursor.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <ToolRail
         toolMode={toolMode}
         onToolModeChange={setToolMode}
