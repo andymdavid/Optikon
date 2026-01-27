@@ -4309,6 +4309,34 @@ export function CanvasBoard({
     },
     [boardId]
   )
+  const cursorThrottleRef = useRef<{ lastSentAt: number; lastPoint: { x: number; y: number } | null }>({
+    lastSentAt: 0,
+    lastPoint: null,
+  })
+  const sendCursorMove = useCallback(
+    (point: { x: number; y: number }) => {
+      const socket = socketRef.current
+      if (!socket || socket.readyState !== WebSocket.OPEN || !joinedRef.current || !boardId) return
+      const now = Date.now()
+      const throttleMs = 60
+      const lastSentAt = cursorThrottleRef.current.lastSentAt
+      const lastPoint = cursorThrottleRef.current.lastPoint
+      const movedEnough = !lastPoint || Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) >= 2
+      if (!movedEnough && now - lastSentAt < throttleMs) return
+      if (now - lastSentAt < throttleMs) return
+      cursorThrottleRef.current = { lastSentAt: now, lastPoint: point }
+      const message = {
+        type: 'cursorMove',
+        payload: {
+          boardId,
+          boardPoint: point,
+          user: session ? { pubkey: session.pubkey, npub: session.npub } : null,
+        },
+      }
+      socket.send(JSON.stringify(message))
+    },
+    [boardId, session]
+  )
 
   const persistElementsUpdate = useCallback(
     async (board: string, elementsToPersist: BoardElement[]) => {
@@ -6224,11 +6252,12 @@ export function CanvasBoard({
       const mode = interactionModeRef.current
       const rect = event.currentTarget.getBoundingClientRect()
       const canvasPoint = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      const boardPoint = screenToBoard(canvasPoint)
 
       if (editingStateRef.current || isCommentEditing) return
+      sendCursorMove(boardPoint)
       if (toolMode === 'line') {
         const anchorHit = hitTestConnectorAnchor(canvasPoint)
-        const boardPoint = screenToBoard(canvasPoint)
         const hitId = hitTestElement(boardPoint.x, boardPoint.y)
         const hitElement = hitId ? elements[hitId] : null
         let nextHovered =
@@ -6875,6 +6904,7 @@ export function CanvasBoard({
       isCommentEditing,
       hoveredConnectorElementId,
       screenToBoard,
+      sendCursorMove,
       sendElementsUpdate,
       setMarquee,
       toolMode,
