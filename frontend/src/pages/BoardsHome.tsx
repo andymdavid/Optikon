@@ -185,6 +185,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [filterBy, setFilterBy] = useState<'all' | 'starred'>('all')
   const [ownedBy, setOwnedBy] = useState<'anyone' | 'me' | 'not-me'>('anyone')
   const [sortBy, setSortBy] = useState<'last-opened' | 'last-modified' | 'last-created' | 'alpha'>('last-opened')
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [ownedOpen, setOwnedOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
   const importInputRef = useRef<HTMLInputElement | null>(null)
@@ -1061,7 +1064,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const BoardsFilters = () => (
     <div className="mt-6 flex flex-wrap items-center gap-3">
       <span className="text-[13px] text-slate-500">Filter by</span>
-      <Select value={filterBy} onValueChange={(value) => setFilterBy(value as typeof filterBy)}>
+      <Select
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        value={filterBy}
+        onValueChange={(value) => {
+          setFilterBy(value as typeof filterBy)
+          setFilterOpen(false)
+        }}
+      >
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="All boards" />
         </SelectTrigger>
@@ -1070,7 +1081,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <SelectItem value="starred">Starred</SelectItem>
         </SelectContent>
       </Select>
-      <Select value={ownedBy} onValueChange={(value) => setOwnedBy(value as typeof ownedBy)}>
+      <Select
+        open={ownedOpen}
+        onOpenChange={setOwnedOpen}
+        value={ownedBy}
+        onValueChange={(value) => {
+          setOwnedBy(value as typeof ownedBy)
+          setOwnedOpen(false)
+        }}
+      >
         <SelectTrigger className="w-[160px]">
           <SelectValue placeholder="Owned by anyone" />
         </SelectTrigger>
@@ -1081,7 +1100,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         </SelectContent>
       </Select>
       <span className="ml-3 text-[13px] text-slate-500">Sort by</span>
-      <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
+      <Select
+        open={sortOpen}
+        onOpenChange={setSortOpen}
+        value={sortBy}
+        onValueChange={(value) => {
+          setSortBy(value as typeof sortBy)
+          setSortOpen(false)
+        }}
+      >
         <SelectTrigger className="w-[140px]">
           <SelectValue placeholder="Last opened" />
         </SelectTrigger>
