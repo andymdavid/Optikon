@@ -233,44 +233,85 @@ export function NostrLoginCard({
           {busyMethod === 'ephemeral' ? 'Signing in…' : 'Sign Up'}
         </button>
       </div>
-      <details className="nostr-login-advanced" open={advancedOpen}>
-        <summary>Advanced options</summary>
-        <p>Use a browser extension or connect to a remote bunker.</p>
-        <button
-          className="nostr-login-option"
-          type="button"
-          onClick={() => void runLogin('extension')}
-          disabled={isBusy}
-        >
-          {busyMethod === 'extension' ? 'Signing in…' : 'Browser extension'}
-        </button>
-        <form className="nostr-login-form" onSubmit={handleBunkerSubmit}>
-          <input
-            className="nostr-login-input"
-            name="bunker"
-            value={bunkerValue}
-            onChange={(event) => setBunkerValue(event.target.value)}
-            placeholder="nostrconnect://… or name@example.com"
-            autoComplete="off"
-          />
-          <button className="nostr-login-submit" type="submit" disabled={isBusy}>
-            {busyMethod === 'bunker' ? 'Connecting…' : 'Connect bunker'}
+      {advancedOpen ? (
+        <div className="nostr-login-advanced" aria-label="Advanced options">
+          <div className="nostr-login-advanced__title">Advanced options</div>
+          <p>Use a browser extension or connect to a remote bunker.</p>
+          <button
+            className="nostr-login-option"
+            type="button"
+            onClick={() => void runLogin('extension')}
+            disabled={isBusy}
+          >
+            {busyMethod === 'extension' ? 'Signing in…' : 'Browser extension'}
           </button>
-        </form>
-        <form className="nostr-login-form" onSubmit={handleSecretSubmit}>
-          <input
-            className="nostr-login-input"
-            name="secret"
-            value={secretValue}
-            onChange={(event) => setSecretValue(event.target.value)}
-            placeholder="nsec1…"
-            autoComplete="off"
-          />
-          <button className="nostr-login-submit" type="submit" disabled={isBusy}>
-            {busyMethod === 'secret' ? 'Signing in…' : 'Sign in with secret'}
+          <form className="nostr-login-form" onSubmit={handleBunkerSubmit}>
+            <input
+              className="nostr-login-input"
+              name="bunker"
+              value={bunkerValue}
+              onChange={(event) => setBunkerValue(event.target.value)}
+              placeholder="nostrconnect://… or name@example.com"
+              autoComplete="off"
+            />
+            <button className="nostr-login-submit" type="submit" disabled={isBusy}>
+              {busyMethod === 'bunker' ? 'Connecting…' : 'Connect bunker'}
+            </button>
+          </form>
+          <form className="nostr-login-form" onSubmit={handleSecretSubmit}>
+            <input
+              className="nostr-login-input"
+              name="secret"
+              value={secretValue}
+              onChange={(event) => setSecretValue(event.target.value)}
+              placeholder="nsec1…"
+              autoComplete="off"
+            />
+            <button className="nostr-login-submit" type="submit" disabled={isBusy}>
+              {busyMethod === 'secret' ? 'Signing in…' : 'Sign in with secret'}
+            </button>
+          </form>
+        </div>
+      ) : (
+        <details className="nostr-login-advanced">
+          <summary>Advanced options</summary>
+          <p>Use a browser extension or connect to a remote bunker.</p>
+          <button
+            className="nostr-login-option"
+            type="button"
+            onClick={() => void runLogin('extension')}
+            disabled={isBusy}
+          >
+            {busyMethod === 'extension' ? 'Signing in…' : 'Browser extension'}
           </button>
-        </form>
-      </details>
+          <form className="nostr-login-form" onSubmit={handleBunkerSubmit}>
+            <input
+              className="nostr-login-input"
+              name="bunker"
+              value={bunkerValue}
+              onChange={(event) => setBunkerValue(event.target.value)}
+              placeholder="nostrconnect://… or name@example.com"
+              autoComplete="off"
+            />
+            <button className="nostr-login-submit" type="submit" disabled={isBusy}>
+              {busyMethod === 'bunker' ? 'Connecting…' : 'Connect bunker'}
+            </button>
+          </form>
+          <form className="nostr-login-form" onSubmit={handleSecretSubmit}>
+            <input
+              className="nostr-login-input"
+              name="secret"
+              value={secretValue}
+              onChange={(event) => setSecretValue(event.target.value)}
+              placeholder="nsec1…"
+              autoComplete="off"
+            />
+            <button className="nostr-login-submit" type="submit" disabled={isBusy}>
+              {busyMethod === 'secret' ? 'Signing in…' : 'Sign in with secret'}
+            </button>
+          </form>
+        </details>
+      )}
       {error && <p className="nostr-login-error">{error}</p>}
     </section>
   )

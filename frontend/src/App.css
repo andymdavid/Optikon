@@ -317,6 +317,13 @@ body,
   font-size: 1.1rem;
 }
 
+.nostr-login-advanced__title {
+  color: #2f2f2f;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.35rem;
+}
+
 .nostr-login-advanced p {
   margin: 0.75rem 0 1rem;
   color: #5b6472;
