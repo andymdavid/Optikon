@@ -156,7 +156,7 @@ function handleCanvasMessage(ws: ServerWebSocket<WebSocketData>, message: Canvas
       break;
     }
     case "cursorMove": {
-      // TODO: implement realtime handling
+      handleCursorMove(ws, message.payload);
       break;
     }
     case "elementsDelete": {
@@ -306,6 +306,47 @@ function handleElementsDelete(ws: ServerWebSocket<WebSocketData>, payload: unkno
     recipients += 1;
   }
   console.log(`[ws] elementsDelete board=${boardId} recipients=${recipients}`);
+}
+
+function handleCursorMove(ws: ServerWebSocket<WebSocketData>, payload: unknown) {
+  const boardId = ws.data.boardId;
+  if (!boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Must joinBoard first" } });
+    return;
+  }
+  const typedPayload = payload as {
+    boardId?: string;
+    boardPoint?: { x?: unknown; y?: unknown };
+    user?: { pubkey?: unknown; npub?: unknown } | null;
+  } | null;
+  if (!typedPayload?.boardId || typedPayload.boardId !== boardId) {
+    sendJson(ws, { type: "error", payload: { message: "Board mismatch" } });
+    return;
+  }
+  const point = typedPayload.boardPoint;
+  if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
+    return;
+  }
+  const presenceUser = extractPresenceUser(typedPayload);
+  if (presenceUser) {
+    ws.data.presenceUser = presenceUser;
+  }
+  const sockets = boardSockets.get(boardId);
+  if (!sockets) return;
+  const payloadUser = ws.data.presenceUser ?? (ws.data.session
+    ? { pubkey: ws.data.session.pubkey, npub: ws.data.session.npub }
+    : null);
+  const message = JSON.stringify({
+    type: "cursorMove",
+    payload: { boardId, boardPoint: { x: point.x, y: point.y }, user: payloadUser },
+  });
+  let recipients = 0;
+  for (const peer of sockets) {
+    if (peer === ws) continue;
+    peer.send(message);
+    recipients += 1;
+  }
+  console.log(`[ws] cursorMove board=${boardId} recipients=${recipients}`);
 }
 
 const websocketHandler: WebSocketHandler<WebSocketData> = {
