@@ -114,7 +114,7 @@ describe("board access", () => {
     expect(boardAccess.canViewBoard(board!, otherSession)).toBe(false);
   });
 
-  test("members can access private boards with assigned role", () => {
+  test("private boards remain owner-only even with board members", () => {
     const board = boards.createBoardRecord(
       "Private Members",
       null,
@@ -130,8 +130,8 @@ describe("board access", () => {
       method: "ephemeral" as const,
       createdAt: Date.now(),
     };
-    expect(boardAccess.canViewBoard(board!, memberSession)).toBe(true);
-    expect(boardAccess.resolveBoardRole(board!, memberSession)).toBe("commenter");
+    expect(boardAccess.canViewBoard(board!, memberSession)).toBe(false);
+    expect(boardAccess.resolveBoardRole(board!, memberSession)).toBe("viewer");
   });
 
   test("export requires editor or owner", () => {

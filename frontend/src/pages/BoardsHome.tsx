@@ -1,4 +1,5 @@
 import {
+  Building2,
   Cloud,
   FileText,
   Lock,
@@ -7,6 +8,7 @@ import {
   Plus,
   Search,
   Star,
+  UserPlus,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -56,6 +58,7 @@ type BoardSummary = {
   onlineUsers?: Array<{ pubkey: string; npub: string }>
   defaultRole?: 'viewer' | 'commenter' | 'editor'
   isPrivate?: boolean
+  workspaceId?: number | null
 }
 
 type BoardMember = {
@@ -65,9 +68,19 @@ type BoardMember = {
   createdAt: string
 }
 
+type WorkspaceSummary = {
+  id: number
+  title: string
+  isPersonal: boolean
+  ownerPubkey: string | null
+}
+
+const LAST_WORKSPACE_KEY = 'optikon:last-workspace-id'
+
 const normalizeBoard = (board: BoardSummary): BoardSummary => ({
   ...board,
   isPrivate: Boolean(board.isPrivate),
+  workspaceId: typeof board.workspaceId === 'number' && Number.isFinite(board.workspaceId) ? board.workspaceId : null,
 })
 
 const boardIcons = [
@@ -158,6 +171,15 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState<{ pubkey: string; npub: string } | null>(null)
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([])
+  const [workspacesLoading, setWorkspacesLoading] = useState(false)
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null)
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const [workspaceCreateOpen, setWorkspaceCreateOpen] = useState(false)
+  const [workspaceTitleDraft, setWorkspaceTitleDraft] = useState('')
+  const [workspaceSaving, setWorkspaceSaving] = useState(false)
+  const [workspaceInviteOpen, setWorkspaceInviteOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
@@ -189,6 +211,17 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
+  const workspaceById = useMemo(() => {
+    const next = new Map<number, WorkspaceSummary>()
+    workspaces.forEach((workspace) => {
+      next.set(workspace.id, workspace)
+    })
+    return next
+  }, [workspaces])
+
+  const selectedWorkspace =
+    selectedWorkspaceId != null ? workspaceById.get(Number(selectedWorkspaceId)) ?? null : null
+
   const filteredBoards = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     const sessionPubkey = session?.pubkey ?? null
@@ -198,6 +231,10 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       return Number.isFinite(parsed) ? parsed : 0
     }
     let next = boards.slice()
+    if (selectedWorkspaceId) {
+      const workspaceId = Number(selectedWorkspaceId)
+      next = next.filter((board) => board.workspaceId === workspaceId)
+    }
     if (filterBy === 'starred') {
       next = next.filter((board) => board.starred === 1)
     }
@@ -222,7 +259,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       return toMs(b.lastAccessedAt) - toMs(a.lastAccessedAt)
     })
     return next
-  }, [boards, filterBy, ownedBy, searchQuery, session?.pubkey, sortBy])
+  }, [boards, filterBy, ownedBy, searchQuery, selectedWorkspaceId, session?.pubkey, sortBy])
 
   const handleRowOpen = (id: number | string, isEditing: boolean) => {
     if (isEditing) return
@@ -231,6 +268,11 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const loadBoards = useCallback(
     async (signal?: AbortSignal) => {
+      if (!session?.pubkey) {
+        setBoards([])
+        setLoading(false)
+        return
+      }
       setLoading(true)
       try {
         const response = await fetch(`${apiBaseUrl}/boards`, {
@@ -248,7 +290,36 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (!signal?.aborted) setLoading(false)
       }
     },
-    [apiBaseUrl]
+    [apiBaseUrl, session?.pubkey]
+  )
+
+  const loadWorkspaces = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!session?.pubkey) {
+        setWorkspaces([])
+        setSelectedWorkspaceId(null)
+        setWorkspacesLoading(false)
+        return
+      }
+      setWorkspacesLoading(true)
+      setWorkspacesError(null)
+      try {
+        const response = await fetch(`${apiBaseUrl}/workspaces`, {
+          signal,
+          credentials: 'include',
+        })
+        if (!response.ok) throw new Error('Failed to load workspaces')
+        const data = (await response.json()) as { workspaces?: WorkspaceSummary[] }
+        setWorkspaces(data.workspaces ?? [])
+      } catch (_err) {
+        if (signal?.aborted) return
+        setWorkspacesError('Unable to load workspaces.')
+        setWorkspaces([])
+      } finally {
+        if (!signal?.aborted) setWorkspacesLoading(false)
+      }
+    },
+    [apiBaseUrl, session?.pubkey]
   )
 
   useEffect(() => {
@@ -268,17 +339,63 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         if (!cancelled) setSession(data)
       } catch (_err) {
         if (!cancelled) setSession(null)
+      } finally {
+        if (!cancelled) setSessionLoading(false)
       }
     }
     void loadSession()
-    void loadBoards(controller.signal)
     return () => {
       cancelled = true
       controller.abort()
     }
-  }, [apiBaseUrl, loadBoards])
+  }, [apiBaseUrl])
 
   useEffect(() => {
+    if (sessionLoading) return
+    const controller = new AbortController()
+    void loadWorkspaces(controller.signal)
+    void loadBoards(controller.signal)
+    return () => controller.abort()
+  }, [loadBoards, loadWorkspaces, sessionLoading])
+
+  useEffect(() => {
+    if (!session?.pubkey) {
+      setSelectedWorkspaceId(null)
+      return
+    }
+    if (workspaces.length === 0) return
+    const workspaceIds = new Set(workspaces.map((workspace) => workspace.id))
+    if (selectedWorkspaceId && workspaceIds.has(Number(selectedWorkspaceId))) {
+      return
+    }
+    let nextId: number | null = null
+    try {
+      const stored = window.localStorage.getItem(LAST_WORKSPACE_KEY)
+      if (stored) {
+        const parsed = Number(stored)
+        if (Number.isFinite(parsed) && workspaceIds.has(parsed)) {
+          nextId = parsed
+        }
+      }
+    } catch (_err) {}
+    if (nextId == null) {
+      const personal = workspaces.find(
+        (workspace) => workspace.isPersonal && workspace.ownerPubkey === session.pubkey
+      )
+      nextId = personal?.id ?? workspaces[0]?.id ?? null
+    }
+    setSelectedWorkspaceId(nextId != null ? String(nextId) : null)
+  }, [selectedWorkspaceId, session?.pubkey, workspaces])
+
+  useEffect(() => {
+    if (!selectedWorkspaceId) return
+    try {
+      window.localStorage.setItem(LAST_WORKSPACE_KEY, selectedWorkspaceId)
+    } catch (_err) {}
+  }, [selectedWorkspaceId])
+
+  useEffect(() => {
+    if (!session?.pubkey) return
     let cancelled = false
     const pollPresence = async () => {
       try {
@@ -309,7 +426,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [apiBaseUrl])
+  }, [apiBaseUrl, session?.pubkey])
 
   useEffect(() => {
     let cancelled = false
@@ -359,12 +476,16 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       setLoginOpen(true)
       return
     }
+    if (!selectedWorkspaceId) {
+      setError('Select a workspace before creating a board.')
+      return
+    }
     try {
       const response = await fetch(`${apiBaseUrl}/boards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ workspaceId: Number(selectedWorkspaceId) }),
       })
       if (!response.ok) throw new Error('Failed to create board')
       const data = (await response.json()) as { id?: number | string }
@@ -399,6 +520,35 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       navigate(`/b/${data.id}`)
     } catch (_err) {
       setError('Unable to import board.')
+    }
+  }
+
+  const handleCreateWorkspace = async () => {
+    if (!session) {
+      setLoginOpen(true)
+      return
+    }
+    if (workspaceSaving) return
+    setWorkspaceSaving(true)
+    setWorkspacesError(null)
+    try {
+      const response = await fetch(`${apiBaseUrl}/workspaces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: workspaceTitleDraft }),
+      })
+      if (!response.ok) throw new Error('Failed to create workspace')
+      const created = (await response.json()) as WorkspaceSummary
+      setWorkspaces((prev) => [created, ...prev])
+      setSelectedWorkspaceId(String(created.id))
+      setWorkspaceTitleDraft('')
+      setWorkspaceCreateOpen(false)
+      void loadBoards()
+    } catch (_err) {
+      setWorkspacesError('Unable to create workspace.')
+    } finally {
+      setWorkspaceSaving(false)
     }
   }
 
@@ -748,8 +898,106 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const handleSessionChange = (nextSession: { pubkey: string; npub: string } | null) => {
     setSession(nextSession)
+    if (!nextSession) {
+      setWorkspaces([])
+      setSelectedWorkspaceId(null)
+      setBoards([])
+      setLoading(false)
+      return
+    }
+    void loadWorkspaces()
     void loadBoards()
   }
+
+  const workspaceCreateModal = workspaceCreateOpen ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={() => setWorkspaceCreateOpen(false)}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Create workspace</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Workspaces group boards and members.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setWorkspaceCreateOpen(false)}
+            aria-label="Close create workspace dialog"
+          >
+            <X size={18} className="text-slate-500" />
+          </Button>
+        </div>
+        <div className="mt-5 space-y-2">
+          <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Workspace name
+          </label>
+          <Input
+            placeholder="Design team"
+            value={workspaceTitleDraft}
+            onChange={(event) => setWorkspaceTitleDraft(event.target.value)}
+            disabled={workspaceSaving}
+          />
+        </div>
+        {workspacesError && (
+          <p className="mt-3 text-xs text-rose-600">{workspacesError}</p>
+        )}
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setWorkspaceCreateOpen(false)} disabled={workspaceSaving}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleCreateWorkspace()} disabled={workspaceSaving}>
+            Create workspace
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const workspaceInviteModal = workspaceInviteOpen ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={() => setWorkspaceInviteOpen(false)}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Invite to workspace</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Workspace invites are not wired yet.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setWorkspaceInviteOpen(false)}
+            aria-label="Close invite workspace dialog"
+          >
+            <X size={18} className="text-slate-500" />
+          </Button>
+        </div>
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+          Use board sharing from the ellipses menu for now. Inviting to a workspace will come later.
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button onClick={() => setWorkspaceInviteOpen(false)}>Close</Button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   const shareModal = shareBoard ? (() => {
     const shareUrl = `${window.location.origin}/b/${shareBoard.id}`
@@ -1437,6 +1685,48 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
     </div>
   )
 
+  if (sessionLoading) {
+    return (
+      <div className="boards-home mx-auto max-w-[90%] py-16 text-slate-900">
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-slate-400"></div>
+          Loading session…
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="boards-home mx-auto flex min-h-[60vh] max-w-[90%] flex-col justify-center py-16 text-slate-900">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-base font-semibold text-white">
+            O
+          </div>
+          <div>
+            <div className="text-lg font-semibold text-slate-900">Optikon</div>
+            <div className="text-xs text-slate-500">Infinite canvas boards</div>
+          </div>
+        </div>
+        <div className="mt-6 max-w-xl space-y-3">
+          <h1 className="text-2xl font-semibold text-slate-900">Sign in to view your workspaces</h1>
+          <p className="text-sm text-slate-600">
+            Boards Home is now workspace-scoped. Public boards can still be opened by link.
+          </p>
+        </div>
+        <div className="mt-6">
+          <AccountMenu
+            apiBaseUrl={apiBaseUrl}
+            session={session}
+            onSessionChange={handleSessionChange}
+            loginOpen={loginOpen}
+            onLoginOpenChange={setLoginOpen}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="boards-home mx-auto max-w-[90%] py-10 text-slate-900">
       <input
@@ -1446,14 +1736,71 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
         className="hidden"
         onChange={handleImportChange}
       />
+      {workspaceCreateModal}
+      {workspaceInviteModal}
       {shareModal}
       {detailsModal}
-      <header>
-        <h1 className="text-xl font-medium text-slate-800">Boards in this team</h1>
+      <header className="mb-6 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
+              O
+            </div>
+            <div>
+              <div className="text-base font-semibold text-slate-900">Optikon</div>
+              <div className="text-xs text-slate-500">
+                {selectedWorkspace ? selectedWorkspace.title : 'Workspace boards'}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Select
+              value={selectedWorkspaceId ?? undefined}
+              onValueChange={(value) => setSelectedWorkspaceId(value)}
+              disabled={workspacesLoading || workspaces.length === 0}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder={workspacesLoading ? 'Loading workspaces…' : 'Select workspace'} />
+              </SelectTrigger>
+              <SelectContent>
+                {workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={String(workspace.id)}>
+                    {workspace.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() => {
+                setWorkspaceTitleDraft('')
+                setWorkspaceCreateOpen(true)
+              }}
+            >
+              <Building2 size={16} />
+              Create workspace
+            </Button>
+            <Button onClick={() => setWorkspaceInviteOpen(true)}>
+              <UserPlus size={16} />
+              Invite to workspace
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="text-xl font-medium text-slate-800">
+            {selectedWorkspace ? `Boards in ${selectedWorkspace.title}` : 'Boards'}
+          </h1>
+          {workspacesError && <p className="text-xs text-rose-600">{workspacesError}</p>}
+        </div>
       </header>
       <BoardsFilters />
       {error && <p className="mt-4 text-sm text-rose-600">{error}</p>}
-      {loading ? <BoardsSkeleton /> : boards.length === 0 ? <BoardsEmpty /> : <BoardsTable />}
+      {loading ? (
+        <BoardsSkeleton />
+      ) : filteredBoards.length === 0 ? (
+        <BoardsEmpty />
+      ) : (
+        <BoardsTable />
+      )}
     </div>
   )
 }

@@ -45,6 +45,7 @@ import {
   unarchiveBoardRecord,
   updateBoardElementRecord,
 } from "../services/boards";
+import { isWorkspaceMember, listWorkspacesForSession } from "../services/workspaces";
 
 import type { Board } from "../services/boards";
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
@@ -69,10 +70,31 @@ export async function handleBoardCreate(req: Request, session: Session | null) {
     title?: string;
     description?: string;
     isPrivate?: boolean;
+    workspaceId?: number;
   } | null;
   const owner = session ? { pubkey: session.pubkey, npub: session.npub } : null;
   const isPrivate = body?.isPrivate === true ? 1 : 0;
-  const board = createBoardRecord(body?.title ?? null, body?.description ?? null, owner, "editor", isPrivate);
+  let workspaceId: number | null = null;
+  if (typeof body?.workspaceId !== "undefined") {
+    if (typeof body.workspaceId !== "number" || !Number.isFinite(body.workspaceId)) {
+      return jsonResponse({ message: "Invalid workspaceId." }, 400);
+    }
+    workspaceId = Math.trunc(body.workspaceId);
+    if (workspaceId <= 0) {
+      return jsonResponse({ message: "Invalid workspaceId." }, 400);
+    }
+    if (!isWorkspaceMember(session, workspaceId)) {
+      return jsonResponse({ message: "Forbidden." }, 403);
+    }
+  }
+  const board = createBoardRecord(
+    body?.title ?? null,
+    body?.description ?? null,
+    owner,
+    "editor",
+    isPrivate,
+    workspaceId
+  );
   if (!board) {
     return jsonResponse({ message: "Unable to create board." }, 500);
   }
@@ -99,6 +121,7 @@ export function handleBoardShow(boardId: number) {
     ownerNpub: board.owner_npub,
     defaultRole: board.default_role,
     isPrivate: board.is_private,
+    workspaceId: board.workspace_id,
   });
 }
 
@@ -129,6 +152,7 @@ export function handleBoardShowWithSession(boardId: number, session: Session | n
     ownerNpub: touched.owner_npub,
     defaultRole: touched.default_role,
     isPrivate: touched.is_private,
+    workspaceId: touched.workspace_id,
   });
 }
 
@@ -155,17 +179,19 @@ export function handleBoardsList(
   onlineUsersByBoard?: Record<string, OnlineUser[]>,
   session?: Session | null
 ) {
+  if (!session?.pubkey) {
+    return jsonResponse({ message: "Unauthorized." }, 401);
+  }
   const includeArchived = url.searchParams.get("archived") === "1";
   const boards = fetchBoards(includeArchived);
-  const renouncedIds = session?.pubkey
-    ? new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)))
-    : null;
+  const workspaceIds = new Set(listWorkspacesForSession(session).map((workspace) => workspace.id));
+  const renouncedIds = new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)));
   const summaries = boards
-    .filter((board) => canViewBoard(board, session ?? null))
+    .filter((board) => board.workspace_id != null && workspaceIds.has(board.workspace_id))
+    .filter((board) => canViewBoard(board, session))
     .filter(
       (board) =>
-        !renouncedIds ||
-        isBoardOwner(board, session ?? null) ||
+        isBoardOwner(board, session) ||
         !renouncedIds.has(String(board.id))
     )
     .map((board) => ({
@@ -180,6 +206,7 @@ export function handleBoardsList(
     ownerNpub: board.owner_npub,
     defaultRole: board.default_role,
     isPrivate: board.is_private,
+    workspaceId: board.workspace_id,
     onlineUsers: onlineUsersByBoard?.[String(board.id)] ?? [],
   }));
   return jsonResponse({ boards: summaries });
@@ -189,18 +216,20 @@ export function handleBoardsPresence(
   onlineUsersByBoard?: Record<string, OnlineUser[]>,
   session?: Session | null
 ) {
+  if (!session?.pubkey) {
+    return jsonResponse({ onlineUsersByBoard: {} }, 401);
+  }
   if (!onlineUsersByBoard) return jsonResponse({ onlineUsersByBoard: {} });
   const boards = fetchBoards(true);
-  const renouncedIds = session?.pubkey
-    ? new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)))
-    : null;
+  const workspaceIds = new Set(listWorkspacesForSession(session).map((workspace) => workspace.id));
+  const renouncedIds = new Set(fetchRenouncedBoardIds(session.pubkey).map((id) => String(id)));
   const visible = new Set(
     boards
-      .filter((board) => canViewBoard(board, session ?? null))
+      .filter((board) => board.workspace_id != null && workspaceIds.has(board.workspace_id))
+      .filter((board) => canViewBoard(board, session))
       .filter(
         (board) =>
-          !renouncedIds ||
-          isBoardOwner(board, session ?? null) ||
+          isBoardOwner(board, session) ||
           !renouncedIds.has(String(board.id))
       )
       .map((board) => String(board.id))
@@ -398,6 +427,7 @@ export async function handleBoardUpdate(req: Request, boardId: number, session: 
     ownerNpub: updated.owner_npub,
     defaultRole: updated.default_role,
     isPrivate: updated.is_private,
+    workspaceId: updated.workspace_id,
   });
 }
 
@@ -437,6 +467,7 @@ export async function handleBoardStar(req: Request, boardId: number, session: Se
     description: updated.description,
     defaultRole: updated.default_role,
     isPrivate: updated.is_private,
+    workspaceId: updated.workspace_id,
   });
 }
 
@@ -536,7 +567,8 @@ export function handleBoardDuplicate(boardId: number, session: Session | null) {
     board.description ?? null,
     owner,
     board.default_role,
-    board.is_private
+    board.is_private,
+    board.workspace_id ?? null
   );
   if (!newBoard) {
     return jsonResponse({ message: "Unable to duplicate board." }, 500);
@@ -650,6 +682,7 @@ export function handleBoardExport(boardId: number, session: Session | null) {
       ownerNpub: board.owner_npub,
       defaultRole: board.default_role,
       isPrivate: board.is_private,
+      workspaceId: board.workspace_id,
     },
     elements,
     attachments,

@@ -17,9 +17,7 @@ export function isBoardOwner(board: Board, session: Session | null) {
 export function canViewBoard(board: Board, session: Session | null) {
   if (isBoardOwner(board, session)) return true;
   if (board.is_private === 1) {
-    if (!session?.pubkey) return false;
-    const member = getBoardMember(board.id, session.pubkey);
-    return !!member;
+    return false;
   }
   return true;
 }
@@ -27,9 +25,9 @@ export function canViewBoard(board: Board, session: Session | null) {
 export function resolveBoardRole(board: Board, session: Session | null): BoardRole {
   if (!session) return "viewer";
   if (isBoardOwner(board, session)) return "editor";
+  if (board.is_private === 1) return "viewer";
   const member = session.pubkey ? getBoardMember(board.id, session.pubkey) : null;
   if (member?.role) return normalizeBoardRole(member.role);
-  if (board.is_private === 1) return "viewer";
   return normalizeBoardRole(board.default_role);
 }
 

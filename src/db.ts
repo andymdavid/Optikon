@@ -40,6 +40,7 @@ export type Board = {
   owner_npub: string | null;
   default_role: string;
   is_private: number;
+  workspace_id: number | null;
 };
 
 export type BoardElement = {
@@ -73,6 +74,23 @@ export type Attachment = {
 
 export type BoardMember = {
   board_id: number;
+  pubkey: string;
+  role: string;
+  created_at: string;
+};
+
+export type Workspace = {
+  id: number;
+  title: string;
+  owner_pubkey: string | null;
+  owner_npub: string | null;
+  is_personal: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceMember = {
+  workspace_id: number;
   pubkey: string;
   role: string;
   created_at: string;
@@ -155,6 +173,15 @@ function ensureBoardsSchema(database: Database) {
     database.run(`ALTER TABLE boards ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`);
     database.run(`UPDATE boards SET is_private = 0 WHERE is_private IS NULL`);
   }
+}
+
+function ensureBoardsWorkspaceSchema(database: Database) {
+  const info = database.query<{ name: string }, SQLQueryBindings[]>(`PRAGMA table_info('boards')`).all();
+  const hasWorkspaceId = info.some((column) => column.name === "workspace_id");
+  if (!hasWorkspaceId) {
+    database.run(`ALTER TABLE boards ADD COLUMN workspace_id INTEGER NULL`);
+  }
+  database.run(`CREATE INDEX IF NOT EXISTS idx_boards_workspace_id ON boards(workspace_id)`);
 }
 
 function ensureBoardElementsSchema(database: Database) {
@@ -369,6 +396,95 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 12,
+    up: (database) => {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          owner_pubkey TEXT NULL,
+          owner_npub TEXT NULL,
+          is_personal INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      database.run(`CREATE INDEX IF NOT EXISTS idx_workspaces_owner_pubkey ON workspaces(owner_pubkey)`);
+      database.run(`
+        CREATE TABLE IF NOT EXISTS workspace_members (
+          workspace_id INTEGER NOT NULL,
+          pubkey TEXT NOT NULL,
+          role TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (workspace_id, pubkey),
+          FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+        )
+      `);
+      ensureBoardsWorkspaceSchema(database);
+
+      const ownerRows = database
+        .query<{ owner_pubkey: string; owner_npub: string | null }, SQLQueryBindings[]>(
+          `SELECT DISTINCT owner_pubkey, owner_npub
+           FROM boards
+           WHERE owner_pubkey IS NOT NULL AND owner_pubkey != ''`
+        )
+        .all();
+
+      const insertWorkspace = database.query<Workspace, SQLQueryBindings[]>(
+        `INSERT INTO workspaces (title, owner_pubkey, owner_npub, is_personal)
+         VALUES (?, ?, ?, ?)
+         RETURNING *`
+      );
+      const findPersonalWorkspace = database.query<Workspace, SQLQueryBindings[]>(
+        `SELECT * FROM workspaces
+         WHERE owner_pubkey = ? AND is_personal = 1
+         ORDER BY id ASC
+         LIMIT 1`
+      );
+      const upsertWorkspaceMember = database.query<unknown, SQLQueryBindings[]>(
+        `INSERT INTO workspace_members (workspace_id, pubkey, role)
+         VALUES (?, ?, ?)
+         ON CONFLICT(workspace_id, pubkey) DO UPDATE SET
+           role = excluded.role`
+      );
+      const updateBoardsWorkspace = database.query<unknown, SQLQueryBindings[]>(
+        `UPDATE boards
+         SET workspace_id = ?
+         WHERE owner_pubkey = ? AND (workspace_id IS NULL OR workspace_id = 0)`
+      );
+
+      for (const row of ownerRows) {
+        const existing = findPersonalWorkspace.get(row.owner_pubkey) ?? null;
+        const workspace =
+          existing ??
+          insertWorkspace.get("Personal", row.owner_pubkey, row.owner_npub ?? null, 1) ??
+          null;
+        if (!workspace) continue;
+        upsertWorkspaceMember.run(workspace.id, row.owner_pubkey, "owner");
+        updateBoardsWorkspace.run(workspace.id, row.owner_pubkey);
+      }
+
+      const recoveryWorkspace =
+        database
+          .query<Workspace, SQLQueryBindings[]>(
+            `SELECT * FROM workspaces
+             WHERE owner_pubkey IS NULL AND is_personal = 0
+             ORDER BY id ASC
+             LIMIT 1`
+          )
+          .get() ??
+        insertWorkspace.get("Recovery", null, null, 0);
+      if (recoveryWorkspace) {
+        database.run(
+          `UPDATE boards
+           SET workspace_id = ?
+           WHERE workspace_id IS NULL OR workspace_id = 0`,
+          [recoveryWorkspace.id]
+        );
+      }
+    },
+  },
 ];
 
 function getSchemaVersion(database: Database) {
@@ -485,8 +601,8 @@ const getAttachmentStmt = db.query<Attachment, SQLQueryBindings[]>(
   `SELECT * FROM attachments WHERE id = ? AND board_id = ? LIMIT 1`
 );
 const insertBoardStmt = db.query<Board, SQLQueryBindings[]>(
-  `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role, is_private)
-   VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, owner_pubkey, owner_npub, default_role, is_private, workspace_id)
+   VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
    RETURNING *`
 );
 const getBoardStmt = db.query<Board, SQLQueryBindings[]>(`SELECT * FROM boards WHERE id = ?`);
@@ -540,8 +656,8 @@ const unarchiveBoardStmt = db.query<Board, SQLQueryBindings[]>(
    RETURNING *`
 );
 const insertBoardCopyStmt = db.query<Board, SQLQueryBindings[]>(
-  `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role, is_private)
-   VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?, ?)
+  `INSERT INTO boards (title, description, updated_at, last_accessed_at, starred, archived_at, owner_pubkey, owner_npub, default_role, is_private, workspace_id)
+   VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0, NULL, ?, ?, ?, ?, ?)
    RETURNING *`
 );
 const updateBoardTitleStmt = db.query<Board, SQLQueryBindings[]>(
@@ -627,6 +743,51 @@ const getBoardMemberStmt = db.query<BoardMember, SQLQueryBindings[]>(
 );
 const deleteBoardMemberStmt = db.query<unknown, SQLQueryBindings[]>(
   `DELETE FROM board_members WHERE board_id = ? AND pubkey = ?`
+);
+const insertWorkspaceStmt = db.query<Workspace, SQLQueryBindings[]>(
+  `INSERT INTO workspaces (title, owner_pubkey, owner_npub, is_personal)
+   VALUES (?, ?, ?, ?)
+   RETURNING *`
+);
+const findPersonalWorkspaceStmt = db.query<Workspace, SQLQueryBindings[]>(
+  `SELECT * FROM workspaces
+   WHERE owner_pubkey = ? AND is_personal = 1
+   ORDER BY id ASC
+   LIMIT 1`
+);
+const getWorkspaceStmt = db.query<Workspace, SQLQueryBindings[]>(
+  `SELECT * FROM workspaces WHERE id = ? LIMIT 1`
+);
+const listWorkspacesForMemberStmt = db.query<Workspace, SQLQueryBindings[]>(
+  `SELECT w.*
+   FROM workspaces w
+   INNER JOIN workspace_members wm ON wm.workspace_id = w.id
+   WHERE wm.pubkey = ?
+   ORDER BY w.is_personal DESC, w.updated_at DESC, w.created_at DESC`
+);
+const upsertWorkspaceMemberStmt = db.query<WorkspaceMember, SQLQueryBindings[]>(
+  `INSERT INTO workspace_members (workspace_id, pubkey, role)
+   VALUES (?, ?, ?)
+   ON CONFLICT(workspace_id, pubkey) DO UPDATE SET
+     role = excluded.role
+   RETURNING *`
+);
+const listWorkspaceMembersStmt = db.query<WorkspaceMember, SQLQueryBindings[]>(
+  `SELECT * FROM workspace_members WHERE workspace_id = ? ORDER BY created_at ASC`
+);
+const getWorkspaceMemberStmt = db.query<WorkspaceMember, SQLQueryBindings[]>(
+  `SELECT * FROM workspace_members WHERE workspace_id = ? AND pubkey = ? LIMIT 1`
+);
+const updateBoardsWorkspaceByOwnerStmt = db.query<unknown, SQLQueryBindings[]>(
+  `UPDATE boards
+   SET workspace_id = ?
+   WHERE owner_pubkey = ? AND (workspace_id IS NULL OR workspace_id = 0)`
+);
+const recoveryWorkspaceStmt = db.query<Workspace, SQLQueryBindings[]>(
+  `SELECT * FROM workspaces
+   WHERE owner_pubkey IS NULL AND is_personal = 0
+   ORDER BY id ASC
+   LIMIT 1`
 );
 
 export function listTodos(owner: string | null, filterTags?: string[]) {
@@ -753,7 +914,8 @@ export function createBoard(
   description: string | null,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor",
-  isPrivate: number = 0
+  isPrivate: number = 0,
+  workspaceId: number | null = null
 ) {
   return (
     insertBoardStmt.get(
@@ -762,7 +924,8 @@ export function createBoard(
       owner?.pubkey ?? null,
       owner?.npub ?? null,
       defaultRole,
-      isPrivate
+      isPrivate,
+      workspaceId
     ) ?? null
   );
 }
@@ -824,7 +987,8 @@ export function createBoardCopy(
   description: string | null,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor",
-  isPrivate: number = 0
+  isPrivate: number = 0,
+  workspaceId: number | null = null
 ) {
   return (
     insertBoardCopyStmt.get(
@@ -833,7 +997,8 @@ export function createBoardCopy(
       owner?.pubkey ?? null,
       owner?.npub ?? null,
       defaultRole,
-      isPrivate
+      isPrivate,
+      workspaceId
     ) ?? null
   );
 }
@@ -909,6 +1074,8 @@ export function getAttachment(boardId: number, attachmentId: string) {
 export function resetDatabase() {
   db.run("DELETE FROM todos");
   db.run("DELETE FROM ai_summaries");
+  db.run("DELETE FROM workspace_members");
+  db.run("DELETE FROM workspaces");
   db.run("DELETE FROM board_members");
   db.run("DELETE FROM board_comments");
   db.run("DELETE FROM board_elements");
@@ -916,7 +1083,9 @@ export function resetDatabase() {
   db.run("DELETE FROM board_renouncements");
   db.run("DELETE FROM boards");
   db.run("DELETE FROM sessions");
-  db.run("DELETE FROM sqlite_sequence WHERE name IN ('todos', 'ai_summaries', 'board_comments', 'boards')");
+  db.run(
+    "DELETE FROM sqlite_sequence WHERE name IN ('todos', 'ai_summaries', 'board_comments', 'boards', 'workspaces')"
+  );
 }
 
 export function createSessionRecord(record: {
@@ -969,4 +1138,44 @@ export function getBoardMember(boardId: number, pubkey: string) {
 
 export function deleteBoardMember(boardId: number, pubkey: string) {
   deleteBoardMemberStmt.run(boardId, pubkey);
+}
+
+export function createWorkspace(
+  title: string,
+  owner: { pubkey: string; npub: string } | null,
+  isPersonal: number = 0
+) {
+  return insertWorkspaceStmt.get(title, owner?.pubkey ?? null, owner?.npub ?? null, isPersonal) ?? null;
+}
+
+export function getPersonalWorkspaceForPubkey(pubkey: string) {
+  return findPersonalWorkspaceStmt.get(pubkey) ?? null;
+}
+
+export function getWorkspaceById(id: number) {
+  return getWorkspaceStmt.get(id) ?? null;
+}
+
+export function listWorkspacesForMember(pubkey: string) {
+  return listWorkspacesForMemberStmt.all(pubkey);
+}
+
+export function upsertWorkspaceMember(workspaceId: number, pubkey: string, role: string) {
+  return upsertWorkspaceMemberStmt.get(workspaceId, pubkey, role) ?? null;
+}
+
+export function listWorkspaceMembers(workspaceId: number) {
+  return listWorkspaceMembersStmt.all(workspaceId);
+}
+
+export function getWorkspaceMember(workspaceId: number, pubkey: string) {
+  return getWorkspaceMemberStmt.get(workspaceId, pubkey) ?? null;
+}
+
+export function assignBoardsToWorkspaceByOwner(workspaceId: number, ownerPubkey: string) {
+  updateBoardsWorkspaceByOwnerStmt.run(workspaceId, ownerPubkey);
+}
+
+export function getRecoveryWorkspace() {
+  return recoveryWorkspaceStmt.get() ?? null;
 }

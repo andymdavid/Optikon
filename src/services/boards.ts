@@ -26,22 +26,52 @@ import {
   getBoardMember,
   upsertBoardMember,
   deleteBoardMember,
+  assignBoardsToWorkspaceByOwner,
+  createWorkspace,
+  getPersonalWorkspaceForPubkey,
+  getRecoveryWorkspace,
+  upsertWorkspaceMember,
 } from "../db";
 
 import type { Board, BoardElement, BoardMember } from "../db";
 import type { BoardElement as SharedBoardElement } from "../shared/boardElements";
+
+function ensurePersonalWorkspace(owner: { pubkey: string; npub: string }) {
+  const existing = getPersonalWorkspaceForPubkey(owner.pubkey);
+  if (existing) {
+    upsertWorkspaceMember(existing.id, owner.pubkey, "owner");
+    assignBoardsToWorkspaceByOwner(existing.id, owner.pubkey);
+    return existing.id;
+  }
+  const created = createWorkspace("Personal", owner, 1);
+  if (!created) return null;
+  upsertWorkspaceMember(created.id, owner.pubkey, "owner");
+  assignBoardsToWorkspaceByOwner(created.id, owner.pubkey);
+  return created.id;
+}
+
+function ensureRecoveryWorkspace() {
+  const existing = getRecoveryWorkspace();
+  if (existing) return existing.id;
+  const created = createWorkspace("Recovery", null, 0);
+  return created?.id ?? null;
+}
 
 export function createBoardRecord(
   title: string | null | undefined,
   description: string | null | undefined,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor",
-  isPrivate: number = 0
+  isPrivate: number = 0,
+  workspaceId: number | null = null
 ) {
   const normalizedTitle = typeof title === "string" && title.trim() ? title.trim() : "Untitled Board";
   const normalizedDescription =
     typeof description === "string" && description.trim() ? description.trim() : null;
-  return createBoard(normalizedTitle, normalizedDescription, owner, defaultRole, isPrivate);
+  const resolvedWorkspaceId =
+    workspaceId ??
+    (owner ? ensurePersonalWorkspace(owner) : ensureRecoveryWorkspace());
+  return createBoard(normalizedTitle, normalizedDescription, owner, defaultRole, isPrivate, resolvedWorkspaceId);
 }
 
 export function fetchBoardById(id: number) {
@@ -101,9 +131,13 @@ export function createBoardCopyRecord(
   description: string | null,
   owner: { pubkey: string; npub: string } | null,
   defaultRole: string = "editor",
-  isPrivate: number = 0
+  isPrivate: number = 0,
+  workspaceId: number | null = null
 ) {
-  return createBoardCopy(title, description, owner, defaultRole, isPrivate);
+  const resolvedWorkspaceId =
+    workspaceId ??
+    (owner ? ensurePersonalWorkspace(owner) : ensureRecoveryWorkspace());
+  return createBoardCopy(title, description, owner, defaultRole, isPrivate, resolvedWorkspaceId);
 }
 
 export function touchBoardUpdatedAtRecord(boardId: number) {
