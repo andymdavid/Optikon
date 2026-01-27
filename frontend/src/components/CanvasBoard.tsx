@@ -6896,9 +6896,9 @@ export function CanvasBoard({
 
       const dragState = dragStateRef.current
       if (mode !== 'drag' || !dragState || dragState.pointerId !== event.pointerId) return
-      const boardPoint = screenToBoard(canvasPoint)
-      const deltaX = boardPoint.x - dragState.startPointer.x
-      const deltaY = boardPoint.y - dragState.startPointer.y
+      const dragBoardPoint = screenToBoard(canvasPoint)
+      const deltaX = dragBoardPoint.x - dragState.startPointer.x
+      const deltaY = dragBoardPoint.y - dragState.startPointer.y
       const updatedElements: BoardElement[] = []
       setElements((prev) => {
         const next = { ...prev }
