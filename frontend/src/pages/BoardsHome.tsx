@@ -182,15 +182,47 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [inviteSaving, setInviteSaving] = useState(false)
   const [removingMember, setRemovingMember] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [filterBy, setFilterBy] = useState<'all' | 'starred'>('all')
+  const [ownedBy, setOwnedBy] = useState<'anyone' | 'me' | 'not-me'>('anyone')
+  const [sortBy, setSortBy] = useState<'last-opened' | 'last-modified' | 'last-created' | 'alpha'>('last-opened')
   const navigate = useNavigate()
   const avatarFetchInFlightRef = useRef<Set<string>>(new Set())
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
   const filteredBoards = useMemo(() => {
-    if (!searchQuery.trim()) return boards
-    const query = searchQuery.toLowerCase()
-    return boards.filter((board) => board.title.toLowerCase().includes(query))
-  }, [boards, searchQuery])
+    const query = searchQuery.trim().toLowerCase()
+    const sessionPubkey = session?.pubkey ?? null
+    const toMs = (value?: string | null) => {
+      if (!value) return 0
+      const parsed = Date.parse(value)
+      return Number.isFinite(parsed) ? parsed : 0
+    }
+    let next = boards.slice()
+    if (filterBy === 'starred') {
+      next = next.filter((board) => board.starred === 1)
+    }
+    if (ownedBy === 'me') {
+      next = sessionPubkey ? next.filter((board) => board.ownerPubkey === sessionPubkey) : []
+    } else if (ownedBy === 'not-me' && sessionPubkey) {
+      next = next.filter((board) => board.ownerPubkey !== sessionPubkey)
+    }
+    if (query) {
+      next = next.filter((board) => board.title.toLowerCase().includes(query))
+    }
+    next.sort((a, b) => {
+      if (sortBy === 'alpha') {
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+      }
+      if (sortBy === 'last-modified') {
+        return toMs(b.updatedAt) - toMs(a.updatedAt)
+      }
+      if (sortBy === 'last-created') {
+        return toMs(b.createdAt) - toMs(a.createdAt)
+      }
+      return toMs(b.lastAccessedAt) - toMs(a.lastAccessedAt)
+    })
+    return next
+  }, [boards, filterBy, ownedBy, searchQuery, session?.pubkey, sortBy])
 
   const handleRowOpen = (id: number | string, isEditing: boolean) => {
     if (isEditing) return
