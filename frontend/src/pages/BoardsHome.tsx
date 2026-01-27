@@ -75,6 +75,13 @@ type WorkspaceSummary = {
   ownerPubkey: string | null
 }
 
+type WorkspaceMember = {
+  pubkey: string
+  npub: string
+  role: string
+  createdAt: string
+}
+
 const LAST_WORKSPACE_KEY = 'optikon:last-workspace-id'
 
 const normalizeBoard = (board: BoardSummary): BoardSummary => ({
@@ -184,6 +191,9 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [workspaceInviteSaving, setWorkspaceInviteSaving] = useState(false)
   const [workspaceInviteError, setWorkspaceInviteError] = useState<string | null>(null)
   const [workspaceInviteSuccess, setWorkspaceInviteSuccess] = useState<string | null>(null)
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([])
+  const [workspaceMembersLoading, setWorkspaceMembersLoading] = useState(false)
+  const [workspaceMembersError, setWorkspaceMembersError] = useState<string | null>(null)
   const [loginOpen, setLoginOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
@@ -403,6 +413,12 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
   }, [selectedWorkspaceId])
 
   useEffect(() => {
+    if (!workspaceInviteOpen) return
+    if (!isSelectedWorkspaceOwner) return
+    void loadWorkspaceMembers()
+  }, [isSelectedWorkspaceOwner, loadWorkspaceMembers, workspaceInviteOpen])
+
+  useEffect(() => {
     if (!session?.pubkey) return
     let cancelled = false
     const pollPresence = async () => {
@@ -605,6 +621,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       }
       setWorkspaceInviteTarget('')
       setWorkspaceInviteSuccess('Member added to workspace.')
+      void loadWorkspaceMembers()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to invite member.'
       setWorkspaceInviteError(message)
@@ -612,6 +629,29 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       setWorkspaceInviteSaving(false)
     }
   }
+
+  const loadWorkspaceMembers = useCallback(async () => {
+    if (!session?.pubkey || !selectedWorkspaceId) {
+      setWorkspaceMembers([])
+      setWorkspaceMembersLoading(false)
+      return
+    }
+    setWorkspaceMembersLoading(true)
+    setWorkspaceMembersError(null)
+    try {
+      const response = await fetch(`${apiBaseUrl}/workspaces/${selectedWorkspaceId}/members`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error('Unable to load members')
+      const data = (await response.json()) as { members?: WorkspaceMember[] }
+      setWorkspaceMembers(data.members ?? [])
+    } catch (_err) {
+      setWorkspaceMembersError('Unable to load members.')
+      setWorkspaceMembers([])
+    } finally {
+      setWorkspaceMembersLoading(false)
+    }
+  }, [apiBaseUrl, selectedWorkspaceId, session?.pubkey])
 
   const handleImportChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -1080,6 +1120,28 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
             {workspaceInviteSuccess && (
               <p className="text-xs text-emerald-600">{workspaceInviteSuccess}</p>
             )}
+            <div className="mt-4 rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Members</div>
+                <div className="text-xs text-slate-400">{workspaceMembers.length}</div>
+              </div>
+              <div className="max-h-56 overflow-auto px-3 py-2 text-sm text-slate-700">
+                {workspaceMembersLoading ? (
+                  <div className="text-xs text-slate-400">Loading members…</div>
+                ) : workspaceMembersError ? (
+                  <div className="text-xs text-rose-600">{workspaceMembersError}</div>
+                ) : workspaceMembers.length === 0 ? (
+                  <div className="text-xs text-slate-400">No members yet.</div>
+                ) : (
+                  workspaceMembers.map((member) => (
+                    <div key={member.pubkey} className="flex items-center justify-between gap-3 py-1.5">
+                      <div className="truncate font-mono text-xs text-slate-600">{formatNpub(member.npub)}</div>
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400">{member.role}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
         <div className="mt-6 flex justify-end">
@@ -1474,13 +1536,6 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           />
         </div>
         <CreateBoardMenu />
-        <AccountMenu
-          apiBaseUrl={apiBaseUrl}
-          session={session}
-          onSessionChange={handleSessionChange}
-          loginOpen={loginOpen}
-          onLoginOpenChange={setLoginOpen}
-        />
       </div>
     </div>
   )
@@ -1837,56 +1892,67 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
       {shareModal}
       {detailsModal}
       <header className="mb-6 space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
-              O
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-sm font-semibold text-white">
+                O
+              </div>
+              <div>
+                <div className="text-base font-semibold text-slate-900">Optikon</div>
+                <div className="text-xs text-slate-500">
+                  {selectedWorkspace ? selectedWorkspace.title : 'Workspace boards'}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-base font-semibold text-slate-900">Optikon</div>
-              <div className="text-xs text-slate-500">
-                {selectedWorkspace ? selectedWorkspace.title : 'Workspace boards'}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select
+                value={selectedWorkspaceId ?? undefined}
+                onValueChange={(value) => setSelectedWorkspaceId(value)}
+                disabled={workspacesLoading || workspaces.length === 0}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder={workspacesLoading ? 'Loading workspaces…' : 'Select workspace'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((workspace) => (
+                    <SelectItem key={workspace.id} value={String(workspace.id)}>
+                      {workspace.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setWorkspaceTitleDraft('')
+                    setWorkspaceCreateOpen(true)
+                  }}
+                >
+                  <Building2 size={16} />
+                  Create workspace
+                </Button>
+                <Button
+                  onClick={() => {
+                    setWorkspaceInviteTarget('')
+                    setWorkspaceInviteError(null)
+                    setWorkspaceInviteSuccess(null)
+                    setWorkspaceInviteOpen(true)
+                  }}
+                >
+                  <UserPlus size={16} />
+                  Invite to workspace
+                </Button>
               </div>
             </div>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Select
-              value={selectedWorkspaceId ?? undefined}
-              onValueChange={(value) => setSelectedWorkspaceId(value)}
-              disabled={workspacesLoading || workspaces.length === 0}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder={workspacesLoading ? 'Loading workspaces…' : 'Select workspace'} />
-              </SelectTrigger>
-              <SelectContent>
-                {workspaces.map((workspace) => (
-                  <SelectItem key={workspace.id} value={String(workspace.id)}>
-                    {workspace.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={() => {
-                setWorkspaceTitleDraft('')
-                setWorkspaceCreateOpen(true)
-              }}
-            >
-              <Building2 size={16} />
-              Create workspace
-            </Button>
-            <Button
-              onClick={() => {
-                setWorkspaceInviteTarget('')
-                setWorkspaceInviteError(null)
-                setWorkspaceInviteSuccess(null)
-                setWorkspaceInviteOpen(true)
-              }}
-            >
-              <UserPlus size={16} />
-              Invite to workspace
-            </Button>
-          </div>
+          <AccountMenu
+            apiBaseUrl={apiBaseUrl}
+            session={session}
+            onSessionChange={handleSessionChange}
+            loginOpen={loginOpen}
+            onLoginOpenChange={setLoginOpen}
+          />
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="text-xl font-medium text-slate-800">

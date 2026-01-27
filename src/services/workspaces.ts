@@ -4,6 +4,7 @@ import {
   getPersonalWorkspaceForPubkey,
   getWorkspaceById,
   getWorkspaceMember,
+  listWorkspaceMembers,
   listWorkspacesForMember,
   upsertWorkspaceMember,
 } from "../db";
@@ -89,4 +90,12 @@ export function addWorkspaceMember(
   const member = upsertWorkspaceMember(workspaceId, pubkey, role);
   if (!member) return { ok: false as const, status: 500 as const, message: "Unable to add member." };
   return { ok: true as const, member, workspace };
+}
+
+export function listWorkspaceMembersForSession(session: Session | null, workspaceId: number) {
+  if (!session?.pubkey) return { ok: false as const, status: 401 as const, message: "Unauthorized." };
+  const workspace = getWorkspaceForSession(workspaceId, session);
+  if (!workspace) return { ok: false as const, status: 403 as const, message: "Forbidden." };
+  const members = listWorkspaceMembers(workspaceId);
+  return { ok: true as const, members, workspace };
 }

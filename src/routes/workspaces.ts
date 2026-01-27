@@ -1,7 +1,12 @@
 import { nip19 } from "nostr-tools";
 
 import { jsonResponse, safeJson } from "../http";
-import { addWorkspaceMember, createWorkspaceForSession, listWorkspacesForSession } from "../services/workspaces";
+import {
+  addWorkspaceMember,
+  createWorkspaceForSession,
+  listWorkspaceMembersForSession,
+  listWorkspacesForSession,
+} from "../services/workspaces";
 
 import type { Session } from "../types";
 
@@ -76,4 +81,16 @@ export async function handleWorkspaceMemberCreate(req: Request, workspaceId: num
     },
     201
   );
+}
+
+export function handleWorkspaceMembersList(workspaceId: number, session: Session | null) {
+  const result = listWorkspaceMembersForSession(session, workspaceId);
+  if (!result.ok) return jsonResponse({ message: result.message }, result.status);
+  const members = result.members.map((member) => ({
+    pubkey: member.pubkey,
+    npub: nip19.npubEncode(member.pubkey),
+    role: member.role,
+    createdAt: member.created_at,
+  }));
+  return jsonResponse({ members });
 }

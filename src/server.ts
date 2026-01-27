@@ -42,7 +42,12 @@ import {
 } from "./routes/boards";
 import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
-import { handleWorkspaceCreate, handleWorkspaceMemberCreate, handleWorkspacesList } from "./routes/workspaces";
+import {
+  handleWorkspaceCreate,
+  handleWorkspaceMemberCreate,
+  handleWorkspaceMembersList,
+  handleWorkspacesList,
+} from "./routes/workspaces";
 import { AuthService } from "./services/auth";
 import { canViewBoard } from "./services/boardAccess";
 import { fetchBoardById } from "./services/boards";
@@ -503,6 +508,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
         return respond(handleBoardsPresence(collectOnlineUsersByBoard(), session));
       if (pathname === "/boards") return respond(handleBoardsList(url, collectOnlineUsersByBoard(), session));
       if (pathname === "/workspaces") return respond(handleWorkspacesList(session));
+      const workspaceMembersMatch = pathname.match(/^\/workspaces\/(\d+)\/members$/);
+      if (workspaceMembersMatch) {
+        return respond(handleWorkspaceMembersList(Number(workspaceMembersMatch[1]), session));
+      }
       if (pathname === "/") return respond(handleHome(url, session));
     }
 
