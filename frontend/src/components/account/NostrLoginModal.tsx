@@ -166,9 +166,11 @@ async function completeLogin(apiBaseUrl: string, method: LoginMethod, event: Log
 export function NostrLoginCard({
   apiBaseUrl,
   onSuccess,
+  advancedOpen = false,
 }: {
   apiBaseUrl: string
   onSuccess: (session: SessionInfo) => void
+  advancedOpen?: boolean
 }) {
   const [error, setError] = useState<string | null>(null)
   const [busyMethod, setBusyMethod] = useState<LoginMethod | null>(null)
@@ -231,7 +233,7 @@ export function NostrLoginCard({
           {busyMethod === 'ephemeral' ? 'Signing in…' : 'Sign Up'}
         </button>
       </div>
-      <details className="nostr-login-advanced">
+      <details className="nostr-login-advanced" open={advancedOpen}>
         <summary>Advanced options</summary>
         <p>Use a browser extension or connect to a remote bunker.</p>
         <button

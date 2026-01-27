@@ -1880,6 +1880,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
           <div className="splash-right">
             <NostrLoginCard
               apiBaseUrl={apiBaseUrl}
+              advancedOpen
               onSuccess={(nextSession) =>
                 handleSessionChange({ pubkey: nextSession.pubkey, npub: nextSession.npub })
               }
