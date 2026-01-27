@@ -1448,6 +1448,7 @@ export function BoardsHome({ apiBaseUrl }: { apiBaseUrl: string }) {
               <Button
                 variant="ghost"
                 onClick={() => {
+                  setDetailsBoard(null)
                   setShareBoard(detailsBoard)
                   setShareRole(detailsBoard.defaultRole ?? 'editor')
                 }}
