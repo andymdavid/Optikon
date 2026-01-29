@@ -6,7 +6,7 @@ import { CanvasPage } from './pages/CanvasPage'
 
 import './App.css'
 
-const API_BASE_URL = 'http://localhost:3025'
+const API_BASE_URL = ''
 
 function App() {
   const [session, setSession] = useState<{ pubkey: string; npub: string } | null>(null)

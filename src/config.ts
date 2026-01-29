@@ -9,6 +9,7 @@ export const COOKIE_SECURE = Bun.env.NODE_ENV === "production";
 export const APP_NAME = "Other Stuff To Do";
 export const APP_TAG = "other-stuff-to-do";
 export const PUBLIC_DIR = join(import.meta.dir, "../public");
+export const FRONTEND_DIR = join(import.meta.dir, "../dist");
 export const UPLOADS_DIR = join(import.meta.dir, "../data/uploads");
 export const UPLOADS_PUBLIC_PATH = "/uploads";
 export const AI_AGENT_TOKEN = (Bun.env.AI_AGENT_TOKEN ?? "").trim();

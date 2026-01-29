@@ -119,8 +119,8 @@ const initialCameraState: CameraState = {
   zoom: 1,
 }
 
-const API_BASE_URL = 'http://localhost:3025'
-const resolveImageUrl = (url: string) => (url.startsWith('/') ? `${API_BASE_URL}${url}` : url)
+const API_BASE_URL = ''
+const resolveImageUrl = (url: string) => url
 const extractAttachmentId = (url: string) => {
   const marker = '/uploads/'
   const index = url.indexOf(marker)
@@ -173,9 +173,9 @@ const STICKY_FILL_TOP = '#fff7a6'
 const STICKY_FILL_BOTTOM = '#fef69e'
 const STICKY_TEXT_COLOR = '#1f2937'
 const STICKY_CORNER_RADIUS = 0
-const SELECTION_FRAME_PADDING = 18
-const RESIZE_HANDLE_RADIUS = 6
-const RESIZE_HANDLE_HIT_RADIUS = 12
+const SELECTION_FRAME_PADDING = 12
+const RESIZE_HANDLE_RADIUS = 8
+const RESIZE_HANDLE_HIT_RADIUS = 20
 const ACCENT_COLOR = '#0ea5e9'
 const MARQUEE_FILL = 'rgba(14, 165, 233, 0.12)'
 const BASE_STICKY_FONT_MAX = 32
@@ -3625,6 +3625,7 @@ export function CanvasBoard({
   const socketRef = useRef<WebSocket | null>(null)
   const joinedRef = useRef(false)
   const [remoteCursors, setRemoteCursors] = useState<Record<string, RemoteCursor>>({})
+  const [canvasCursor, setCanvasCursor] = useState<string>('default')
   const cursorLabelsRef = useRef(new Map<string, string>())
   const cursorLabelInFlightRef = useRef(new Map<string, Promise<string>>())
   const dragStateRef = useRef<
@@ -4483,6 +4484,18 @@ export function CanvasBoard({
         }
       })
 
+      if (typeof patch.fontSize === 'number' && editingStateRef.current) {
+        const editingId = editingStateRef.current.id
+        const updatedEditing = updatedElements.find((el) => el.id === editingId)
+        if (updatedEditing && (updatedEditing.type === 'text' || isShapeElement(updatedEditing))) {
+          const nextFontSize =
+            updatedEditing.type === 'text'
+              ? resolveTextFontSize(updatedEditing.fontSize)
+              : resolveShapeFontSize(updatedEditing)
+          updateEditingState((prev) => (prev ? { ...prev, fontSize: nextFontSize } : prev))
+        }
+      }
+
       // Update local state
       setElements((prev) => {
         const next = { ...prev }
@@ -4500,7 +4513,7 @@ export function CanvasBoard({
         void persistElementsUpdate(boardId, updatedElements)
       }
     },
-    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate]
+    [selectedIds, elements, sendElementsUpdate, boardId, persistElementsUpdate, updateEditingState]
   )
 
   const handleToggleBold = useCallback(() => {
@@ -4774,6 +4787,8 @@ export function CanvasBoard({
         if (target.textAutoFit === false) {
           if (typeof current.fontSize === 'number') {
             nextFontSize = clampFontSizeForShape(target, current.fontSize)
+          } else if (typeof target.fontSize === 'number') {
+            nextFontSize = clampFontSizeForShape(target, target.fontSize)
           }
         } else if (ctx) {
           nextFontSize = fitShapeFontSize(ctx, target, nextText)
@@ -6352,6 +6367,36 @@ export function CanvasBoard({
         setHoveredConnectorElementId(null)
       }
 
+      // Update cursor based on handle hover when idle
+      if (mode === 'idle' && toolMode === 'select') {
+        let nextCursor = 'default'
+        const resizeHit = hitTestResizeHandle(canvasPoint)
+        if (resizeHit) {
+          nextCursor = resizeHit.handle === 'nw' || resizeHit.handle === 'se' ? 'nwse-resize' : 'nesw-resize'
+        } else {
+          const lineHit = hitTestLineHandle(canvasPoint)
+          if (lineHit) {
+            nextCursor = 'grab'
+          } else {
+            const transformHit = hitTestTransformHandle(canvasPoint)
+            if (transformHit) {
+              const kind = transformHit.handle.kind
+              if (kind === 'rotate') {
+                nextCursor = 'grab'
+              } else if (kind === 'corner' || kind === 'scale') {
+                const h = transformHit.handle.handle
+                nextCursor = h === 'nw' || h === 'se' ? 'nwse-resize' : 'nesw-resize'
+              } else if (kind === 'width') {
+                nextCursor = 'ew-resize'
+              } else if (kind === 'height') {
+                nextCursor = 'ns-resize'
+              }
+            }
+          }
+        }
+        setCanvasCursor((prev) => (prev === nextCursor ? prev : nextCursor))
+      }
+
       const panState = panStateRef.current
       if (mode === 'pan' && panState && event.pointerId === panState.pointerId) {
         const deltaX = (event.clientX - panState.startX) / cameraState.zoom
@@ -6967,6 +7012,9 @@ export function CanvasBoard({
       freeDrawMode,
       getMeasureContext,
       hitTestConnectorAnchor,
+      hitTestLineHandle,
+      hitTestResizeHandle,
+      hitTestTransformHandle,
       isCommentEditing,
       hoveredConnectorElementId,
       screenToBoard,
@@ -7304,6 +7352,7 @@ export function CanvasBoard({
   const handlePointerLeave = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       setHoveredConnectorElementId(null)
+      setCanvasCursor('default')
       finishDrag(event, 'cancel')
     },
     [finishDrag]
@@ -7787,7 +7836,7 @@ export function CanvasBoard({
     const connect = () => {
       if (stopped) return
       cancelledPendingOpen = false
-      socket = new WebSocket('ws://localhost:3025/ws')
+      socket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`)
       const currentSocket = socket
       socketRef.current = currentSocket
 
@@ -8229,6 +8278,7 @@ export function CanvasBoard({
       !current ||
       current.elementType !== 'shape' ||
       !editingShapeElement ||
+      editingShapeElement.textAutoFit === false ||
       typeof current.fontSize !== 'number'
     ) {
       return
@@ -8375,10 +8425,11 @@ export function CanvasBoard({
     })
   }, [cameraState.offsetX, cameraState.offsetY, cameraState.zoom, remoteCursors])
 
+  const editingElementForToolbar = editingState ? elements[editingState.id] : null
   const showFloatingToolbar =
     selectedIds.size > 0 &&
-    !editingState &&
-    commentPopoverMode === 'closed'
+    commentPopoverMode === 'closed' &&
+    (!editingState || (editingElementForToolbar ? supportsTextStyle(editingElementForToolbar) : false))
 
   if (!boardId || boardError) {
     return (
@@ -8403,6 +8454,7 @@ export function CanvasBoard({
       <canvas
         ref={canvasRef}
         className="canvas-board__surface"
+        style={{ cursor: canvasCursor }}
         onClick={handleCanvasClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

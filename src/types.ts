@@ -9,4 +9,4 @@ export type Session = {
   createdAt: number;
 };
 
-export type LoginMethod = "ephemeral" | "extension" | "bunker" | "secret";
+export type LoginMethod = "ephemeral" | "extension" | "bunker" | "secret" | "nip98";

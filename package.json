@@ -4,8 +4,9 @@
   "description": "Minimal Bun + TypeScript + SQLite todo app",
   "scripts": {
     "setup": "bun install",
-    "start": "bun --hot run src/server.ts",
-    "dev": "concurrently -n backend,frontend -c cyan,magenta \"bun --hot run src/server.ts\" \"bun run --cwd frontend dev\"",
+    "start": "bun run src/server.ts",
+    "dev": "concurrently -n build,server \"bun run --cwd frontend build --watch\" \"bun --hot run src/server.ts\"",
+    "build": "bun run --cwd frontend build",
     "reset-db": "rm -f do-the-other-stuff.sqlite",
     "cleanup-ownerless-boards": "bun run scripts/cleanup-ownerless-boards.js",
     "lint": "eslint . && node scripts/check-inline-js.js",

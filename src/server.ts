@@ -40,7 +40,6 @@ import {
   handleBoardMembersDelete,
   handleBoardMembersList,
 } from "./routes/boards";
-import { handleHome } from "./routes/home";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import {
   handleWorkspaceCreate,
@@ -52,7 +51,7 @@ import { AuthService } from "./services/auth";
 import { canViewBoard } from "./services/boardAccess";
 import { fetchBoardById } from "./services/boards";
 import { RateLimiter } from "./services/rateLimit";
-import { serveStatic } from "./static";
+import { serveFrontendIndex, serveStatic } from "./static";
 
 import type { BoardElement } from "./shared/boardElements";
 import type { Session } from "./types";
@@ -512,7 +511,6 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
       if (workspaceMembersMatch) {
         return respond(handleWorkspaceMembersList(Number(workspaceMembersMatch[1]), session));
       }
-      if (pathname === "/") return respond(handleHome(url, session));
     }
 
     if (req.method === "POST") {
@@ -604,6 +602,12 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
 
       const todoDeleteMatch = pathname.match(/^\/todos\/(\d+)\/delete$/);
       if (todoDeleteMatch) return respond(await handleTodoDelete(session, Number(todoDeleteMatch[1])));
+    }
+
+    // SPA fallback: serve index.html for non-API GET requests
+    if (req.method === "GET") {
+      const spaResponse = await serveFrontendIndex();
+      if (spaResponse) return respond(spaResponse);
     }
 
     return respond(new Response("Not found", { status: 404 }));

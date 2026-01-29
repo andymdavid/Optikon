@@ -1,6 +1,6 @@
 import { extname, join, normalize } from "path";
 
-import { PUBLIC_DIR, STATIC_FILES } from "./config";
+import { FRONTEND_DIR, PUBLIC_DIR, STATIC_FILES } from "./config";
 
 const CONTENT_TYPE_MAP: Record<string, string> = {
   ".png": "image/png",
@@ -13,6 +13,8 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
   ".json": "application/json",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".svg": "image/svg+xml",
 };
 
 export async function serveStatic(pathname: string) {
@@ -23,8 +25,20 @@ export async function serveStatic(pathname: string) {
 
   const normalized = normalize(pathname).replace(/^\/+/, "");
   if (normalized.includes("..")) return null;
+
+  // Try frontend dist directory first (built React app)
+  const frontendPath = join(FRONTEND_DIR, normalized);
+  const frontendResponse = await buildResponse(frontendPath);
+  if (frontendResponse) return frontendResponse;
+
+  // Fall back to public directory
   const directPath = join(PUBLIC_DIR, normalized);
   return buildResponse(directPath);
+}
+
+export async function serveFrontendIndex() {
+  const indexPath = join(FRONTEND_DIR, "index.html");
+  return buildResponse(indexPath);
 }
 
 async function buildResponse(path: string) {

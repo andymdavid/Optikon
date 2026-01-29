@@ -1,5 +1,6 @@
 import { jsonResponse, safeJson } from "../http";
 import { parseSessionCookie } from "../services/auth";
+import { hasNip98Header, validateNip98Auth } from "../services/nip98";
 import { validateLoginMethod } from "../validation";
 
 import type { AuthService } from "../services/auth";
@@ -47,6 +48,18 @@ export function createAuthHandlers(authService: AuthService, cookieName: string)
   };
 
   const sessionFromRequest = (req: Request): Session | null => {
+    // Try NIP-98 auth first (stateless, no DB lookup)
+    if (hasNip98Header(req)) {
+      const result = validateNip98Auth(req);
+      if (result.ok) {
+        return result.session;
+      }
+      // NIP-98 header present but invalid - don't fall back to cookie
+      // This prevents confusion about which auth method is being used
+      return null;
+    }
+
+    // Fall back to cookie-based session auth
     const token = parseSessionCookie(req, cookieName);
     return authService.getSession(token);
   };
