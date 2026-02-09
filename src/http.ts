@@ -1,6 +1,9 @@
 import type { Session } from "./types";
 
-const CORS_ORIGIN = "http://localhost:5510";
+// Allowed origins for CORS (comma-separated in env, or defaults)
+const CORS_ALLOWED_ORIGINS = new Set(
+  (Bun.env.CORS_ORIGINS ?? "http://localhost:5510,http://localhost:3025").split(",").map((o) => o.trim())
+);
 
 export function redirect(path: string) {
   return new Response(null, { status: 303, headers: { Location: path } });
@@ -51,27 +54,40 @@ export function sessionFromRequest(req: Request, cookieName: string, sessionStor
   return sessionStore.get(token) ?? null;
 }
 
-export function applyCorsHeaders(response: Response) {
-  response.headers.set("Access-Control-Allow-Origin", CORS_ORIGIN);
+export function applyCorsHeaders(response: Response, requestOrigin?: string | null) {
+  // Determine allowed origin
+  let allowedOrigin = "";
+  if (requestOrigin && CORS_ALLOWED_ORIGINS.has(requestOrigin)) {
+    // Known origin - allow with credentials
+    allowedOrigin = requestOrigin;
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+  } else if (requestOrigin) {
+    // Unknown origin - allow for NIP-98 API access (no credentials)
+    allowedOrigin = requestOrigin;
+    // Don't set Allow-Credentials for unknown origins
+  }
+
+  if (allowedOrigin) {
+    response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
+  }
   response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  response.headers.set("Access-Control-Allow-Credentials", "true");
   return response;
 }
 
 export function withErrorHandling<TArgs extends unknown[]>(
   handler: (...args: TArgs) => Promise<Response> | Response,
   onError?: (error: unknown, ...args: TArgs) => void,
-  decorateResponse?: (response: Response) => Response
+  decorateResponse?: (response: Response, ...args: TArgs) => Response
 ) {
   return async (...args: TArgs) => {
     try {
       const response = await handler(...args);
-      return decorateResponse ? decorateResponse(response) : response;
+      return decorateResponse ? decorateResponse(response, ...args) : response;
     } catch (error) {
       onError?.(error, ...args);
       const response = new Response("Internal Server Error", { status: 500 });
-      return decorateResponse ? decorateResponse(response) : response;
+      return decorateResponse ? decorateResponse(response, ...args) : response;
     }
   };
 }

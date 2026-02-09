@@ -1147,7 +1147,9 @@ function getShapeInnerSize(element: ShapeElement | FrameElement) {
 
 function getShapeFontBounds(element: ShapeElement | FrameElement) {
   const { width, height } = getShapeDimensions(element)
-  const ratio = Math.min(width, height) / STICKY_SIZE
+  // Use geometric mean for better handling of non-square shapes (text can wrap)
+  const effectiveSize = Math.sqrt(width * height)
+  const ratio = effectiveSize / STICKY_SIZE
   const max = BASE_STICKY_FONT_MAX * ratio
   const min = Math.max(2, BASE_STICKY_FONT_MIN * ratio)
   return {
@@ -4487,11 +4489,11 @@ export function CanvasBoard({
       if (typeof patch.fontSize === 'number' && editingStateRef.current) {
         const editingId = editingStateRef.current.id
         const updatedEditing = updatedElements.find((el) => el.id === editingId)
-        if (updatedEditing && (updatedEditing.type === 'text' || isShapeElement(updatedEditing))) {
+        if (updatedEditing && (updatedEditing.type === 'text' || isShapeElement(updatedEditing) || isFrameElement(updatedEditing))) {
           const nextFontSize =
             updatedEditing.type === 'text'
               ? resolveTextFontSize(updatedEditing.fontSize)
-              : resolveShapeFontSize(updatedEditing)
+              : resolveShapeFontSize(updatedEditing as ShapeElement | FrameElement)
           updateEditingState((prev) => (prev ? { ...prev, fontSize: nextFontSize } : prev))
         }
       }

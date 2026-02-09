@@ -40,6 +40,7 @@ import {
   handleBoardMembersDelete,
   handleBoardMembersList,
 } from "./routes/boards";
+import { handleApiDocs, handleOpenApiSpec } from "./routes/docs";
 import { handleTodoCreate, handleTodoDelete, handleTodoState, handleTodoUpdate } from "./routes/todos";
 import {
   handleWorkspaceCreate,
@@ -476,6 +477,10 @@ async function routeRequest(req: Request, serverInstance: Server<WebSocketData>)
       const staticResponse = await serveStatic(pathname);
       if (staticResponse) return respond(staticResponse);
 
+      // API documentation
+      if (pathname === "/api/docs") return respond(handleApiDocs());
+      if (pathname === "/api/docs/openapi.json") return respond(handleOpenApiSpec());
+
       const aiTasksMatch = pathname.match(/^\/ai\/tasks\/(\d+)(?:\/(yes|no))?$/);
       if (aiTasksMatch) {
         const limited = enforceRateLimit(aiRateLimiter, rateLimitKey("ai", requestIp));
@@ -638,9 +643,10 @@ const server = Bun.serve<WebSocketData>({
         error: formatErrorPayload(error),
       });
     },
-    (response) => {
+    (response, req) => {
       if (response.status === 101) return response;
-      return applyCorsHeaders(response);
+      const origin = req.headers.get("Origin");
+      return applyCorsHeaders(response, origin);
     }
   ),
 });

@@ -1,6 +1,7 @@
 import { nip19 } from "nostr-tools";
 import { verifyEvent } from "nostr-tools/pure";
 
+import { isWhitelistedPubkey } from "../config";
 import {
   createSessionRecord,
   deleteExpiredSessions,
@@ -101,6 +102,13 @@ export class AuthService {
   login(method: LoginMethod, event: LoginEvent) {
     const validation = this.validateLoginEvent(method, event);
     if (!validation.ok) return jsonResponse({ message: validation.message }, 422);
+
+    // Check whitelist
+    if (!isWhitelistedPubkey(event.pubkey)) {
+      console.log(`[auth] Pubkey not in whitelist: ${event.pubkey.slice(0, 8)}...`);
+      return jsonResponse({ message: "User not authorized for access." }, 403);
+    }
+
     const { session, cookie } = this.createSession(method, event);
     return jsonResponse(session, 200, cookie);
   }
