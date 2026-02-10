@@ -102,7 +102,7 @@ export type CameraState = {
   zoom: number
 }
 
-type ElementMap = Record<string, BoardElement>
+export type ElementMap = Record<string, BoardElement>
 
 type RemoteCursor = {
   pubkey: string
@@ -138,7 +138,7 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
   const tagName = target.tagName
   return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT'
 }
-const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => {
+export const resolveBoardImageUrl = (boardId: string | null, element: ImageElement) => {
   if (element.attachmentId && boardId) {
     return `${API_BASE_URL}/boards/${boardId}/attachments/${element.attachmentId}`
   }
@@ -158,7 +158,7 @@ const normalizeWheelDeltas = (event: WheelEvent) => {
 }
 const STICKY_SIZE = 220
 const STICKY_MIN_SIZE = 40
-const BOARD_BACKGROUND = '#f7f7f8'
+export const BOARD_BACKGROUND = '#f7f7f8'
 const GRID_BASE_BOARD_SPACING = 100
 const GRID_PRIMARY_TARGET_PX = 80
 const GRID_SECONDARY_DIVISIONS = 4
@@ -932,7 +932,7 @@ function getStickyBounds(element: StickyNoteElement): Rect {
   }
 }
 
-function getShapeElementBounds(element: ShapeElement | FrameElement): ShapeElementBounds {
+export function getShapeElementBounds(element: ShapeElement | FrameElement): ShapeElementBounds {
   const minSize = resolveShapeMinSize(element)
   const width = Math.max(minSize, element.w)
   const height = Math.max(minSize, element.h)
@@ -1041,7 +1041,7 @@ function computeArrowLength(screenStrokeWidth: number, maxLength: number) {
   return Math.min(desiredLength, maxLength * 0.8)
 }
 
-function getElementBounds(
+export function getElementBounds(
   element: BoardElement,
   ctx: CanvasRenderingContext2D | null,
   options?: { resolveElement?: (id: string) => BoardElement | undefined; measureCtx?: CanvasRenderingContext2D | null }
@@ -1204,8 +1204,8 @@ function rectsIntersect(a: Rect, b: Rect) {
   return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom)
 }
 const DRAG_THROTTLE_MS = 50
-const MIN_ZOOM = 0.01
-const MAX_ZOOM = 4
+export const MIN_ZOOM = 0.01
+export const MAX_ZOOM = 4
 const CURSOR_STALE_MS = 8000
 const CURSOR_COLORS = ['#0ea5e9', '#ef4444', '#22c55e', '#f59e0b', '#6366f1', '#14b8a6'] as const
 
@@ -1247,39 +1247,39 @@ function pointToSegmentDistance(
   return Math.hypot(point.x - proj.x, point.y - proj.y)
 }
 
-function isStickyElement(element: BoardElement | null | undefined): element is StickyNoteElement {
+export function isStickyElement(element: BoardElement | null | undefined): element is StickyNoteElement {
   return !!element && element.type === 'sticky'
 }
 
-function isTextElement(element: BoardElement | null | undefined): element is TextElement {
+export function isTextElement(element: BoardElement | null | undefined): element is TextElement {
   return !!element && element.type === 'text'
 }
 
-function isRectangleElement(element: BoardElement | null | undefined): element is RectangleElement {
+export function isRectangleElement(element: BoardElement | null | undefined): element is RectangleElement {
   return !!element && element.type === 'rect'
 }
 
-function isEllipseElement(element: BoardElement | null | undefined): element is EllipseElement {
+export function isEllipseElement(element: BoardElement | null | undefined): element is EllipseElement {
   return !!element && element.type === 'ellipse'
 }
 
-function isRoundedRectElement(
+export function isRoundedRectElement(
   element: BoardElement | null | undefined
 ): element is RoundedRectElement {
   return !!element && element.type === 'roundRect'
 }
 
-function isDiamondElement(element: BoardElement | null | undefined): element is DiamondElement {
+export function isDiamondElement(element: BoardElement | null | undefined): element is DiamondElement {
   return !!element && element.type === 'diamond'
 }
 
-function isSpeechBubbleElement(
+export function isSpeechBubbleElement(
   element: BoardElement | null | undefined
 ): element is SpeechBubbleElement {
   return !!element && element.type === 'speechBubble'
 }
 
-function isImageElement(element: BoardElement | null | undefined): element is ImageElement {
+export function isImageElement(element: BoardElement | null | undefined): element is ImageElement {
   return !!element && element.type === 'image'
 }
 
@@ -1293,7 +1293,7 @@ function isShapeElement(element: BoardElement | null | undefined): element is Sh
   )
 }
 
-function isFrameElement(element: BoardElement | null | undefined): element is FrameElement {
+export function isFrameElement(element: BoardElement | null | undefined): element is FrameElement {
   return !!element && element.type === 'frame'
 }
 
@@ -1303,7 +1303,7 @@ function isFrameLikeElement(
   return isShapeElement(element) || isFrameElement(element)
 }
 
-function isCommentElement(element: BoardElement | null | undefined): element is CommentElement {
+export function isCommentElement(element: BoardElement | null | undefined): element is CommentElement {
   return !!element && element.type === 'comment'
 }
 
@@ -1323,11 +1323,11 @@ function getCommentBoardPosition(element: CommentElement) {
   return { x: element.x, y: element.y }
 }
 
-function isLineElement(element: BoardElement | null | undefined): element is LineElement {
+export function isLineElement(element: BoardElement | null | undefined): element is LineElement {
   return !!element && element.type === 'line'
 }
 
-function isFreeDrawElement(element: BoardElement | null | undefined): element is FreeDrawElement {
+export function isFreeDrawElement(element: BoardElement | null | undefined): element is FreeDrawElement {
   return !!element && element.type === 'freeDraw'
 }
 
@@ -1439,7 +1439,7 @@ function drawRoundedRectPath(
 // Draws a board-anchored, multi-resolution grid. Coarse cells use a power-of-two
 // hierarchy in board units, so they always line up with finer subdivisions while
 // secondary lines fade in/out as you zoom (Miro-style renewal without sliding).
-function drawBoardGrid(
+export function drawBoardGrid(
   ctx: CanvasRenderingContext2D,
   camera: CameraState,
   width: number,
@@ -1996,7 +1996,7 @@ function parseCommentElement(raw: unknown): CommentElement | null {
   }
 }
 
-function parseBoardElement(raw: unknown): BoardElement | null {
+export function parseBoardElement(raw: unknown): BoardElement | null {
   if (!raw || typeof raw !== 'object') return null
   const type = (raw as { type?: string }).type
   if (type === 'sticky') return parseStickyElement(raw)
@@ -2166,7 +2166,7 @@ function drawStickyShadow(
 
 // TODO(phase-6.2.3): Keep this sticky renderer but add a drawElement dispatcher that picks the
 // correct render function for TextElement vs StickyNoteElement.
-function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
+export function drawSticky(ctx: CanvasRenderingContext2D, element: StickyNoteElement, camera: CameraState) {
   const stickySize = getStickySize(element)
   const width = stickySize * camera.zoom
   const height = stickySize * camera.zoom
@@ -2368,7 +2368,7 @@ function drawShapeText(ctx: CanvasRenderingContext2D, element: ShapeElement | Fr
   ctx.restore()
 }
 
-function drawImageElement(
+export function drawImageElement(
   ctx: CanvasRenderingContext2D,
   element: ImageElement,
   camera: CameraState,
@@ -2403,7 +2403,7 @@ function drawImageElement(
   ctx.restore()
 }
 
-function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
+export function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, camera: CameraState) {
   const measureCtx = getSharedMeasureContext()
   const bounds = getTextElementBounds(element, measureCtx)
   const layoutInfo = bounds.layout
@@ -2535,7 +2535,7 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement, ca
   ctx.restore()
 }
 
-function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleElement, camera: CameraState) {
+export function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleElement, camera: CameraState) {
   const bounds = getRectangleElementBounds(element)
   ctx.save()
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
@@ -2557,7 +2557,7 @@ function drawRectangleElement(ctx: CanvasRenderingContext2D, element: RectangleE
   drawShapeText(ctx, element, camera)
 }
 
-function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseElement, camera: CameraState) {
+export function drawEllipseElement(ctx: CanvasRenderingContext2D, element: EllipseElement, camera: CameraState) {
   const bounds = getEllipseElementBounds(element)
   ctx.save()
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
@@ -2584,7 +2584,7 @@ function getRoundedRectRadius(element: { r?: number }, width: number, height: nu
   return Math.min(requested, width / 2, height / 2)
 }
 
-function drawRoundedRectElement(
+export function drawRoundedRectElement(
   ctx: CanvasRenderingContext2D,
   element: RoundedRectElement,
   camera: CameraState
@@ -2611,7 +2611,7 @@ function drawRoundedRectElement(
   drawShapeText(ctx, element, camera)
 }
 
-function drawFrameElement(
+export function drawFrameElement(
   ctx: CanvasRenderingContext2D,
   element: FrameElement,
   camera: CameraState,
@@ -2654,7 +2654,7 @@ function drawFrameElement(
   }
 }
 
-function drawCommentElement(
+export function drawCommentElement(
   ctx: CanvasRenderingContext2D,
   element: CommentElement,
   camera: CameraState,
@@ -2740,7 +2740,7 @@ function getCanvasSourceSize(image: CanvasImageSource): { width: number; height:
   return null
 }
 
-function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
+export function drawDiamondElement(ctx: CanvasRenderingContext2D, element: DiamondElement, camera: CameraState) {
   const bounds = getShapeElementBounds(element)
   ctx.save()
   const screenCenterX = (bounds.center.x + camera.offsetX) * camera.zoom
@@ -2801,7 +2801,7 @@ function drawLineArrowhead(
   ctx.fill()
 }
 
-function drawLineElement(
+export function drawLineElement(
   ctx: CanvasRenderingContext2D,
   element: LineElement,
   camera: CameraState,
@@ -2982,7 +2982,7 @@ function drawLineElement(
   ctx.restore()
 }
 
-function drawFreeDrawElement(
+export function drawFreeDrawElement(
   ctx: CanvasRenderingContext2D,
   element: FreeDrawElement,
   camera: CameraState
@@ -3106,7 +3106,7 @@ function getSpeechBubbleCornerRadius(width: number, height: number) {
   return Math.min(base, width / 2, height / 2)
 }
 
-function drawSpeechBubbleElement(
+export function drawSpeechBubbleElement(
   ctx: CanvasRenderingContext2D,
   element: SpeechBubbleElement,
   camera: CameraState
@@ -7510,8 +7510,8 @@ export function CanvasBoard({
           return
         }
         if (key === 'v') {
-          event.preventDefault()
-          pasteClipboardElements()
+          // Let the native paste event fire – handled by paste listener
+          // which supports both clipboard images and element paste
           return
         }
         return
@@ -7615,14 +7615,41 @@ export function CanvasBoard({
       }
     }
 
+    const handlePaste = (event: ClipboardEvent) => {
+      if (editingStateRef.current || isCommentEditing) return
+      if (isTypingTarget(event.target)) return
+
+      const items = event.clipboardData?.items
+      if (items) {
+        const imageFiles: File[] = []
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.startsWith('image/')) {
+            const file = items[i].getAsFile()
+            if (file) imageFiles.push(file)
+          }
+        }
+        if (imageFiles.length > 0) {
+          event.preventDefault()
+          void handleAttachmentFiles(imageFiles, getCanvasCenterBoardPoint())
+          return
+        }
+      }
+
+      // No clipboard images – paste copied canvas elements
+      event.preventDefault()
+      pasteClipboardElements()
+    }
+
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('paste', handlePaste)
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('paste', handlePaste)
     }
-  }, [copySelectedElements, deleteSelectedElements, handleRedo, handleUndo, isCommentEditing, pasteClipboardElements])
+  }, [copySelectedElements, deleteSelectedElements, getCanvasCenterBoardPoint, handleAttachmentFiles, handleRedo, handleUndo, isCommentEditing, pasteClipboardElements])
 
   useEffect(() => {
     setSelection(new Set())
